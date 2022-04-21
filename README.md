@@ -16,9 +16,9 @@ Fornax-Serverless is targeted as general serverless application management platf
 	as a shared application orchestration system, Fornax-serverless provides network isolation and multi-tenancy required by secure environment.
 
 ### No-goals
-support lambda like serverless function
-support event-triggering
-(v1) global resource management support?
+1. support lambda like serverless function
+1. support event-triggering
+1. provide direct support for global resource management
 
 ### Terms
 * Stateful application

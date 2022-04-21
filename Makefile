@@ -2,5 +2,6 @@ check:
 	@hostname
 	@cat /etc/os-release
 	@pwd
-	@free
+	@lscpu | grep CPU\(s\)
+	@free -m
 	make --version

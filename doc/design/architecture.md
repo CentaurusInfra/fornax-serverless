@@ -18,10 +18,8 @@ Fornax-serverless interacts with other dependencie as illustrated below
 	Stateful application instance has its own explicit life cycle. When an app is has done with execution, it enters end (like zombie process) state, and Fornax-serverless will reap it and release the resource. Stateless application has no state; Fornax-serverless will decrease running instances when user requests decrease, particularly will have 0 instance(zero-cost) if no user request is being processed.
 2.  Manage cluster resources
 	For cluster resources, Fornax-serverless abstracts away the compute/storage/network, manages hardware resources automatically, with minimum overhead.
-3.  Use Quark as container runtime
-	Application instances run as Quark containers. Fornax-serverless leverages Quark’s unique Standby/Ready mode to minimize idle footprint and optimize instance start latency.
-4.  Provide secure execution environment
-	as a shared application orchestration system, Fornax-serverless provides network isolation and multi-tenancy required by secure environment.
+3.  Provide secure execution environment
+	As a shared application orchestration system, Fornax-serverless provides network isolation and multi-tenancy required by secure environment. Application instances run as Quark containers; Quark is a secure container runtime providing compute isolation.
 
 ### No-goals
 1. support lambda like serverless function
@@ -229,7 +227,7 @@ The critical performance trait is the latency to implement a workload: from clie
 Traditionally Kubernetes use controllers and scheduler to drive implementation of a pod, there are a lot of back forth api calls between controllers/scheduler and api server, and a lot of asynchronous watch messages exchanges. This method provides flexible framework to plug in scheduling rule and resources creation in workload implementation and decouple resource responsibility between different controllers, making Kubernetes highly extensible for introducing new resource types, but at the same time, instance starting latency is high.
 ![kubernetes create deployment sequence diagram](pictures/architecture/kubernetes-sequence.jpg)
 
-Fornax-serverless platform will simplify this relatively time-consuming workload implementation process by
+Fornax-serverless platform will simplify this relatively time-consuming workload implementation process by (_rough idea; may up to change when being implemented_)
 * removing api/message exchange between controllers and scheduler, workload resource is implemented using a task workflow which is initiated directly by customer API call
 * workload task workflow does not watch resource change, it’s executed inside service as a task creates Pod spec and Endpoint spec, and calls Node agent and Ingress gateway api to implement resources directly.
 * node selecting is using the latest information that the Node manager maintains in its memory pool of nodes. The node manager uses sophisticated and efficient techniques (e.g. sorted priority queue), chooses a candidate node to place the workload to.
@@ -245,9 +243,6 @@ A pod startup is a two-phases operation, creating a pod sandbox and starting con
 * Create Namespace
 * Create Cgroup
 * Apply Security policy on Cgroup
-    * Run As user
-    * Run As group
-    *Run As root flag
 * Create Pod Directory
 * Create Pod Network
 * Mount Config Map and Secret 

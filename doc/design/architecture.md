@@ -219,7 +219,7 @@ Fornax core, running as one single process, provides API service and manages 4 m
 
 Node agent runs on each node, creating/removing Pod as requested, and reporting node status and pod status back to the system manager. Node agent is customized on basis of Kubelet; the protocol of these reports is Kubernetes API calls for Node and Pod status updates.
 
-Ingress gateway is a network entity providing access to application instances running on nodes. It is also used as the API gateway for upstream services (like gaming services) to access the public management API to manage the required resources.
+Ingress gateway is a network entity providing access to applications running on nodes.
 
 ### Instance Scheduling
 The critical performance trait is the latency to implement a workload: from client request (to claim) an instance till the instance able to serve traffic passed in through the exposed endpoint. 
@@ -311,17 +311,20 @@ Instance reuses Kubernetes Pod type for the workload. Its application link is de
 | Condition | Latency target |
 | --------- | -------------- |
 | Have Ready instance in pool | 99% <100ms |
-| Have Standby instance in pool | 99% <1.5s |
-| Out of stock in pool | 99% <5s (or 2-3s) |
+| Have Standby instance in pool | 99% <1s |
+| Out of stock in pool | 99% <2s |
 
 #### Node management
 Receives report of node status from node agent and keep node information up to date. This component is stateless by itself; node data is kept in the fornax core memory and persistent to by external data store as well.
 
 #### Endpoint management
-Maintain the mapping of instance to its endpoint mapping. Whenever it changes, it will notify the ingress gateway via its API.
+Maintain the mapping of endpoints to the internal applications running on nodes. Whenever it changes, it will notify the ingress gateway via its API.
 
 ### Ingress Gateway
-This component is needed for an environment for external clients to access the public API offered by system manager, or access instance by the exposed endpoint. Fornax-serverless will provide an ingress gateway by adapting nginx-ingress (or HAProxy), as a reference implementation.
+This component is needed for an environment for external clients to access application sessions by the exposed endpoints.
+
+### API Gateway
+For upstream services (like gaming services) to access the public management API to manage the required resources. This is not part of system to develop; will leverage exitent edge facility or proven industry practice (e.g. keeplived) to provide such functionality.
 
 ### Node agent
 Mostly based on kubelet; expected to have some change to leverage Quark runtime’s standby/ready modes.

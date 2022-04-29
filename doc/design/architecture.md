@@ -51,8 +51,10 @@ __Stateful application public API__
 | Update app scaling policy | Update application scaling policy |
 | Delete application | Delete application and all its resources |
 | List instances | List instances of the application |
-| Claim instance | Take one instance from the pool, mark it as claimed(occupied); returns its expose endpoint; may trigger replenishment of resource pool |
+| Claim instance | Take one instance from the pool, mark it as claimed(occupied); may trigger replenishment of resource pool |
 | Dispose instance | Gracefully delete the instance (with optional grace time); after the grace time, instance will be forcefully deleted |
+| Start application session | Take one open session from the ready session pool, mark it as actively started; returns its exposed endpoint |
+| End application session | Mark the application session as finished |
 
 __Stateless application public API__
 
@@ -180,8 +182,31 @@ Error
 
 Request
 	HTTP Delete
-	Path: tenants/tenant-name/apps/app-name/instance/instance-id
+	Path: tenants/tenant-name/apps/app-name/instances/instance-id
 	Query options: ?gracetime=10s (by default 30s)
+Response
+	OK
+Error
+	Payload: {error: error-message}
+
+### Application Session Management Service
+1. Start application session
+
+Request
+	HTTP Post
+	Path: tenants/tenant-name/apps/app-name/sessions
+	Payload: {status: claimed}
+Response
+	OK
+		Payload: {id: session-id, endpoint: exposed-endpoint}, which has format of tcp/udp-hostname/ip:port.
+	Error
+		Payload: {error: error-message}
+
+2. End application session
+
+Request
+	HTTP Delete
+	Path: tenants/tenant-name/apps/app-name/sessions/session-id
 Response
 	OK
 Error

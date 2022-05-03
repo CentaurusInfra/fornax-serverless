@@ -109,7 +109,7 @@ const (
 
 // ClientSessionStatus defines the observed state of ClientSession
 type ClientSessionStatus struct {
-	SessionCondition ClientSessionCondition
+	SessionCondition ClientSessionCondition `json:"session_condition,omitempty"`
 }
 
 func (in ClientSessionStatus) SubResourceName() string {

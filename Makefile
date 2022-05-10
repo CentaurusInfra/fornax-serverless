@@ -62,12 +62,10 @@ test: manifests generate fmt vet envtest ## Run tests.
 ##@ Build
 
 .PHONY: build
-build: generate fmt vet ## Build manager binary.
-	go build -o bin/fornaxcore cmd/fornaxcore/main.go
+build: generate fmt vet ## Build binary.
 
 .PHONY: run
-run: manifests generate fmt vet ## Run a controller from your host.
-	go run ./main.go
+run: manifests generate fmt vet ## Run from your host.
 
 .PHONY: docker-build
 docker-build: test ## Build docker image with the manager.

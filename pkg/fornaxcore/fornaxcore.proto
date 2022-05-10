@@ -1,0 +1,166 @@
+syntax = "proto2";
+package centaurusinfra.io.fornaxcore.service;
+
+option go_package = "centaurusinfra.io/fornax-serverless/pkg/fornaxcore/grpc";
+
+import "google/protobuf/empty.proto";
+import "k8s.io/api/core/v1/generated.proto";
+import "k8s.io/apimachinery/pkg/api/resource/generated.proto";
+
+service FornaxCoreService {
+  rpc getMessage(google.protobuf.Empty) returns (stream FornaxCoreMessage);
+  rpc putMessage(FornaxCoreMessage) returns (google.protobuf.Empty);
+}
+
+enum MessageType {
+    FORNAX_CORE_CONFIGURATION = 0;
+    NODE_CONFIGURATION = 200;
+    NODE_REGISTER = 201;
+    NODE_READY = 202;
+    NODE_STATE = 203;
+    POD_CREATE = 300;
+    POD_TERMINATE = 301;
+    POD_ACTIVE = 302;
+    POD_STATE = 303;
+    SESSION_START = 400;
+    SESSION_CLOSE = 401;
+    SESSION_STATE = 402;
+}
+ 
+message FornaxCoreMessage {
+  required string messageIdentifier = 1;
+  required string nodeIdentifier = 2;
+  required MessageType messageType = 3;
+  oneof MessageBody {
+    FornaxCoreConfiguration fornaxCoreConfiguration = 100;
+    NodeConfiguration nodeConfiguration = 200;
+    NodeRegistry nodeRegistry = 201;
+    NodeReady nodeReady = 202;
+    NodeState nodeState= 203;
+    PodCreate podCreate = 300;
+    PodTerminate podTerminate = 301;
+    PodActive podActive = 302;
+    PodState podState = 303;
+    SessionStart sessionStart = 400;
+    SessionClose sessionClose = 401;
+    SessionState sessionState = 402;
+  }
+}
+
+message FornaxCore {
+  required string ip = 1;
+  required string identifier = 2;
+}
+
+message FornaxCoreConfiguration {
+  required FornaxCore primary = 1;
+  repeated FornaxCore standbys = 2;
+}
+
+message NodeConfiguration {
+  required k8s.io.api.core.v1.NodeSpec nodeSpec = 1;
+}
+
+message NodeRegistry {
+  required string nodeIp = 1;
+  required NodeResource resourceLimit = 2;
+}
+
+message NodeResource {
+  repeated CPU cpu = 1;
+  required k8s.io.apimachinery.pkg.api.resource.Quantity memory = 2;
+  repeated Volume Volume = 3;
+}
+
+message Volume {
+  required string path = 1;
+  required k8s.io.apimachinery.pkg.api.resource.Quantity size = 2;
+}
+
+message CPU {
+  required string path = 1;
+  required k8s.io.apimachinery.pkg.api.resource.Quantity size = 2;
+}
+
+message NodeReady {
+  required string nodeIp = 1;
+  required NodeResource resourceLimit = 2;
+}
+
+message NodeState {
+  required string nodeIp = 1;
+  required NodeResource nodeResource = 2;
+  optional PodState podStates = 3;
+  optional SessionState sessionStates = 4;
+}
+
+message PodState {
+  required string podIdentifier = 1;
+  required string appIdentifier = 2;
+  enum State {
+    Creating = 0;
+    Standby = 10;
+    Activating = 20;
+    Running = 30;
+    Evacuating = 40;
+    Terminating = 50;
+    Terminated = 60;
+  }
+  required State state = 3;
+  optional PodResource resource = 4;
+}
+
+message PodResource {
+  required k8s.io.apimachinery.pkg.api.resource.Quantity cpu = 1;
+  required k8s.io.apimachinery.pkg.api.resource.Quantity memory = 2;
+  repeated Volume volume = 3;
+}
+
+message PodCreate {
+  required string podIdentifier = 1;
+  required string appIdentifier = 2;
+  enum CreateMode {
+    Active = 0;
+    Standby = 10;
+  }
+  required CreateMode mode = 3;
+  required k8s.io.api.core.v1.PodSpec podSpec = 4;
+  optional k8s.io.api.core.v1.ConfigMap configMapSpec = 5;
+}
+
+message  PodTerminate {
+  required string podIdentifier = 1;
+  required string appIdentifier = 2;
+}
+
+message  PodActive {
+  required string podIdentifier = 1;
+  required string appIdentifier = 2;
+}
+
+message SessionState {
+  required string sessionIdentifier = 1;
+  required string podIdentifier = 2;
+  required string appIdentifier = 3;
+  enum State {
+    Starting = 0;
+    Ready = 10;
+    Live = 20;
+    Evacuating = 30;
+    Terminating = 40;
+    Terminated = 50;
+  }
+  required State state = 4;
+}
+
+message SessionStart {
+  required string sessionIdentifier = 1;
+  required string podIdentifier = 2;
+  required string appIdentifier = 3;
+}
+
+message SessionClose {
+  required string sessionIdentifier = 1;
+  required string podIdentifier = 2;
+  required string appIdentifier = 3;
+}

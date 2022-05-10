@@ -118,6 +118,24 @@ OPENAPI_GEN = $(shell pwd)/bin/openapi-gen
 openapi-gen: ## Download openapi-gen locally if necessary.
 	$(call go-get-tool,$(OPENAPI_GEN),k8s.io/kube-openapi/cmd/openapi-gen@v0.0.0-20211115234752-e816edb12b65)
 
+PROTOC_GEN = $(shell pwd)/bin/protoc-gen-go
+PROTOC_GEN_GRPC = $(shell pwd)/bin/protoc-gen-go-grpc
+.PHONY: protoc-gen
+protoc-gen: ## Download protc-gen locally if necessary.
+	$(call go-get-tool,$(PROTOC_GEN),google.golang.org/protobuf/cmd/protoc-gen-go@v1.28)
+	$(call go-get-tool,$(PROTOC_GEN_GRPC),google.golang.org/grpc/cmd/protoc-gen-go-grpc@v1.2)
+	protoc -I=./ -I=./vendor \
+		--go_out=../.. \
+		--go-grpc_out=../../ \
+		--go_opt=Mk8s.io/api/core/v1/generated.proto=k8s.io/api/core/v1 \
+		--go_opt=Mk8s.io/apimachinery/pkg/api/resource/generated.proto=k8s.io/apimachinery/pkg/api/resource \
+		--go_opt=Mk8s.io/apimachinery/pkg/apis/meta/v1/generated.proto=k8s.io/apimachinery/pkg/apis/meta/v1 \
+		--go_opt=Mk8s.io/apimachinery/pkg/runtime/generated.proto=k8s.io/apimachinery/pkg/runtime \
+		--go_opt=Mk8s.io/apimachinery/pkg/runtime/schema/generated.proto=k8s.io/apimachinery/pkg/runtime/schema \
+		--go_opt=Mk8s.io/apimachinery/pkg/util/intstr/generated.proto=k8s.io/apimachinery/pkg/util/intstr \
+		pkg/fornaxcore/fornaxcore.proto
+
+
 KUSTOMIZE = $(shell pwd)/bin/kustomize
 .PHONY: kustomize
 kustomize: ## Download kustomize locally if necessary.

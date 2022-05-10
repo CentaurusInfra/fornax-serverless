@@ -5,7 +5,6 @@ option go_package = "centaurusinfra.io/fornax-serverless/pkg/fornaxcore/grpc";
 
 import "google/protobuf/empty.proto";
 import "k8s.io/api/core/v1/generated.proto";
-import "k8s.io/apimachinery/pkg/api/resource/generated.proto";
 
 service FornaxCoreService {
   rpc getMessage(google.protobuf.Empty) returns (stream FornaxCoreMessage);
@@ -67,19 +66,7 @@ message NodeRegistry {
 }
 
 message NodeResource {
-  repeated CPU cpu = 1;
-  required k8s.io.apimachinery.pkg.api.resource.Quantity memory = 2;
-  repeated Volume Volume = 3;
-}
-
-message Volume {
-  required string path = 1;
-  required k8s.io.apimachinery.pkg.api.resource.Quantity size = 2;
-}
-
-message CPU {
-  required string path = 1;
-  required k8s.io.apimachinery.pkg.api.resource.Quantity size = 2;
+  required k8s.io.api.core.v1.NodeStatus status = 1;
 }
 
 message NodeReady {
@@ -89,9 +76,15 @@ message NodeReady {
 
 message NodeState {
   required string nodeIp = 1;
-  required NodeResource nodeResource = 2;
-  optional PodState podStates = 3;
-  optional SessionState sessionStates = 4;
+  enum State {
+    Available = 0;
+    Problemtic = 10;
+    ReachResourceLimit = 20;
+  }
+  required State state = 2;
+  required NodeResource nodeResource = 3;
+  optional PodState podStates = 4;
+  optional SessionState sessionStates = 5;
 }
 
 message PodState {
@@ -107,13 +100,13 @@ message PodState {
     Terminated = 60;
   }
   required State state = 3;
-  optional PodResource resource = 4;
+  required k8s.io.api.core.v1.PodStatus podStatus = 4;
+  optional PodResource resource = 5;
 }
 
 message PodResource {
-  required k8s.io.apimachinery.pkg.api.resource.Quantity cpu = 1;
-  required k8s.io.apimachinery.pkg.api.resource.Quantity memory = 2;
-  repeated Volume volume = 3;
+  optional k8s.io.api.core.v1.ResourceQuotaStatus resourceQuotaStatus = 1;
+  repeated k8s.io.api.core.v1.AttachedVolume volumes = 2;
 }
 
 message PodCreate {

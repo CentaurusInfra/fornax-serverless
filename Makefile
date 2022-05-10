@@ -135,7 +135,6 @@ protoc-gen: ## Download protc-gen locally if necessary.
 		--go_opt=Mk8s.io/apimachinery/pkg/util/intstr/generated.proto=k8s.io/apimachinery/pkg/util/intstr \
 		pkg/fornaxcore/fornaxcore.proto
 
-
 KUSTOMIZE = $(shell pwd)/bin/kustomize
 .PHONY: kustomize
 kustomize: ## Download kustomize locally if necessary.

@@ -3,6 +3,7 @@ module centaurusinfra.io/fornax-serverless
 go 1.17
 
 require (
+	github.com/emicklei/go-restful/v3 v3.7.4
 	k8s.io/api v0.23.1
 	k8s.io/apimachinery v0.23.1
 	sigs.k8s.io/apiserver-runtime v1.1.1

@@ -45,7 +45,7 @@ manifests: controller-gen ## Generate WebhookConfiguration, ClusterRole and Cust
 .PHONY: generate
 generate: controller-gen openapi-gen ## Generate code containing DeepCopy, DeepCopyInto, and DeepCopyObject method implementations.
 	$(CONTROLLER_GEN) object:headerFile="hack/boilerplate.go.txt" paths="./..."
-	# $(OPENAPI_GEN) --go-header-file="hack/boilerplate.go.txt" --input-dirs="./..." --output-package="$(PROJECT_DIR)/pkg/apis/openapi"
+	# $(OPENAPI_GEN) --go-header-file="hack/boilerplate.go.txt" --input-dirs="./pkg/apis/core/..." --output-package="centaurusinfra.io/fornax-serverless/pkg/apis/openapi"
 
 .PHONY: fmt
 fmt: ## Run go fmt against code.
@@ -120,11 +120,13 @@ openapi-gen: ## Download openapi-gen locally if necessary.
 
 PROTOC_GEN = $(shell pwd)/bin/protoc-gen-go
 PROTOC_GEN_GRPC = $(shell pwd)/bin/protoc-gen-go-grpc
+PROTOC = $(HOME)/.local/bin/protoc
 .PHONY: protoc-gen
 protoc-gen: ## Download protc-gen locally if necessary.
 	$(call go-get-tool,$(PROTOC_GEN),google.golang.org/protobuf/cmd/protoc-gen-go@v1.28)
 	$(call go-get-tool,$(PROTOC_GEN_GRPC),google.golang.org/grpc/cmd/protoc-gen-go-grpc@v1.2)
-	protoc -I=./ -I=./vendor \
+	$(call get-protoc,$(PROTOC))
+	$(PROTOC) -I=./ -I=./vendor \
 		--go_out=../.. \
 		--go-grpc_out=../../ \
 		--go_opt=Mk8s.io/api/core/v1/generated.proto=k8s.io/api/core/v1 \
@@ -155,6 +157,19 @@ cd $$TMP_DIR ;\
 go mod init tmp ;\
 echo "Downloading $(2)" ;\
 GOBIN=$(PROJECT_DIR)/bin go install $(2) ;\
+rm -rf $$TMP_DIR ;\
+}
+endef
+
+define get-protoc
+@[ -f $(1) ] || { \
+set -e ;\
+TMP_DIR=$$(mktemp -d) ;\
+cd $$TMP_DIR ;\
+PB_REL="https://github.com/protocolbuffers/protobuf/releases" ;\
+curl -LO $$PB_REL/download/v3.12.1/protoc-3.12.1-linux-x86_64.zip ;\
+echo "get protoc" ;\
+unzip $$TMP_DIR/protoc-3.12.1-linux-x86_64.zip -d $$HOME/.local ;\
 rm -rf $$TMP_DIR ;\
 }
 endef

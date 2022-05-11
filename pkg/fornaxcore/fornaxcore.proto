@@ -12,7 +12,8 @@ service FornaxCoreService {
 }
 
 enum MessageType {
-    FORNAX_CORE_CONFIGURATION = 0;
+    UNSPECIFIED = 0;
+    FORNAX_CORE_CONFIGURATION = 100;
     NODE_CONFIGURATION = 200;
     NODE_REGISTER = 201;
     NODE_READY = 202;
@@ -83,8 +84,8 @@ message NodeState {
   }
   required State state = 2;
   required NodeResource nodeResource = 3;
-  optional PodState podStates = 4;
-  optional SessionState sessionStates = 5;
+  repeated PodState podStates = 4;
+  repeated SessionState sessionStates = 5;
 }
 
 message PodState {

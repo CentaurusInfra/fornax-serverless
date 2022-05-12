@@ -1,7 +1,7 @@
-package tenantManager_test
+package namespacemanager_test
 
 import (
-	"centaurusinfra.io/fornax-serverless/pkg/fornaxcore/tenantManager"
+	"centaurusinfra.io/fornax-serverless/pkg/fornaxcore/namespacemanager"
 	"github.com/emicklei/go-restful/v3"
 	"io/ioutil"
 	"net/http"
@@ -10,9 +10,9 @@ import (
 	"testing"
 )
 
-func TestCreateTenant(t *testing.T) {
-	tm := tenantManager.New()
-	httpReq, _ := http.NewRequest("POST", "/tenants", strings.NewReader(`{"name":"foo"}`))
+func TestCreateNamespace(t *testing.T) {
+	tm := namespacemanager.New()
+	httpReq, _ := http.NewRequest("POST", "/namespaces", strings.NewReader(`{"name":"foo"}`))
 	httpReq.Header = map[string][]string{
 		"Content-Type": {restful.MIME_JSON},
 	}

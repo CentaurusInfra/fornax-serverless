@@ -1,4 +1,4 @@
-package tenantManager
+package namespacemanager
 
 import (
 	restful "github.com/emicklei/go-restful/v3"
@@ -6,15 +6,15 @@ import (
 	"net/http"
 )
 
-func (tm TenantManager) WebService() *restful.WebService {
+func (tm NamespaceManager) WebService() *restful.WebService {
 	ws := new(restful.WebService)
-	ws.Path("/tenants").Consumes(restful.MIME_JSON).Produces(restful.MIME_JSON)
+	ws.Path("/namespaces").Consumes(restful.MIME_JSON).Produces(restful.MIME_JSON)
 	ws.Route(ws.POST("").To(tm.CreateTenant))
 
 	return ws
 }
 
-func (tm TenantManager) CreateTenant(request *restful.Request, response *restful.Response) {
+func (tm NamespaceManager) CreateTenant(request *restful.Request, response *restful.Response) {
 	tenant := struct{ Name string }{}
 	if err := request.ReadEntity(&tenant); err != nil {
 		response.AddHeader("Content-Type", "text/plain")
@@ -26,7 +26,7 @@ func (tm TenantManager) CreateTenant(request *restful.Request, response *restful
 		response.WriteErrorString(http.StatusConflict, "tenant already exists")
 	}
 
-	tm.tenants[tenant.Name] = Tenant{
+	tm.tenants[tenant.Name] = Namespace{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: tenant.Name,
 		},

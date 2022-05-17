@@ -35,7 +35,7 @@ type ContainerStore struct {
 	store.Store
 }
 
-func NewPodSqlliteStore(options *sqlite.SQLiteStoreOptions) (*PodStore, error) {
+func NewPodSqliteStore(options *sqlite.SQLiteStoreOptions) (*PodStore, error) {
 	if store, err := sqlite.NewSqliteStore("Pod", options,
 		func(text string) (interface{}, error) { return store.JsonToPod(text) },
 		func(obj interface{}) (string, error) { return store.JsonFromPod(obj.(*store.Pod)) }); err != nil {
@@ -65,7 +65,7 @@ func (s *PodStore) PutPod(pod *store.Pod) error {
 	return nil
 }
 
-func NewSessionSqlliteStore(options *sqlite.SQLiteStoreOptions) (*SessionStore, error) {
+func NewSessionSqliteStore(options *sqlite.SQLiteStoreOptions) (*SessionStore, error) {
 	if store, err := sqlite.NewSqliteStore("Session", options,
 		func(text string) (interface{}, error) { return store.JsonToSession(text) },
 		func(obj interface{}) (string, error) { return store.JsonFromSession(obj.(*store.Session)) }); err != nil {
@@ -95,7 +95,7 @@ func (s *SessionStore) PutSession(session *store.Session) error {
 	return nil
 }
 
-func NewContainerSqlliteStore(options *sqlite.SQLiteStoreOptions) (*ContainerStore, error) {
+func NewContainerSqliteStore(options *sqlite.SQLiteStoreOptions) (*ContainerStore, error) {
 	if store, err := sqlite.NewSqliteStore("Container", options,
 		func(text string) (interface{}, error) { return store.JsonToContainer(text) },
 		func(obj interface{}) (string, error) { return store.JsonFromContainer(obj.(*store.Container)) }); err != nil {

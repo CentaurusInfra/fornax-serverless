@@ -9,7 +9,6 @@ require (
 	google.golang.org/protobuf v1.27.1
 	k8s.io/api v0.23.1
 	k8s.io/apimachinery v0.23.1
-	k8s.io/cri-api v0.24.0
 	k8s.io/klog/v2 v2.30.0
 	k8s.io/kube-openapi v0.0.0-20211115234752-e816edb12b65
 	sigs.k8s.io/apiserver-runtime v1.1.1

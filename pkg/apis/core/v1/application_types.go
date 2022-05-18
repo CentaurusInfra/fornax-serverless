@@ -71,6 +71,10 @@ type ApplicationSpec struct {
 	// application session config
 	// +optional
 	SessionConfig SessionConfig `json:"sessionConfig,omitempty"`
+
+	// application scaling policy
+	// +optional
+	ScalingPolicy ScalingPolicy `json:"scalingPolicy,omitempty"`
 }
 
 // +enum
@@ -172,6 +176,17 @@ type ApplicationStatus struct {
 	// +listType=set
 	History []DeploymentHistory `json:"history,omitempty" patchStrategy:"merge" patchMergeKey:"updateTime"`
 }
+
+type ScalingPolicy struct {
+	Metric ScalingMetric `json:"metric,omitempty"`
+	Target int32         `json:"target,omitempty"`
+}
+
+type ScalingMetric string
+
+const (
+	PERCENT_AVAILABLE_APP_SESSIONS ScalingMetric = "percentAvailableAppSessions"
+)
 
 var _ resource.Object = &Application{}
 var _ resourcestrategy.Validater = &Application{}

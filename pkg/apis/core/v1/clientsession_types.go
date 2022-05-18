@@ -51,7 +51,7 @@ type ClientSessionList struct {
 
 // ClientSessionSpec defines the desired state of ClientSession
 type ClientSessionSpec struct {
-	ClientData []byte `json:"client_data,omitempty"`
+	ClientData string `json:"clientData,omitempty"`
 }
 
 var _ resource.Object = &ClientSession{}
@@ -109,7 +109,7 @@ const (
 
 // ClientSessionStatus defines the observed state of ClientSession
 type ClientSessionStatus struct {
-	SessionCondition ClientSessionCondition `json:"session_condition,omitempty"`
+	SessionCondition ClientSessionCondition `json:"sessionCondition,omitempty"`
 }
 
 func (in ClientSessionStatus) SubResourceName() string {

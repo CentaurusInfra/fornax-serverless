@@ -92,6 +92,7 @@ are mostly message about Node, Pod and Session State.
 
 ## FornaxCore Node Agent interaction diagram
 
+it includes multiple interaction diagrams in below page
 ```
 @startuml
 == Fornax Core discovery ==
@@ -102,7 +103,9 @@ NodeAgent -> NodeAgentDB: save new config
 NodeAgent -> FornaxCore: reset web socket according FornaxConfiguration
 NodeAgent -> FornaxCore: send node register to primary FornaxCore again
 @enduml
+```
 
+```
 @startuml
 == node registion  ==
 NodeAgent-> FornaxCore: node register(ip, hostname, resource usage)
@@ -118,8 +121,9 @@ loop forever
 NodeAgent-> FornaxCore: node state
 end
 @enduml
+```
 
-
+```
 @startuml
 == create standby pod ==
 FornaxCore -> NodeAgent: create pod
@@ -143,7 +147,9 @@ end
 end
 
 @enduml
+```
 
+```
 @startuml
 == create active pod ==
 FornaxCore -> NodeAgent: create pod
@@ -171,7 +177,9 @@ NodeAgent-> FornaxCore: pod state running
 end
 
 @enduml
+```
 
+```
 @startuml
 == create session ==
 FornaxCore -> NodeAgent: start session
@@ -197,7 +205,9 @@ NodeAgent-> FornaxCore: session state live
 end
 
 @enduml
+```
 
+```
 @startuml
 == terminate pod==
 FornaxCore -> NodeAgent: terminate pod

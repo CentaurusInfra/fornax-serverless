@@ -19,11 +19,13 @@ func (tm NamespaceManager) CreateTenant(request *restful.Request, response *rest
 	if err := request.ReadEntity(&tenant); err != nil {
 		response.AddHeader("Content-Type", "text/plain")
 		response.WriteErrorString(http.StatusBadRequest, err.Error())
+		return
 	}
 
 	if _, ok := tm.namespaces[tenant.Name]; ok {
 		response.AddHeader("Content-Type", "text/plain")
 		response.WriteErrorString(http.StatusConflict, "tenant already exists")
+		return
 	}
 
 	// todo: write ns into etcd, handle write error

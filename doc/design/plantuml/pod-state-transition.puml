@@ -1,0 +1,24 @@
+@startuml
+Creating: CRI Create pod container 
+LivenessChecking : pod container exists
+Standby : liveness check
+Activating: listen application session
+Running : monitor session heartbeat
+Evacuating: close session on pod
+Terminating: CRI Remove pod container
+Terminated: delete pod table item
+
+[*] --> Creating
+Creating --> LivenessChecking
+LivenessChecking --> Standby: succeed
+LivenessChecking --> Terminating: check timeout
+Standby --> Terminating: delete pod
+Standby --> Activating: active a session
+Activating --> Running: session ready callback
+Activating --> Evacuating: delete pod
+Activating --> Terminating: ready callback timeout
+Running --> Evacuating: delete pod
+Evacuating --> Terminating: session closed callback
+Terminating --> Terminated
+Terminated --> [*]
+@enduml

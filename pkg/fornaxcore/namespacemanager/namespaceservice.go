@@ -21,16 +21,18 @@ func (tm NamespaceManager) CreateTenant(request *restful.Request, response *rest
 		response.WriteErrorString(http.StatusBadRequest, err.Error())
 	}
 
-	if _, ok := tm.tenants[tenant.Name]; ok {
+	if _, ok := tm.namespaces[tenant.Name]; ok {
 		response.AddHeader("Content-Type", "text/plain")
 		response.WriteErrorString(http.StatusConflict, "tenant already exists")
 	}
 
-	tm.tenants[tenant.Name] = Namespace{
+	// todo: write ns into etcd, handle write error
+	// for now, temporary to have ns record managed by ns-manager
+	tm.namespaces[tenant.Name] = Namespace{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: tenant.Name,
 		},
 	}
 
-	response.WriteHeaderAndEntity(http.StatusCreated, tm.tenants[tenant.Name])
+	response.WriteHeaderAndEntity(http.StatusCreated, tm.namespaces[tenant.Name])
 }

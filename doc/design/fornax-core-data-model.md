@@ -128,32 +128,33 @@ Alternative is secondary cores maintain them as well on receipt of Pod status re
 type NodeMonitor struct {
     nodes map[string]Node // hashmap index by node name
 
-    nodeLocator map[string]*Element // hashmap index by node name, to locate the element in linked list directly
+    nodeLocator map[string]*Bucket // hashmap index by node name, to locate the bucket in linked list directly
     updateTime LinkedList   // linked list of node name, sorted by times when status report received, header is the oldest one;
 }
 
 // element of doubly linked list
-type Element struct{
-    name string // name
-    lastUpdateTime time.Time    // status report received timestamp
+type Bucket struct{
+    elements map[string]struct{} // hash set of name
+    lastUpdateTime time.Time    // status report received timestamp, in specified unit of time (e.g. in 4 seconds)
     next *Element
     prev *Element
 }
 
 // doubly linked list
 type LinkedList struct {
-    head *Element
-    tail *Element
+    head *Bucket
+    tail *Bucket
 }
 
 // omit the detailed implementations of its methods
 ```
 ### Algorithm
-On receipt of node status report, it updates status section of the node object, and moves the element for the node to tail of lastUpdateTime list, in O(1) time.
+On receipt of node status report, it updates status section of the node object, and moves the element for the node to tail of lastUpdateTime list, in O(1) time. Nodes are put into buckets based on the last update time; bucket clustering can avoid excessive movements to list tail on updates.
 
 Fornax cores have go-routine to detect stale nodes whose status report not updated in specified timeout. It uses the linked list updateTime, taking O(1) time practically. Receipt of Pod and app-session status refreshes last update time of the node too.
 
 When fornax cores detect stale node, it triggers deletions of affected Pod/app-sessions; besides, primary core triggers creations of ready/standy Pods too.
+
 ### Consistency
 Its nodes member is eventually consistent; nodeLocator and lastUpdateTime list are local maintained data.
 
@@ -163,7 +164,7 @@ Its nodes member is eventually consistent; nodeLocator and lastUpdateTime list a
 type PodMinitor struct{
     podPoolManager *PodPoolManager  // delegate pod op through the pod pool manager
     lastUpdateTime LinkedList   // linked list of ns+Pod-name, sorted by timestamp of the latest status report
-    podLocator map[string]*Element // hashmap index by ns+Pod-name, to locate the element in linked list directly
+    podLocator map[string]*Bucket // hashmap index by ns+Pod-name, to locate the bucket in linked list directly
 }
 ```
 ### Algorithm
@@ -181,7 +182,7 @@ All its data is locally maintained; the last update timestamp of Pod is derived 
 type AppSessionMinitor struct{
     appSessionManager *AppSessionManager  // delegate pod op through the pod pool manager
     lastHealthUpdateTime LinkedList   // linked list of ns+app-session-name, sorted by timestamp of the latest health report
-    appSessionLocator map[string]*Element // hashmap index by ns+app-session-name, to locate the element in linked list directly
+    appSessionLocator map[string]*Bucket // hashmap index by ns+app-session-name, to locate the bucket in linked list directly
 }
 ```
 ### Algorithm

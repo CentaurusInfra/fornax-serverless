@@ -55,17 +55,18 @@ type IngressEndpointSpec struct {
 	Protocol string `json:"protocol,omitempty"`
 
 	// is port application is accessible from ingress gateway
-	IngressGWIPAddress string `json:"ingress_gwip_address,omitempty"`
+	IngressGWIPAddress string `json:"ingressGWIPAddress,omitempty"`
 
 	// IngressPort is port application is accessible from ingress gateway
-	IngressPort int `json:"ingress_port,omitempty"`
+	IngressPort int `json:"ingressPort,omitempty"`
 
 	// destination application instances
+	// +listType=set
 	Destinations []Destination `json:"destinations,omitempty"`
 }
 
 type Destination struct {
-	IpAddress string `json:"ip_address,omitempty"`
+	IpAddress string `json:"ipAddress,omitempty"`
 	Port      int    `json:"port,omitempty"`
 }
 
@@ -81,10 +82,13 @@ const (
 type IngressEndpointStatus struct {
 	// Status is the status of the condition.
 	// Can be InUse, Idle, Unavailable
-	ServiceStatus UsageStatus `json:"service_status,omitempty"`
+	ServiceStatus UsageStatus `json:"serviceStatus,omitempty"`
 
 	// history record of this endpoint
-	History []IngressEndpointHistory `json:"history,omitempty"`
+	// +patchMergeKey=updateTime
+	// +patchStrategy=merge
+	// +listType=set
+	History []IngressEndpointHistory `json:"history,omitempty" patchStrategy:"merge" patchMergeKey:"updateTime"`
 }
 
 // APIServiceCondition describes conditions for an APIService
@@ -93,7 +97,7 @@ type IngressEndpointHistory struct {
 	Action IngressEndpointAction `json:"action,omitempty"`
 
 	// Last time the condition transitioned from one status to another.
-	UpdateTime metav1.Time `json:"update_time,omitempty"`
+	UpdateTime metav1.Time `json:"updateTime,omitempty"`
 
 	// Unique, one-word, CamelCase reason for the condition's last transition.
 	Reason string `json:"reason,omitempty"`

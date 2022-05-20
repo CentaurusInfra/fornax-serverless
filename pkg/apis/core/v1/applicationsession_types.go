@@ -54,11 +54,11 @@ type ApplicationSessionList struct {
 type ApplicationSessionSpec struct {
 
 	// SessionName, client provided idemponency token
-	SessionName string `json:"session_name,omitempty"`
+	SessionName string `json:"sessionName,omitempty"`
 
 	// Session data is a base64 string pass through into application instances when session started
 	// +optional
-	SessionData string `json:"session_data,omitempty"`
+	SessionData string `json:"sessionData,omitempty"`
 }
 
 // +enum
@@ -66,13 +66,13 @@ type SessionStatus string
 
 const (
 	// session is allocated to instance, at least one client join
-	Allocated SessionStatus = "Allocated"
+	Starting SessionStatus = "Starting"
 
 	// session is available to instance, no client session yet
 	Available SessionStatus = "Available"
 
 	// session is dead, no heartbeat
-	Dead SessionStatus = "Dead"
+	Closed SessionStatus = "Closed"
 )
 
 // +enum
@@ -88,13 +88,13 @@ const (
 
 type SessionHistory struct {
 	// client session
-	ClientSession corev1.LocalObjectReference `json:"client_session,omitempty"`
+	ClientSession corev1.LocalObjectReference `json:"clientSession,omitempty"`
 
 	// The last time this deployment was updated.
 	Action SessionAction `json:"action,omitempty"`
 
 	// The last time this deployment was updated.
-	UpdateTime metav1.Time `json:"update_time,omitempty"`
+	UpdateTime metav1.Time `json:"updateTime,omitempty"`
 
 	// The reason for the last transition.
 	Reason string `json:"reason,omitempty"`
@@ -107,17 +107,24 @@ type SessionHistory struct {
 type ApplicationSessionStatus struct {
 	// Endpoint this session is using
 	// +optional
-	IngressEndpointReference corev1.LocalObjectReference `json:"ingress_endpoint_reference,omitempty"`
+	IngressEndpointReference corev1.LocalObjectReference `json:"ingressEndpointReference,omitempty"`
 
-	// Endpoint this session is using
+	// Session status, is Starting, Available or Closed.
 	// +optional
-	SessionStatus SessionStatus `json:"session_status,omitempty"`
+	SessionStatus SessionStatus `json:"sessionStatus,omitempty"`
 
 	// Represents the latest available observations of a deployment's current state.
 	// +optional
-	History []SessionHistory `json:"history,omitempty" patchStrategy:"merge" patchMergeKey:"type"`
+	// +patchMergeKey=updateTime
+	// +patchStrategy=merge
+	// +listType=set
+	History []SessionHistory `json:"history,omitempty" patchStrategy:"merge" patchMergeKey:"updateTime"`
 
-	ClientSessions []corev1.LocalObjectReference `json:"client_sessions,omitempty"`
+	// +optional
+	// +patchMergeKey=name
+	// +patchStrategy=merge
+	// +listType=set
+	ClientSessions []corev1.LocalObjectReference `json:"clientSessions,omitempty"  patchStrategy:"merge" patchMergeKey:"name"`
 }
 
 var _ resource.Object = &ApplicationSession{}

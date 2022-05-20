@@ -154,6 +154,10 @@ type DeploymentHistory struct {
 
 // ApplicationStatus defines the observed state of Application
 type ApplicationStatus struct {
+	// lifecycle state of application
+	// +optional
+	State ApplicationState `json:"applicationState,omitempty"`
+
 	// Total number of non-terminated pods targeted by this deployment (their labels match the selector).
 	// +optional
 	DesiredInstances int32 `json:"desiredInstances,omitempty"`
@@ -176,6 +180,12 @@ type ApplicationStatus struct {
 	// +listType=set
 	History []DeploymentHistory `json:"history,omitempty" patchStrategy:"merge" patchMergeKey:"updateTime"`
 }
+
+type ApplicationState string
+
+const (
+	AppTerminating ApplicationState = "terminating"
+)
 
 type ScalingPolicy struct {
 	Metric ScalingMetric `json:"metric,omitempty"`

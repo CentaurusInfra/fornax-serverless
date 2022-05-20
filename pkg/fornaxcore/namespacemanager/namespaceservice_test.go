@@ -10,7 +10,7 @@ import (
 	"testing"
 )
 
-func TestCreateNamespace(t *testing.T) {
+func TestRestCreateNamespace(t *testing.T) {
 	tm := namespacemanager.New()
 	httpReq, _ := http.NewRequest("POST", "/namespaces", strings.NewReader(`{"name":"foo"}`))
 	httpReq.Header = map[string][]string{
@@ -22,7 +22,7 @@ func TestCreateNamespace(t *testing.T) {
 	resp := restful.NewResponse(recorder)
 	resp.SetRequestAccepts(restful.MIME_JSON)
 
-	tm.CreateTenant(req, resp)
+	tm.RestCreateNamespace(req, resp)
 
 	if resp.StatusCode() != http.StatusCreated {
 		t.Fatalf("status code expected 201; got %d", resp.StatusCode())

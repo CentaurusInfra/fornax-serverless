@@ -1,0 +1,124 @@
+@startuml
+== Fornax Core discovery ==
+NodeAgent -> FornaxCore: start grpc connection
+NodeAgent -> FornaxCore: node register(ip, hostname, resource usage)
+FornaxCore -> NodeAgent: FornaxConfiguration
+NodeAgent -> NodeAgentDB: save new config
+NodeAgent -> FornaxCore: reset web socket according FornaxConfiguration
+NodeAgent -> FornaxCore: send node register to primary FornaxCore again
+@enduml
+
+@startuml
+== node registion  ==
+NodeAgent-> FornaxCore: node register(ip, hostname, resource usage)
+FornaxCore-> NodeAgent: send control plane node configuration, eg. pod cidr
+NodeAgent-> NodeAgentDB: query pod/session table
+NodeAgent--> CRI: query running pod
+NodeAgent-> NodeAgentDB: sent missing pod state terminated
+NodeAgent-> FornaxCore: send terminated pod state 
+NodeAgent-> NodeAgentDB: set session state terminated of terminated pod
+NodeAgent-> FornaxCore: send terminated session state
+NodeAgent-> FornaxCore: node ready message
+loop forever
+NodeAgent-> FornaxCore: node state
+end
+@enduml
+
+
+@startuml
+== create standby pod ==
+FornaxCore -> NodeAgent: create pod
+NodeAgent-> NodeAgentDB: create pod table item and a pod actor
+NodeAgent-> FornaxCore: pod state creating
+NodeAgent-> CRI: create pod container
+NodeAgent-> NodeAgentDB: set pod state standby
+NodeAgent-> FornaxCore: pod state standby
+
+loop liveness
+NodeAgent-> CRI: check pod liveness
+alt live
+NodeAgent-> FornaxCore: pod state standby
+else gone
+NodeAgent-> NodeAgentDB: set pod state terminating
+NodeAgent-> CRI: delete pod
+NodeAgent-> CRI: check pod down
+NodeAgent-> NodeAgentDB: save pod state terminated
+NodeAgent-> FornaxCore: pod state terminated
+end
+end
+
+@enduml
+
+@startuml
+== create active pod ==
+FornaxCore -> NodeAgent: create pod
+NodeAgent-> NodeAgentDB: create pod table item and a pod actor
+NodeAgent-> FornaxCore: pod state creating
+NodeAgent-> CRI: create pod container
+NodeAgent-> NodeAgentDB: set pod state standby
+NodeAgent-> FornaxCore: pod state standby
+
+alt liveness
+NodeAgent-> CRI: check pod liveness
+else gone
+NodeAgent-> NodeAgentDB: set pod state terminating
+NodeAgent-> CRI: delete pod
+NodeAgent-> CRI: check pod down
+NodeAgent-> NodeAgentDB: save pod state terminated
+NodeAgent-> FornaxCore: pod state terminated
+end
+
+NodeAgent-> CRI: active standby pod
+loop applive
+Container -> NodeAgent: application connection heartbeat
+NodeAgent-> NodeAgentDB: set pod state running
+NodeAgent-> FornaxCore: pod state running
+end
+
+@enduml
+
+@startuml
+== create session ==
+FornaxCore -> NodeAgent: start session
+NodeAgent-> NodeAgentDB: create session table item and a session actor
+NodeAgent-> FornaxCore: session state creating
+NodeAgent-> CRI: active standby pod if necessary
+
+alt ready
+Container-> NodeAgent: app connection heartbeat
+NodeAgent-> Container: start session
+Container-> NodeAgent: session ready callback
+NodeAgent-> FornaxCore: session state ready
+else ready timeout
+NodeAgent-> NodeAgentDB: save session state terminating
+NodeAgent-> FornaxCore: session state terminating
+NodeAgent-> Container: do the best to close session
+end
+
+loop live
+Container-> NodeAgent: client session state
+NodeAgent-> NodeAgentDB: session state live
+NodeAgent-> FornaxCore: session state live
+end
+
+@enduml
+
+@startuml
+== terminate pod==
+FornaxCore -> NodeAgent: terminate pod
+NodeAgent-> NodeAgentDB: save pod state terminating
+NodeAgent-> FornaxCore: report state terminating
+
+alt pod has session?
+NodeAgent -> NodeAgentDB: set pod evacuating state
+NodeAgent-> Container: close session
+Container-> NodeAgent: session closed callcallback
+NodeAgent-> NodeAgentDB: save pod state terminating
+else
+NodeAgent-> NodeAgentDB: save pod state terminating
+end
+
+NodeAgent -> CRI: terminate pod
+NodeAgent-> FornaxCore: pod state terminated
+
+@enduml

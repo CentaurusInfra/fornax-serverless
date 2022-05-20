@@ -1,0 +1,21 @@
+@startuml
+Starting: create session table item
+ReadinessChecking : session sdk on session create
+Ready: receive session heartbeat
+Live: receive session heartbeat
+Evacuating: session sdk on session delete
+Terminating: receive session heartbeat
+Terminated: delete session table item
+
+[*] --> Starting
+Starting --> ReadinessChecking: wait for session sdk
+ReadinessChecking --> Ready: session ready callback
+ReadinessChecking --> Terminated: timeout
+Ready --> Terminating: delete session
+Ready --> Live: client session join
+Live --> Evacuating: delete session
+Live --> Terminating: session closed
+Evacuating --> Terminating: client session left
+Terminating --> Terminated: session gone
+Terminated --> [*]
+@enduml

@@ -3,6 +3,7 @@ module centaurusinfra.io/fornax-serverless
 go 1.18
 
 require (
+	github.com/emicklei/go-restful/v3 v3.7.4
 	github.com/golang/protobuf v1.5.2
 	github.com/google/cadvisor v0.44.0
 	github.com/mattn/go-sqlite3 v1.14.13

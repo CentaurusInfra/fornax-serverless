@@ -25,7 +25,6 @@ import (
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/util/validation/field"
 	"sigs.k8s.io/apiserver-runtime/pkg/builder/resource"
-	"sigs.k8s.io/apiserver-runtime/pkg/builder/resource/resourcestrategy"
 )
 
 // +genclient
@@ -53,31 +52,31 @@ type ApplicationInstanceList struct {
 // ApplicationInstanceSpec defines the desired state of ApplicationInstance
 type ApplicationInstanceSpec struct {
 	// InstanceName
-	InstanceName string `json:"instance_name,omitempty"`
+	InstanceName string `json:"instanceName,omitempty"`
 
 	// ApplicationName
-	ApplicationName string `json:"application_name,omitempty"`
+	ApplicationName string `json:"applicationName,omitempty"`
 
 	// Instance Network interface
-	// InstanceInterfaces []NetworkInterface `json:"instance_interfaces,omitempty"`
+	// InstanceInterfaces []NetworkInterface `json:"instanceInterfaces,omitempty"`
 }
 
 type NetworkInterface struct {
 	// ip addresss allocated to instance, it's affinity ip until end of life of this instance, pods of a instance use this ip
-	IpAddress string `json:"ip_address,omitempty"`
+	IpAddress string `json:"ipAddress,omitempty"`
 
 	// vpc id
 	VPC string `json:"vpc,omitempty"`
 }
 
 type InstanceHistory struct {
-	PodReference corev1.LocalObjectReference `json:"pod_reference,omitempty"`
+	PodReference corev1.LocalObjectReference `json:"podReference,omitempty"`
 
 	// Type of deployment condition.
 	Action InstanceAction `json:"action,omitempty"`
 
 	// The last time this instance was updated.
-	UpdateTime metav1.Time `json:"update_time,omitempty"`
+	UpdateTime metav1.Time `json:"updateTime,omitempty"`
 
 	// The reason for the last transition.
 	Reason string `json:"reason,omitempty"`
@@ -122,11 +121,11 @@ type ApplicationInstanceStatus struct {
 	Status InstanceStatus `json:"status,omitempty"`
 
 	// instance history, including pod and endpoint history
-	History []InstanceHistory `json:"history,omitempty"`
+	// +patchMergeKey=updateTime
+	// +patchStrategy=merge
+	// +listType=set
+	History []InstanceHistory `json:"history,omitempty" patchStrategy:"merge" patchMergeKey:"updateTime"`
 }
-
-var _ resource.Object = &ApplicationInstance{}
-var _ resourcestrategy.Validater = &ApplicationInstance{}
 
 func (in *ApplicationInstance) GetObjectMeta() *metav1.ObjectMeta {
 	return &in.ObjectMeta

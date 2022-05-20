@@ -62,15 +62,15 @@ type ApplicationSpec struct {
 	// Each key must consist of alphanumeric characters, '-', '_' or '.'.
 	// Values with non-UTF-8 base64 string of byte sequences
 	// +optional
-	ConfigData map[string]string `json:"config_data,omitempty" protobuf:"bytes,2,rep,name=data"`
+	ConfigData map[string]string `json:"configData,omitempty"`
 
 	// The application working mode, control how ingress port is created
 	// +optional
-	WorkingMode WorkingMode `json:"working_mode,omitempty"`
+	WorkingMode WorkingMode `json:"workingMode,omitempty"`
 
 	// application session config
 	// +optional
-	SessionConfig SessionConfig `json:"session_config,omitempty"`
+	SessionConfig SessionConfig `json:"sessionConfig,omitempty"`
 }
 
 // +enum
@@ -88,22 +88,22 @@ const (
 type SessionConfig struct {
 	// The minimum number of application instances that must keep running
 	// +optional, default 0, MinSessions should be times of NumOfSessionOfInstance
-	MinSessions int `json:"min_sessions,omitempty"`
+	MinSessions int `json:"minSessions,omitempty"`
 
 	// how many sessions can a application instance hold
 	// +optional, MaxSessions should be times of NumOfSessionOfInstance
-	MaxSessions int `json:"max_sessions,omitempty"`
+	MaxSessions int `json:"maxSessions,omitempty"`
 
 	// The maximum number of application session that can be scheduled above the desired number
 	// +optional, default 1
-	MaxSurge int `json:"max_surge,omitempty"`
+	MaxSurge int `json:"maxSurge,omitempty"`
 
 	// scaling when idle session less than this number
 	// +optional, default 0
-	MinOfIdleSessions int `json:"min_of_idle_sessions,omitempty"`
+	MinOfIdleSessions int `json:"minOfIdleSessions,omitempty"`
 
 	// how many sessions can a application instance hold
-	NumOfSessionOfInstance int `json:"num_of_session_of_instance,omitempty"`
+	NumOfSessionOfInstance int `json:"numOfSessionOfInstance,omitempty"`
 }
 
 type DeploymentAction string
@@ -136,7 +136,7 @@ type DeploymentHistory struct {
 	Action DeploymentAction `json:"action,omitempty"`
 
 	// The last time this deployment was updated.
-	UpdateTime metav1.Time `json:"update_time,omitempty"`
+	UpdateTime metav1.Time `json:"updateTime,omitempty"`
 
 	// The reason for the last transition.
 	Reason string `json:"reason,omitempty"`
@@ -145,29 +145,32 @@ type DeploymentHistory struct {
 	Message string `json:"message,omitempty"`
 
 	// which instance this history is about
-	InstanceReference corev1.LocalObjectReference `json:"instance_reference,omitempty"`
+	InstanceReference corev1.LocalObjectReference `json:"instanceReference,omitempty"`
 }
 
 // ApplicationStatus defines the observed state of Application
 type ApplicationStatus struct {
 	// Total number of non-terminated pods targeted by this deployment (their labels match the selector).
 	// +optional
-	DesiredInstances int32 `json:"desired_instances,omitempty"`
+	DesiredInstances int32 `json:"desiredInstances,omitempty"`
 
 	// Total number of available instances (ready for at least minReadySeconds) targeted by this deployment.
 	// +optional
-	AvailableInstances int32 `json:"available_instances,omitempty"`
+	AvailableInstances int32 `json:"availableInstances,omitempty"`
 
 	// DeploymentStatus of Last History
 	// +optional
-	DeploymentStatus DeploymentStatus `json:"deployment_status,omitempty"`
+	DeploymentStatus DeploymentStatus `json:"deploymentStatus,omitempty"`
 
 	// The first time this app was deployed.
-	DeploymentTime metav1.Time `json:"deployment_time,omitempty"`
+	DeploymentTime metav1.Time `json:"deploymentTime,omitempty"`
 
 	// Represents the latest available observations of a deployment's current state.
 	// +optional
-	History []DeploymentHistory `json:"history,omitempty" patchStrategy:"merge" patchMergeKey:"type"`
+	// +patchMergeKey=updateTime
+	// +patchStrategy=merge
+	// +listType=set
+	History []DeploymentHistory `json:"history,omitempty" patchStrategy:"merge" patchMergeKey:"updateTime"`
 }
 
 var _ resource.Object = &Application{}

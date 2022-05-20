@@ -58,7 +58,7 @@ message FornaxCoreConfiguration {
 }
 
 message NodeConfiguration {
-  required k8s.io.api.core.v1.NodeSpec nodeSpec = 1;
+  required k8s.io.api.core.v1.Node node = 1;
 }
 
 message NodeRegistry {
@@ -67,25 +67,20 @@ message NodeRegistry {
 }
 
 message NodeResource {
-  required k8s.io.api.core.v1.NodeStatus status = 1;
+  required string nodeIp = 1;
+  required k8s.io.api.core.v1.Node node = 2;
 }
 
 message NodeReady {
   required string nodeIp = 1;
-  required NodeResource resourceLimit = 2;
+  required NodeResource node = 2;
 }
 
 message NodeState {
   required string nodeIp = 1;
-  enum State {
-    Available = 0;
-    Problemtic = 10;
-    ReachResourceLimit = 20;
-  }
-  required State state = 2;
-  required NodeResource nodeResource = 3;
-  repeated PodState podStates = 4;
-  repeated SessionState sessionStates = 5;
+  required NodeResource nodeResource = 2;
+  repeated PodState podStates = 3;
+  repeated SessionState sessionStates = 4;
 }
 
 message PodState {
@@ -118,8 +113,8 @@ message PodCreate {
     Standby = 10;
   }
   required CreateMode mode = 3;
-  required k8s.io.api.core.v1.PodSpec podSpec = 4;
-  optional k8s.io.api.core.v1.ConfigMap configMapSpec = 5;
+  required k8s.io.api.core.v1.Pod pod = 4;
+  optional k8s.io.api.core.v1.ConfigMap configMap = 5;
 }
 
 message  PodTerminate {
@@ -151,6 +146,7 @@ message SessionStart {
   required string sessionIdentifier = 1;
   required string podIdentifier = 2;
   required string appIdentifier = 3;
+  required string sessionData = 4;
 }
 
 message SessionClose {

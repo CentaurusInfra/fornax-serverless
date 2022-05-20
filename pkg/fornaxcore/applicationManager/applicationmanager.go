@@ -17,8 +17,12 @@ func New() *ApplicationManager {
 	}
 }
 
+func genKey(ns, app string) string {
+	return fmt.Sprintf("%s/%s", ns, app)
+}
+
 func (am *ApplicationManager) GetApp(ns, name string) *v1.Application {
-	key := fmt.Sprintf("%s/%s", ns, name)
+	key := genKey(ns, name)
 
 	am.RLock()
 	defer am.RUnlock()
@@ -44,7 +48,7 @@ func (am *ApplicationManager) CreateApp(ns string, app *v1.Application) error {
 		return fmt.Errorf("application name should not be empty")
 	}
 
-	key := fmt.Sprintf("%s/%s", ns, app.Name)
+	key := genKey(ns, app.Name)
 	am.Lock()
 	defer am.Unlock()
 

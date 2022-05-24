@@ -5,14 +5,16 @@ metadata:
   labels:
     application: nginx2
 spec:
-  session_name: my-nginx2-session
-  session_data: my-nginx2-session-data
+  sessionName: my-nginx2-session
+  sessionData: my-nginx2-session-data
 status:
-  session_status: Allocated
-  client_sessions:
+  ingressEndpointReference:
+    name: endpoint-reference-1
+  sessionStatus: Allocated
+  clientSessions:
     - name: client-session-1
   history:
     - action: ClientJoin
-      update_time: 2020-10-01T10:00:00.000Z
-      client_session:
+      updateTime: 2020-10-01T10:00:00.000Z
+      clientSession:
         name: client-session-1

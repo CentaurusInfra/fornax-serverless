@@ -63,6 +63,8 @@ test: manifests generate fmt vet envtest ## Run tests.
 
 .PHONY: build
 build: generate fmt vet ## Build binary.
+	go build ./...
+	go build -o bin/apiserver cmd/apiserver/main.go
 
 .PHONY: run
 run: manifests generate fmt vet ## Run from your host.

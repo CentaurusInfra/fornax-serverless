@@ -37,14 +37,14 @@ type FornaxCoreConfiguration struct {
 	maxRecvMsgSize int
 }
 
-type FornaxCore interface {
+type FornaxCoreClient interface {
 	Start() error
 	Stop() error
 	PutMessage(message *fornax.FornaxCoreMessage) error
 	GetMessage(receiver string, channel chan *fornax.FornaxCoreMessage) error
 }
 
-type fornaxCore struct {
+type fornaxCoreClient struct {
 	done             bool
 	config           FornaxCoreConfiguration
 	conn             *grpc.ClientConn
@@ -54,13 +54,13 @@ type fornaxCore struct {
 }
 
 // GetMessage implements FornaxCore
-func (f *fornaxCore) GetMessage(receiver string, channel chan *fornax.FornaxCoreMessage) error {
+func (f *fornaxCoreClient) GetMessage(receiver string, channel chan *fornax.FornaxCoreMessage) error {
 	f.receivers[receiver] = channel
 	return nil
 }
 
 // PutMessage implements FornaxCore
-func (f *fornaxCore) PutMessage(message *fornax.FornaxCoreMessage) error {
+func (f *fornaxCoreClient) PutMessage(message *fornax.FornaxCoreMessage) error {
 	ctx, cancel := context.WithTimeout(context.Background(), f.config.callTimeout)
 	defer cancel()
 	opts := grpc.EmptyCallOption{}
@@ -68,11 +68,11 @@ func (f *fornaxCore) PutMessage(message *fornax.FornaxCoreMessage) error {
 	return nil
 }
 
-func (f *fornaxCore) disconnect() error {
+func (f *fornaxCoreClient) disconnect() error {
 	return f.conn.Close()
 }
 
-func (f *fornaxCore) connect() error {
+func (f *fornaxCoreClient) connect() error {
 	connect := func() error {
 		ctx, cancel := context.WithTimeout(context.Background(), f.config.connTimeout)
 		defer cancel()
@@ -104,7 +104,7 @@ func (f *fornaxCore) connect() error {
 	return err
 }
 
-func (f *fornaxCore) initGetMessageClient() error {
+func (f *fornaxCoreClient) initGetMessageClient() error {
 	if f.conn == nil {
 		err := f.connect()
 		if err != nil {
@@ -121,15 +121,9 @@ func (f *fornaxCore) initGetMessageClient() error {
 	return nil
 }
 
-// Stop implements FornaxCore
-func (f *fornaxCore) Stop() error {
-	f.done = true
-	return f.disconnect()
-}
-
-// Start implements FornaxCore
-func (f *fornaxCore) Start() error {
-	f.connect()
+// should exec in a go routine, fornaxCoreClient recvMessage loop forever until it's old stop
+// it receive message and dispatch it to receivers' channel registered by GetMessage
+func (f *fornaxCoreClient) recvMessage() {
 	for {
 		if f.done {
 			break
@@ -153,6 +147,7 @@ func (f *fornaxCore) Start() error {
 			}
 		}
 
+		// TODO handle channel block
 		panicReceivers := make(map[string]bool)
 		for n, v := range f.receivers {
 			klog.Infof("send fornax message to receiver %s, id: %s, type %s", n, msg.MessageIdentifier, msg.MessageType)
@@ -172,13 +167,29 @@ func (f *fornaxCore) Start() error {
 			delete(f.receivers, n)
 		}
 	}
+}
+
+// Stop implements FornaxCore
+func (f *fornaxCoreClient) Stop() error {
+	f.done = true
+	return f.disconnect()
+}
+
+// Start implements FornaxCore
+func (f *fornaxCoreClient) Start() error {
+	err := f.connect()
+	if err != nil {
+		return err
+	}
+
+	go f.recvMessage()
 	return nil
 }
 
-var _ FornaxCore = &fornaxCore{}
+var _ FornaxCoreClient = &fornaxCoreClient{}
 
-func NewFornaxCore(config FornaxCoreConfiguration) *fornaxCore {
-	f := &fornaxCore{
+func NewFornaxCoreClient(config FornaxCoreConfiguration) *fornaxCoreClient {
+	f := &fornaxCoreClient{
 		config:           config,
 		done:             false,
 		receivers:        map[string]chan *fornax.FornaxCoreMessage{},

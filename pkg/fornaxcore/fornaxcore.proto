@@ -63,7 +63,7 @@ message NodeConfiguration {
 
 message NodeRegistry {
   required string nodeIp = 1;
-  required NodeResource resourceLimit = 2;
+  required k8s.io.api.core.v1.Node node = 2;
 }
 
 message NodeResource {
@@ -73,12 +73,12 @@ message NodeResource {
 
 message NodeReady {
   required string nodeIp = 1;
-  required NodeResource node = 2;
+  required k8s.io.api.core.v1.Node node = 2;
 }
 
 message NodeState {
   required string nodeIp = 1;
-  required NodeResource nodeResource = 2;
+  required k8s.io.api.core.v1.Node node = 2;
   repeated PodState podStates = 3;
   repeated SessionState sessionStates = 4;
 }

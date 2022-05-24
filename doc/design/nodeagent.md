@@ -1,6 +1,3 @@
-Word to Markdown Converter
-Results of converting "NodeAgent"
-Markdown
 # Node Agent
 
 Node agent provides services to help customers to deploy serverless applications and monitorX applications session status
@@ -32,7 +29,6 @@ Since customers will not get k8s access, this information needs to be collected 
 # Node agent components
 
 ![Node Agent](./pictures/architecture/nodeagent.png)
-
 
 When NodeAgent started it connect to FornaxCore and start to exchange messages encoded using protobuf. FornaxCore is implemented as a gRPC service, it provides two apis SendMessage and GetMessage.
 
@@ -93,7 +89,8 @@ are mostly message about Node, Pod and Session State.
 ## FornaxCore Node Agent interaction diagram
 
 it includes multiple interaction diagrams in below page
-```
+
+```puml
 @startuml
 == Fornax Core discovery ==
 NodeAgent -> FornaxCore: start grpc connection
@@ -105,7 +102,7 @@ NodeAgent -> FornaxCore: send node register to primary FornaxCore again
 @enduml
 ```
 
-```
+```puml
 @startuml
 == node registion  ==
 NodeAgent-> FornaxCore: node register(ip, hostname, resource usage)
@@ -123,7 +120,7 @@ end
 @enduml
 ```
 
-```
+```puml
 @startuml
 == create standby pod ==
 FornaxCore -> NodeAgent: create pod
@@ -149,7 +146,7 @@ end
 @enduml
 ```
 
-```
+```puml
 @startuml
 == create active pod ==
 FornaxCore -> NodeAgent: create pod
@@ -179,7 +176,7 @@ end
 @enduml
 ```
 
-```
+```puml
 @startuml
 == create session ==
 FornaxCore -> NodeAgent: start session
@@ -207,7 +204,7 @@ end
 @enduml
 ```
 
-```
+```puml
 @startuml
 == terminate pod==
 FornaxCore -> NodeAgent: terminate pod
@@ -271,7 +268,7 @@ Created for each app pod, it talks with container runtime
 
 Application instances use pod and container to host customer application, a Pod Actor work as state machine, it has different behaviors in different state, state transit when pod actor receives Fornax core command messages or receive internal lifecycle events.
 
-```
+```puml
 @startuml
 Creating: CRI Create pod container 
 LivenessChecking : pod container exists
@@ -308,7 +305,7 @@ When application session is setup, application container is supposed to send hea
 
 Application sessions go through the states below from customer begin a session until session is ended.
 
-```
+```puml
 @startuml
 Starting: create session table item
 ReadinessChecking : session sdk on session create
@@ -402,7 +399,6 @@ add a new cri stopContainer implementation to use KILL
 
 [Default cri stopContainer implementation](https://github.com/containerd/containerd/blob/main/pkg/cri/server/container_stop.go#L112) use SIG\_TERM or SIG\_KILL to stop a container.
 
-
 ## NodeAgentDB
 
 NodeAgent persist Pod and Session information in its own SQLite db, hence two tables are created.
@@ -419,7 +415,6 @@ Pod Table
 | Secret spec | K8s spec |
 |
 
-
 Session Table
 
 | Session name | Namespace/name, unique id |
@@ -433,3 +428,4 @@ Container Table
 | Container id | Containerd id |
 | --- | --- |
 | Pod name | Namespace/name, unique id |
+

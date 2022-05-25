@@ -5,32 +5,32 @@ metadata:
   labels:
     name: nginx-undo
 spec:
-  session_config:
-    num_of_session_of_instance: 1
-    min_sessions: 1
-    max_sessions: 10
-    max_surge: 1
-    min_of_idle_sessions: 0
+  sessionConfig:
+    numOfSessionOfInstance: 1
+    minSessions: 1
+    maxSessions: 10
+    maxSurge: 1
+    minOfIdleSessions: 0
   container:
     image: nginx
     name: nginx
-  working_mode: Standlone
-  config_data:
+  workingMode: Standlone
+  configData:
     config1: data1
     config2: data2
 status:
-  deployement_status: Progressing
-  deployment_time: 2020-10-01T12:00:00.000Z
-  desired_instances: 10
-  available_instances: 1
+  deployementStatus: Progressing
+  deploymentTime: 2020-10-01T12:00:00.000Z
+  desiredInstances: 10
+  availableInstances: 1
   history:
     - status: Progressing
       action: createInstance
-      update_time: 2020-10-01T10:00:00.000Z
-      instance_reference:
+      updateTime: 2020-10-01T10:00:00.000Z
+      instanceReference:
         name: nginx-instance-1
     - status: Progressing
       action: deleteInstance
-      update_time: 2020-10-01T10:00:00.000Z
-      instance_reference:
+      updateTime: 2020-10-01T10:00:00.000Z
+      instanceReference:
         name: nginx-instance-0

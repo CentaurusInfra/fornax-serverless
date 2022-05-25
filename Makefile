@@ -63,6 +63,8 @@ test: manifests generate fmt vet envtest ## Run tests.
 
 .PHONY: build
 build: generate fmt vet ## Build binary.
+	go build ./...
+	go build -o bin/apiserver cmd/apiserver/main.go
 
 .PHONY: run
 run: manifests generate fmt vet ## Run from your host.
@@ -107,6 +109,12 @@ deploy: manifests kustomize ## Deploy controller to the K8s cluster specified in
 .PHONY: undeploy
 undeploy: ## Undeploy controller from the K8s cluster specified in ~/.kube/config. Call with ignore-not-found=true to ignore resource not found errors during deletion.
 	$(KUSTOMIZE) build config/default | kubectl delete --ignore-not-found=$(ignore-not-found) -f -
+
+APISERVER-BOOT = $(shell pwd)/bin/apiserver-boot
+.PHONY: apiserver-boot
+apiserver-local: ## Download apiserver-boot cmd locally if necessary.
+	$(call go-get-tool,$(APISERVER-BOOT),sigs.k8s.io/apiserver-builder-alpha/cmd/apiserver-boot@v1.23.0)
+	$(APISERVER-BOOT) run local --run etcd,apiserver
 
 CONTROLLER_GEN = $(shell pwd)/bin/controller-gen
 .PHONY: controller-gen

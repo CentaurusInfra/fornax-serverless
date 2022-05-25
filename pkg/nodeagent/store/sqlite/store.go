@@ -33,11 +33,38 @@ var _ store.Store = &sqLiteStore{}
 
 type sqLiteStore struct {
 	options            *SQLiteStoreOptions
-	Table              string
 	DB                 *sql.DB
-	ObjectRef          interface{}
+	Table              string
 	TextToObjectFunc   TextToObjectFunc
 	TextFromObjectFunc TextFromObjectFunc
+}
+
+// ListObject implements store.Store
+func (s *sqLiteStore) ListObject() ([]interface{}, error) {
+	row, err := s.DB.Query(fmt.Sprintf("select identifier, content from %s", s.Table))
+	if err != nil {
+		klog.Fatal(err)
+	}
+
+	objs := []interface{}{}
+	defer row.Close()
+
+	for row.Next() { // Iterate and fetch the records from result cursor
+		var id string
+		var text string
+		err := row.Scan(&id, &text)
+		if err != nil {
+			klog.Fatal(err)
+		}
+
+		var obj interface{}
+		if obj, err = s.TextToObjectFunc(text); err != nil {
+			return nil, err
+		} else {
+			objs = append(objs, obj)
+		}
+	}
+	return objs, nil
 }
 
 // DelObject implements store.Store
@@ -74,7 +101,9 @@ func (s *sqLiteStore) PutObject(identifier string, obj interface{}) error {
 }
 
 func (s *sqLiteStore) GetObject(identifier string) (interface{}, error) {
-	row, err := s.DB.Query(fmt.Sprintf("select identifier, content from %s where identifier = %s", s.Table, identifier))
+	stmt, err := s.DB.Prepare(fmt.Sprintf("select identifier, content from %s where identifier = ?", s.Table))
+	defer stmt.Close()
+	row, err := stmt.Query(identifier)
 	if err != nil {
 		klog.Fatal(err)
 	}
@@ -141,17 +170,24 @@ func NewSqliteStore(table string, options *SQLiteStoreOptions, toObjectFunc Text
 	}
 	store.Table = table
 	if toObjectFunc == nil {
-		return nil, errors.New("TextToObject func is not provided into NewSqliteStore")
+		return nil, errors.New("TextToObject func is not provided to NewSqliteStore")
 	} else {
 		store.TextToObjectFunc = toObjectFunc
 	}
 
 	if fromObjectFunc == nil {
-		return nil, errors.New("TextFromObject func is not provided into NewSqliteStore")
+		return nil, errors.New("TextFromObject func is not provided to NewSqliteStore")
 	} else {
 		store.TextFromObjectFunc = fromObjectFunc
 	}
-	store.connect()
-	store.initTable()
+	err := store.connect()
+	if err != nil {
+		return nil, err
+	}
+
+	err = store.initTable()
+	if err != nil {
+		return nil, err
+	}
 	return store, nil
 }

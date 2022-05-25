@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package runtime
+package cri
 
 import (
 	"k8s.io/api/core/v1"
@@ -25,6 +25,21 @@ import (
 var _ RuntimeService = &FakeRuntimeService{}
 
 type FakeRuntimeService struct{}
+
+// Start implements RuntimeService
+func (*FakeRuntimeService) Start() error {
+	panic("unimplemented")
+}
+
+// Stop implements RuntimeService
+func (*FakeRuntimeService) Stop() error {
+	panic("unimplemented")
+}
+
+// UpdateNodeStatus implements RuntimeService
+func (*FakeRuntimeService) UpdateNodeStatus(*v1.Node) error {
+	panic("unimplemented")
+}
 
 // CRIVersion implements RuntimeService
 func (*FakeRuntimeService) CRIVersion() (string, error) {
@@ -37,7 +52,7 @@ func (*FakeRuntimeService) CreateContainer(pod *v1.Pod, container *v1.Container,
 		ID:            "",
 		Name:          "",
 		WorkingStatus: "",
-		ContainerStatuses: &criv1.ContainerStatus{
+		ContainerStatus: &criv1.ContainerStatus{
 			Id: "",
 			Metadata: &criv1.ContainerMetadata{
 				Name:                 "",
@@ -101,7 +116,7 @@ func (*FakeRuntimeService) GetContainerStatus(pod *v1.Pod, uid types.UID, name s
 		ID:            "",
 		Name:          name,
 		WorkingStatus: "",
-		ContainerStatuses: &criv1.ContainerStatus{
+		ContainerStatus: &criv1.ContainerStatus{
 			Id: "",
 			Metadata: &criv1.ContainerMetadata{
 				Name:                 name,

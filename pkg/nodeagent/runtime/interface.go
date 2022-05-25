@@ -16,78 +16,10 @@ limitations under the License.
 
 package runtime
 
-import (
-	"k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/types"
-	criv1 "k8s.io/cri-api/pkg/apis/runtime/v1"
-)
+import v1 "k8s.io/api/core/v1"
 
-type RuntimeService interface {
-	Name() string
-
-	CRIVersion() (string, error)
-
-	Status() (*criv1.RuntimeStatus, error)
-
-	GetPods(all bool) ([]*Pod, error)
-
-	GetPodsCache() ([]*Pod, error)
-
-	CreateSandbox(pod *v1.Pod, pullSecrets []v1.Secret) PodStatus
-
-	CreateContainer(pod *v1.Pod, container *v1.Container, pullSecrets []v1.Secret) ContainerStatus
-
-	StartContainer(podID types.UID, containerID ContainerID) error
-
-	TerminatePod(podID types.UID, gracePeriodOverride *int64) error
-
-	TerminateContainer(podID types.UID, containerID ContainerID) error
-
-	GetPodStatus(podID types.UID, name, namespace string) (PodStatus, error)
-
-	GetContainerStatus(pod *v1.Pod, uid types.UID, name, namespace string) (ContainerStatus, error)
-
-	UpdateContainer(podID types.UID, containerID ContainerID, container *v1.Container) error
-
-	GetImageLabel() (string, error)
-}
-
-// Pod is a sandbox container and a group of containers.
-type Pod struct {
-	ID         types.UID
-	Name       string
-	Namespace  string
-	IPs        []string
-	Sandbox    *criv1.Container
-	Containers []*criv1.Container
-}
-
-type ContainerID string
-
-// PodStatus represents the status of the pod and its containers.
-type PodStatus struct {
-	ID                types.UID
-	Name              string
-	Namespace         string
-	IPs               []string
-	SandboxStatus     *criv1.PodSandboxStatus
-	ContainerStatuses []*criv1.ContainerStatus
-}
-
-// ContainerWorkingStatus is a fornax container status which can put a container in standby
-type ContainerWorkingStatus string
-
-const (
-	// container is in ContainerActive status when it's fullly running
-	ContainerActive ContainerWorkingStatus = "Active"
-	// container is in ContainerStandby status when it's pause at entry point
-	ContainerStandby ContainerWorkingStatus = "Standby"
-)
-
-// ContainerWorkingStatus represents the cri status of a container and fornax status.
-type ContainerStatus struct {
-	ID                ContainerID
-	Name              string
-	WorkingStatus     ContainerWorkingStatus
-	ContainerStatuses *criv1.ContainerStatus
+type RuntimeDependency interface {
+	Start() error
+	Stop() error
+	UpdateNodeStatus(*v1.Node) error
 }

@@ -31,5 +31,6 @@ type NodeCAdvisorInfo struct {
 type CAdvisorInfoProvider interface {
 	Start() error
 	Stop() error
-	GetCAdvisorInfo(id string, receiver *chan NodeCAdvisorInfo)
+	ReceiveCAdvisorInfo(id string, receiver *chan NodeCAdvisorInfo)
+	GetNodeCAdvisorInfo() (*NodeCAdvisorInfo, error)
 }

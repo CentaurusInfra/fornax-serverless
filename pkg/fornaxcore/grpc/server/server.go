@@ -27,10 +27,14 @@ type grpcServer struct {
 	grpc.UnimplementedFornaxCoreServiceServer
 }
 
-func (g *grpcServer) enlistNode(node string, ch chan<- *grpc.FornaxCoreMessage) {
+func (g *grpcServer) enlistNode(node string, ch chan<- *grpc.FornaxCoreMessage) error {
 	g.Lock()
 	defer g.Unlock()
+	if _, ok := g.chans[node]; ok {
+		return fmt.Errorf("node %s already has channel", node)
+	}
 	g.chans[node] = ch
+	return nil
 }
 
 func (g *grpcServer) delistNode(node string) {
@@ -52,10 +56,13 @@ func (g *grpcServer) GetMessage(empty *empty.Empty, server grpc.FornaxCoreServic
 	}
 	nodeIP := node.IP.String()
 
-	chDone := server.Context().Done()
 	ch := make(chan *grpc.FornaxCoreMessage, FornaxCoreChanSize)
-	g.enlistNode(nodeIP, ch)
+	if err = g.enlistNode(nodeIP, ch); err != nil {
+		close(ch)
+		return fmt.Errorf("fornax core has established channel with this node: %s", err)
+	}
 
+	chDone := server.Context().Done()
 	for {
 		select {
 		case <-chDone:

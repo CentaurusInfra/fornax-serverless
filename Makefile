@@ -87,6 +87,12 @@ check:
 	make --version
 	@echo "check is done"
 
+.PHONY: clean
+clean:
+	@rm -rf config/
+	@rm -f cover.out
+	@rm -f bin/apiserver
+
 ##@ Deployment
 
 ifndef ignore-not-found

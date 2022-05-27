@@ -3,15 +3,12 @@ module centaurusinfra.io/fornax-serverless
 go 1.18
 
 require (
-	github.com/Microsoft/go-winio v0.5.2
 	github.com/cenkalti/backoff v2.2.1+incompatible
 	github.com/emicklei/go-restful/v3 v3.7.4
 	github.com/golang/protobuf v1.5.2
 	github.com/google/cadvisor v0.44.0
 	github.com/grpc-ecosystem/go-grpc-middleware v1.3.0
 	github.com/mattn/go-sqlite3 v1.14.13
-	github.com/stretchr/testify v1.7.0
-	golang.org/x/sys v0.0.0-20220209214540-3681064d5158
 	google.golang.org/grpc v1.40.0
 	google.golang.org/protobuf v1.27.1
 	k8s.io/api v0.23.1
@@ -20,11 +17,11 @@ require (
 	k8s.io/cri-api v0.24.0
 	k8s.io/klog v1.0.0
 	k8s.io/klog/v2 v2.30.0
-	k8s.io/kube-openapi v0.0.0-20211115234752-e816edb12b65
 	sigs.k8s.io/apiserver-runtime v1.1.1
 )
 
 require (
+	github.com/Microsoft/go-winio v0.5.2 // indirect
 	github.com/NYTimes/gziphandler v1.1.1 // indirect
 	github.com/PuerkitoBio/purell v1.1.1 // indirect
 	github.com/PuerkitoBio/urlesc v0.0.0-20170810143723-de5bf2ad4578 // indirect
@@ -78,7 +75,6 @@ require (
 	github.com/opencontainers/runtime-spec v1.0.3-0.20210326190908-1c3f411f0417 // indirect
 	github.com/opencontainers/selinux v1.10.0 // indirect
 	github.com/pkg/errors v0.9.1 // indirect
-	github.com/pmezard/go-difflib v1.0.0 // indirect
 	github.com/prometheus/client_golang v1.11.0 // indirect
 	github.com/prometheus/client_model v0.2.0 // indirect
 	github.com/prometheus/common v0.28.0 // indirect
@@ -111,6 +107,7 @@ require (
 	golang.org/x/net v0.0.0-20220127200216-cd36cc0744dd // indirect
 	golang.org/x/oauth2 v0.0.0-20210819190943-2bc19b11175f // indirect
 	golang.org/x/sync v0.0.0-20210220032951-036812b2e83c // indirect
+	golang.org/x/sys v0.0.0-20220209214540-3681064d5158 // indirect
 	golang.org/x/term v0.0.0-20210927222741-03fcf44c2211 // indirect
 	golang.org/x/text v0.3.7 // indirect
 	golang.org/x/time v0.0.0-20210723032227-1f47c861a9ac // indirect
@@ -122,6 +119,7 @@ require (
 	gopkg.in/yaml.v3 v3.0.0-20210107192922-496545a6307b // indirect
 	k8s.io/client-go v0.23.1 // indirect
 	k8s.io/component-base v0.23.1 // indirect
+	k8s.io/kube-openapi v0.0.0-20211115234752-e816edb12b65 // indirect
 	k8s.io/utils v0.0.0-20211116205334-6203023598ed // indirect
 	sigs.k8s.io/apiserver-network-proxy/konnectivity-client v0.0.25 // indirect
 	sigs.k8s.io/json v0.0.0-20211020170558-c049b76a60c6 // indirect

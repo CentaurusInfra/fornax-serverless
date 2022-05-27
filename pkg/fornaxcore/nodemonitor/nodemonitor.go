@@ -101,12 +101,16 @@ func (n *nodeMonitor) getStaleNodes() []string {
 
 	currBucket := n.bucketTail
 	count := n.countFresh
+	var newHead *bucket
 	for {
 		if currBucket == nil {
 			break
 		}
 
 		if count > 0 {
+			if count == 1 {
+				newHead = currBucket
+			}
 			currBucket = currBucket.prev
 			count--
 			continue
@@ -115,7 +119,16 @@ func (n *nodeMonitor) getStaleNodes() []string {
 		for name, _ := range currBucket.elements {
 			stales = append(stales, name)
 		}
+
+		processedBucket := currBucket
 		currBucket = currBucket.prev
+		processedBucket.next = nil
+		processedBucket.prev = nil
+	}
+
+	if newHead != nil && newHead != n.bucketHead {
+		n.bucketHead = newHead
+		newHead.prev = nil
 	}
 
 	return stales

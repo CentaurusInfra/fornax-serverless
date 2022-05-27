@@ -14,12 +14,17 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package runtime
+package session
 
-import v1 "k8s.io/api/core/v1"
+import (
+	fornaxv1 "centaurusinfra.io/fornax-serverless/pkg/apis/core/v1"
+	v1 "k8s.io/api/core/v1"
+)
 
-type RuntimeDependency interface {
-	Start() error
-	Stop() error
-	UpdateNodeStatus(*v1.Node) error
+type Session struct {
+	Identifier    string                       `json:"identifier,omitempty"`
+	PodIdentifier string                       `json:"podIdentifier,omitempty"`
+	Pod           v1.Pod                       `json:"pod,omitempty"`
+	Session       *fornaxv1.ApplicationSession `json:"session,omitempty"`
+	SessionState  string                       `json:"sessionState,omitempty"`
 }

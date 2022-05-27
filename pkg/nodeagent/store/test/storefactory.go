@@ -2,9 +2,11 @@ package main
 
 import (
 	"fmt"
+	"os"
 	"time"
 
-	"centaurusinfra.io/fornax-serverless/pkg/nodeagent/store"
+	"centaurusinfra.io/fornax-serverless/pkg/nodeagent/pod"
+	"centaurusinfra.io/fornax-serverless/pkg/nodeagent/session"
 	"centaurusinfra.io/fornax-serverless/pkg/nodeagent/store/factory"
 	"centaurusinfra.io/fornax-serverless/pkg/nodeagent/store/sqlite"
 	_ "github.com/mattn/go-sqlite3"
@@ -12,6 +14,7 @@ import (
 )
 
 func main() {
+	defer os.Remove("./nodeagent_test.db")
 	start := time.Now().UnixMilli()
 
 	var err error
@@ -33,28 +36,49 @@ func main() {
 	count := 100
 	for i := 0; i <= count; i++ {
 		id := fmt.Sprint(i)
-		podstore.PutPod(&store.Pod{Identifier: id, Pod: v1.Pod{}, ConfigMap: v1.ConfigMap{}})
+		podstore.PutPod(&pod.Pod{Identifier: id, Pod: v1.Pod{}, ConfigMap: v1.ConfigMap{}})
 		podstore.GetPod(id)
 
-		sessionstore.PutSession(&store.Session{Identifier: id})
+		sessionstore.PutSession(&session.Session{Identifier: id})
 		sessionstore.GetSession(id)
 
-		containerstore.PutContainer(&store.Container{Identifier: id})
+		containerstore.PutContainer(&pod.Container{Identifier: id})
 		containerstore.GetContainer(id)
 	}
 
-	fmt.Println(sessionstore.GetSession(fmt.Sprint(99)))
-	fmt.Println(containerstore.GetContainer(fmt.Sprint(99)))
-	fmt.Println(podstore.GetPod(fmt.Sprint(99)))
+	fmt.Println("get no 99 pod,session,container")
+	fmt.Println(sessionstore.GetSession("99"))
+	fmt.Println(containerstore.GetContainer("99"))
+	fmt.Println(podstore.GetPod("99"))
 
+	var list []interface{}
+	list, _ = podstore.ListObject()
+	for _, v := range list {
+		f, ok := v.(*pod.Pod)
+		fmt.Printf("Got pod no %s, correct? %v\n", f.Identifier, ok)
+	}
+
+	list, _ = sessionstore.ListObject()
+	for _, v := range list {
+		f, ok := v.(*session.Session)
+		fmt.Printf("Got session no %s, correct? %v\n", f.Identifier, ok)
+	}
+
+	list, _ = containerstore.ListObject()
+	for _, v := range list {
+		f, ok := v.(*pod.Container)
+		fmt.Printf("Got container no %s, correct? %v\n", f.Identifier, ok)
+	}
+	fmt.Println("delete all object")
 	for i := 0; i <= count; i++ {
 		podstore.DelObject(fmt.Sprint(i))
 		containerstore.DelObject(fmt.Sprint(i))
 		sessionstore.DelObject(fmt.Sprint(i))
 	}
-	fmt.Println(sessionstore.GetSession(fmt.Sprint(100)))
-	fmt.Println(containerstore.GetContainer(fmt.Sprint(100)))
-	fmt.Println(podstore.GetPod(fmt.Sprint(100)))
+
+	fmt.Println(sessionstore.GetSession("99"))
+	fmt.Println(containerstore.GetContainer("99"))
+	fmt.Println(podstore.GetPod("99"))
 	stop := time.Now().UnixMilli()
 	fmt.Printf("%d milli seconds passed", stop-start)
 

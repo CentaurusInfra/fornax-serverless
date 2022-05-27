@@ -24,6 +24,7 @@ import (
 	"time"
 
 	"centaurusinfra.io/fornax-serverless/pkg/nodeagent/runtime"
+	"centaurusinfra.io/fornax-serverless/pkg/nodeagent/runtime/cri"
 	_ "github.com/google/cadvisor/container/containerd/install"
 	_ "github.com/google/cadvisor/container/systemd/install"
 
@@ -37,26 +38,34 @@ import (
 	"k8s.io/klog/v2"
 )
 
-var _ CAdvisorInfoProvider = &cadvisorInfoProvider{
-	nodeInfoInterval: 0,
-	done:             false,
-	receivers:        map[string]*chan NodeCAdvisorInfo{},
-	containers:       map[string]bool{},
-	runtime:          nil,
-	cgroupRoots:      []string{},
-	rootPath:         "",
-	realCAdvisor:     nil,
-}
+var _ CAdvisorInfoProvider = &cadvisorInfoProvider{}
 
 type cadvisorInfoProvider struct {
+	runtime.RuntimeDependency
+	nodeCAdvisorInfo *NodeCAdvisorInfo
 	nodeInfoInterval time.Duration
 	done             bool
 	receivers        map[string]*chan NodeCAdvisorInfo
 	containers       map[string]bool
-	runtime          runtime.RuntimeService
+	runtime          cri.RuntimeService
 	cgroupRoots      []string
 	rootPath         string
 	realCAdvisor     manager.Manager
+}
+
+// GetNodeCAdvisorInfo implements CAdvisorInfoProvider
+// if there is already cached node cadvisor info, return it, otherwise, create a new one
+func (c *cadvisorInfoProvider) GetNodeCAdvisorInfo() (*NodeCAdvisorInfo, error) {
+	if c.nodeCAdvisorInfo == nil {
+		info, err := c.collectCAdvisorInfo()
+		if err == nil {
+			c.nodeCAdvisorInfo = info
+		} else {
+			klog.ErrorS(err, "failed to get NodeCAdvisorInfo")
+			return nil, err
+		}
+	}
+	return c.nodeCAdvisorInfo, nil
 }
 
 // Stop implements CAdvisorInfoProvider
@@ -65,8 +74,8 @@ func (cc *cadvisorInfoProvider) Stop() error {
 	return nil
 }
 
-// GetCAdvisorInfo implements Interface
-func (c *cadvisorInfoProvider) GetCAdvisorInfo(id string, receiver *chan NodeCAdvisorInfo) {
+// ReceiveCAdvisorInfo implements Interface
+func (c *cadvisorInfoProvider) ReceiveCAdvisorInfo(id string, receiver *chan NodeCAdvisorInfo) {
 	c.receivers[id] = receiver
 }
 
@@ -76,7 +85,7 @@ func NewCAdvisorInfoProvider(
 	housekeepingInterval time.Duration,
 	rootPath string,
 	cgroupRoots []string,
-	runtime runtime.RuntimeService,
+	runtime cri.RuntimeService,
 ) (CAdvisorInfoProvider, error) {
 	if _, err := os.Stat(rootPath); err != nil {
 		if os.IsNotExist(err) {
@@ -145,40 +154,29 @@ func (cc *cadvisorInfoProvider) Start() error {
 				ticker.Stop()
 				break
 			}
-			event := NodeCAdvisorInfo{
-				MachineInfo:   nil,
-				RootFsInfo:    nil,
-				ImageFsInfo:   nil,
-				ContainerInfo: []*cadvisorinfov2.ContainerInfo{},
-			}
-			if machineInfo, err := cc.collectCAdvisorMachineInfo(); err == nil {
-				event.MachineInfo = machineInfo
-			}
-			if rootFsInfo, err := cc.collectCAdvisorDirFsInfo(cc.rootPath); err == nil {
-				event.RootFsInfo = &rootFsInfo
-			}
-			containerInfos := cc.collectCAdvisorContainerInfo()
-			for _, v := range containerInfos {
-				event.ContainerInfo = append(event.ContainerInfo, v)
-			}
 
-			panicReceivers := make(map[string]bool)
-			for n, r := range cc.receivers {
-				klog.Infof("send node cavisor info to receiver %s", n)
-				func() {
-					defer func() {
-						if err := recover(); err != nil {
-							klog.Errorf("send message panic occurred: %v", err)
-							// remember it and remove closed channel after loop
-							panicReceivers[n] = true
-						}
+			event, err := cc.collectCAdvisorInfo()
+			if err == nil {
+				cc.nodeCAdvisorInfo = event
+
+				panicReceivers := make(map[string]bool)
+				for n, r := range cc.receivers {
+					klog.Infof("send node cavisor info to receiver %s", n)
+					func() {
+						defer func() {
+							if err := recover(); err != nil {
+								klog.Errorf("send message panic occurred: %v", err)
+								// remember it and remove closed channel after loop
+								panicReceivers[n] = true
+							}
+						}()
+						*r <- *event
 					}()
-					*r <- event
-				}()
-			}
+				}
 
-			for r := range panicReceivers {
-				delete(cc.receivers, r)
+				for r := range panicReceivers {
+					delete(cc.receivers, r)
+				}
 			}
 
 			select {
@@ -189,6 +187,38 @@ func (cc *cadvisorInfoProvider) Start() error {
 	}()
 
 	return nil
+}
+
+func (cc *cadvisorInfoProvider) collectCAdvisorInfo() (*NodeCAdvisorInfo, error) {
+	event := NodeCAdvisorInfo{
+		MachineInfo:   nil,
+		RootFsInfo:    nil,
+		ImageFsInfo:   nil,
+		ContainerInfo: []*cadvisorinfov2.ContainerInfo{},
+	}
+
+	// get cached machine info if it's already loaded
+	if cc.nodeCAdvisorInfo != nil && cc.nodeCAdvisorInfo.MachineInfo != nil {
+		event.MachineInfo = cc.nodeCAdvisorInfo.MachineInfo
+	} else {
+		if machineInfo, err := cc.collectCAdvisorMachineInfo(); err == nil {
+			event.MachineInfo = machineInfo
+		} else {
+			return nil, err
+		}
+	}
+
+	if rootFsInfo, err := cc.collectCAdvisorDirFsInfo(cc.rootPath); err == nil {
+		event.RootFsInfo = &rootFsInfo
+	} else {
+		return nil, err
+	}
+
+	containerInfos := cc.collectCAdvisorContainerInfo()
+	for _, v := range containerInfos {
+		event.ContainerInfo = append(event.ContainerInfo, v)
+	}
+	return &event, nil
 }
 
 func (cc *cadvisorInfoProvider) collectCAdvisorDirFsInfo(path string) (v2.FsInfo, error) {
@@ -211,6 +241,7 @@ func (cc *cadvisorInfoProvider) collectCAdvisorContainerInfo() map[string]*cadvi
 	cc.getContainerList()
 	for c := range cc.containers {
 		if infos, err := cc.realCAdvisor.GetContainerInfoV2(c, options); err != nil {
+			// skip get single container info error
 			klog.Errorf("failed to get container cadvisor info: %v", err)
 		} else {
 			for n, info := range infos {

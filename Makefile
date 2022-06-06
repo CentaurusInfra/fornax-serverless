@@ -47,9 +47,10 @@ generate: controller-gen openapi-gen client-gen generate-client-gen ## Generate 
 	$(CONTROLLER_GEN) object:headerFile="hack/boilerplate.go.txt" paths="./..."
 	# $(OPENAPI_GEN) --go-header-file="hack/boilerplate.go.txt" --input-dirs="./pkg/apis/core/..." --output-package="centaurusinfra.io/fornax-serverless/pkg/apis/openapi"
 
+GENERATE_GROUPS = $(shell pwd)/hack/generate-groups.sh
 .PHONY: generate-client-gen
 generate-client-gen:  ## Generate code containing clientset, lister, and informer method implementations.
-	bash ./hack/generate-groups.sh "client, lister, informer"  centaurusinfra.io/fornax-serverless/pkg/client "centaurusinfra.io/fornax-serverless/pkg/apis" "core:v1" \
+	bash $(GENERATE_GROUPS) "client, lister, informer"  centaurusinfra.io/fornax-serverless/pkg/client "centaurusinfra.io/fornax-serverless/pkg/apis" "core:v1" \
 	--go-header-file hack/boilerplate.go.txt \
 
 

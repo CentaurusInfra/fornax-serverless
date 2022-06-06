@@ -73,7 +73,7 @@ func (n *FornaxCoreActor) Start() error {
 						klog.Warningf("receiving message with unspecified type from fornaxcore, skip")
 					default:
 						// all fornaxcore message is sent to node actor to handle, fornaxcore actor is message broker
-						n.nodeActor.Send(message.ActorMessage{Sender: n.innerActor.Reference(), Body: msg})
+						n.innerActor.Reference().Send(n.nodeActor, msg)
 					}
 				} else {
 					klog.Warningf("receiving message from fornaxcore meet error")

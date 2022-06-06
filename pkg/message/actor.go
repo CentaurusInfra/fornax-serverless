@@ -20,13 +20,18 @@ import (
 	"k8s.io/klog/v2"
 )
 
+type ActorStop struct{}
+type ActorStart struct{}
+type ActorStopped struct{}
+type ActorStarted struct{}
+
 type ActorMessage struct {
 	Sender ActorRef
 	Body   interface{}
 }
 
 type ActorRef interface {
-	Send(msg ActorMessage) error
+	Send(replyReceiver ActorRef, msg interface{}) error
 }
 
 var _ ActorRef = &LocalChannelActorRef{}
@@ -35,14 +40,18 @@ type LocalChannelActorRef struct {
 	Channel *chan ActorMessage
 }
 
-func (a *LocalChannelActorRef) Send(msg ActorMessage) error {
+func (a *LocalChannelActorRef) Send(replyReceiver ActorRef, msg interface{}) error {
 	func() {
 		defer func() {
 			if err := recover(); err != nil {
 				klog.Errorf("send message panic occurred: %v", err)
 			}
 		}()
-		*a.Channel <- msg
+
+		*a.Channel <- ActorMessage{
+			Sender: replyReceiver,
+			Body:   msg,
+		}
 	}()
 	return nil
 }
@@ -126,10 +135,7 @@ func (a *LocalChannelActor) OnReceive(msg ActorMessage) error {
 	}
 
 	if reply != nil {
-		msg.Sender.Send(ActorMessage{
-			Sender: a.Reference(),
-			Body:   reply,
-		})
+		a.Reference().Send(msg.Sender, reply)
 	}
 	return nil
 }

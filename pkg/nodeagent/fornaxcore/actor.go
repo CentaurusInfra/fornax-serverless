@@ -31,12 +31,15 @@ type FornaxCoreActor struct {
 	identifier  string
 	stop        bool
 	innerActor  message.Actor
-	fornaxcores []FornaxCoreClient
+	fornaxcores map[string]FornaxCoreClient
 	channel     chan *grpc.FornaxCoreMessage
 	nodeActor   message.ActorRef
 }
 
-func (n *FornaxCoreActor) Start() error {
+func (n *FornaxCoreActor) Start(nodeActor message.ActorRef) error {
+	// node actor is passed in as node actor initialization require fornax core actor ref
+	n.nodeActor = nodeActor
+
 	// init innerActor to talk with node actor and pod actors
 	if err := n.innerActor.Start(); err != nil {
 		return err
@@ -106,15 +109,21 @@ func (n *FornaxCoreActor) FornaxCoreMessageProcessor(msg message.ActorMessage) (
 	return nil, nil
 }
 
-func NewFornaxCoreActor(identifier string, nodeActor message.ActorRef, config FornaxCoreConfiguration) *FornaxCoreActor {
+func NewFornaxCoreActor(identifier string, configs []*FornaxCoreConfiguration) (*FornaxCoreActor, message.ActorRef) {
+	fornaxcores := map[string]FornaxCoreClient{}
+	for _, v := range configs {
+		f := NewFornaxCoreClient(*v)
+		fornaxcores[v.endpoint] = f
+	}
+
 	actor := &FornaxCoreActor{
 		identifier:  identifier,
 		stop:        false,
-		fornaxcores: []FornaxCoreClient{},
+		fornaxcores: fornaxcores,
 		channel:     make(chan *grpc.FornaxCoreMessage, 30),
-		nodeActor:   nodeActor,
+		nodeActor:   nil,
 	}
 
 	actor.innerActor = message.NewLocalChannelActor(identifier, actor.FornaxCoreMessageProcessor)
-	return actor
+	return actor, actor.innerActor.Reference()
 }

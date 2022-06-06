@@ -43,14 +43,13 @@ manifests: controller-gen ## Generate WebhookConfiguration, ClusterRole and Cust
 	$(CONTROLLER_GEN) rbac:roleName=manager-role crd webhook paths="./..." output:crd:artifacts:config=config/crd/bases
 
 .PHONY: generate
-generate: controller-gen openapi-gen generate-client-gen ## Generate code containing DeepCopy, DeepCopyInto, and DeepCopyObject method implementations.
-	# $(CONTROLLER_GEN) object:headerFile="hack/boilerplate.go.txt" paths="./..."
+generate: controller-gen openapi-gen client-gen generate-client-gen ## Generate code containing DeepCopy, DeepCopyInto, and DeepCopyObject method implementations.
+	$(CONTROLLER_GEN) object:headerFile="hack/boilerplate.go.txt" paths="./..."
 	# $(OPENAPI_GEN) --go-header-file="hack/boilerplate.go.txt" --input-dirs="./pkg/apis/core/..." --output-package="centaurusinfra.io/fornax-serverless/pkg/apis/openapi"
 
-# PROJECT_PACKAGE := centaurusinfra.io/fornax-serverless
 
 .PHONY: generate-client-gen
-generate-client-gen:
+generate-client-gen:  ## Generate code containing clientset, lister, and informer method implementations.
 	bash ./hack/generate-groups.sh "client, lister, informer"  centaurusinfra.io/fornax-serverless/pkg/client "centaurusinfra.io/fornax-serverless/pkg/apis" "core:v1" \
 	--go-header-file hack/boilerplate.go.txt \
 
@@ -141,20 +140,14 @@ openapi-gen: ## Download openapi-gen locally if necessary.
 	$(call go-get-tool,$(OPENAPI_GEN),k8s.io/kube-openapi/cmd/openapi-gen@v0.0.0-20211115234752-e816edb12b65)
 
 CLIENT_GEN = $(shell pwd)/bin/client-gen
-.PHONY: client-gen
-client-gen: ## Download client-gen locally if necessary.
-	$(call go-get-tool,$(CLIENT_GEN),k8s.io/code-generator/cmd/client-gen@v0.23.1)
-
 LISTER_GEN = $(shell pwd)/bin/lister-gen
-.PHONY: lister-gen
-lister-gen: ## Download lister-gen locally if necessary.
-	$(call go-get-tool,$(LISTER_GEN),k8s.io/code-generator/cmd/lister-gen@v0.23.1)
-
-
 INFORMER_GEN = $(shell pwd)/bin/informer-gen
-.PHONY: informer-gen
-informer-gen: ## Download informer-gen locally if necessary.
+.PHONY: client-gen
+client-gen: ## Download client-gen, lister-gen and informer-gen locally if necessary.
+	$(call go-get-tool,$(CLIENT_GEN),k8s.io/code-generator/cmd/client-gen@v0.23.1)
+	$(call go-get-tool,$(LISTER_GEN),k8s.io/code-generator/cmd/lister-gen@v0.23.1)
 	$(call go-get-tool,$(INFORMER_GEN),k8s.io/code-generator/cmd/informer-gen@v0.23.1)
+
 
 PROTOC_GEN = $(shell pwd)/bin/protoc-gen-go
 PROTOC_GEN_GRPC = $(shell pwd)/bin/protoc-gen-go-grpc

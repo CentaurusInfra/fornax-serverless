@@ -23,16 +23,14 @@ import (
 	"path"
 	"time"
 
-	"centaurusinfra.io/fornax-serverless/pkg/nodeagent/runtime"
 	"centaurusinfra.io/fornax-serverless/pkg/nodeagent/runtime/cri"
 	_ "github.com/google/cadvisor/container/containerd/install"
 	_ "github.com/google/cadvisor/container/systemd/install"
 
 	"github.com/google/cadvisor/cache/memory"
 	cadvisormetrics "github.com/google/cadvisor/container"
-	v1 "github.com/google/cadvisor/info/v1"
+	cadvisorinfov1 "github.com/google/cadvisor/info/v1"
 	cadvisorinfov2 "github.com/google/cadvisor/info/v2"
-	v2 "github.com/google/cadvisor/info/v2"
 	"github.com/google/cadvisor/manager"
 	"github.com/google/cadvisor/utils/sysfs"
 	"k8s.io/klog/v2"
@@ -41,7 +39,6 @@ import (
 var _ CAdvisorInfoProvider = &cadvisorInfoProvider{}
 
 type cadvisorInfoProvider struct {
-	runtime.RuntimeDependency
 	nodeCAdvisorInfo *NodeCAdvisorInfo
 	nodeInfoInterval time.Duration
 	done             bool
@@ -214,56 +211,41 @@ func (cc *cadvisorInfoProvider) collectCAdvisorInfo() (*NodeCAdvisorInfo, error)
 		return nil, err
 	}
 
-	containerInfos := cc.collectCAdvisorContainerInfo()
-	for _, v := range containerInfos {
-		event.ContainerInfo = append(event.ContainerInfo, v)
-	}
+	// containerInfos := cc.collectCAdvisorContainerInfo()
+	// for _, v := range containerInfos {
+	// 	event.ContainerInfo = append(event.ContainerInfo, v)
+	// }
 	return &event, nil
 }
 
-func (cc *cadvisorInfoProvider) collectCAdvisorDirFsInfo(path string) (v2.FsInfo, error) {
+func (cc *cadvisorInfoProvider) collectCAdvisorDirFsInfo(path string) (cadvisorinfov2.FsInfo, error) {
 	return cc.realCAdvisor.GetDirFsInfo(path)
 }
 
-func (cc *cadvisorInfoProvider) collectCAdvisorMachineInfo() (*v1.MachineInfo, error) {
+func (cc *cadvisorInfoProvider) collectCAdvisorMachineInfo() (*cadvisorinfov1.MachineInfo, error) {
 	return cc.realCAdvisor.GetMachineInfo()
 }
 
-func (cc *cadvisorInfoProvider) collectCAdvisorContainerInfo() map[string]*cadvisorinfov2.ContainerInfo {
-	options := cadvisorinfov2.RequestOptions{
-		IdType:    "name",
-		Count:     1,
-		Recursive: true,
-		MaxAge:    nil,
-	}
-	containerInfos := make(map[string]*cadvisorinfov2.ContainerInfo)
-
-	cc.getContainerList()
-	for c := range cc.containers {
-		if infos, err := cc.realCAdvisor.GetContainerInfoV2(c, options); err != nil {
-			// skip get single container info error
-			klog.Errorf("failed to get container cadvisor info: %v", err)
-		} else {
-			for n, info := range infos {
-				containerInfos[n] = &info
-			}
-		}
-	}
-
-	return containerInfos
-}
-
-func (cc *cadvisorInfoProvider) getContainerList() {
-	if pods, err := cc.runtime.GetPodsCache(); err != nil {
-		klog.Errorf("failed to get pods from runtime: %v", err)
-	} else {
-		containers := make(map[string]bool)
-		for _, pod := range pods {
-			for _, container := range pod.Containers {
-				containers[container.Metadata.Name] = true
-			}
-		}
-
-		cc.containers = containers
-	}
-}
+// func (cc *cadvisorInfoProvider) collectCAdvisorContainerInfo() map[string]*cadvisorinfov2.ContainerInfo {
+// 	options := cadvisorinfov2.RequestOptions{
+// 		IdType:    "name",
+// 		Count:     1,
+// 		Recursive: true,
+// 		MaxAge:    nil,
+// 	}
+// 	containerInfos := make(map[string]*cadvisorinfov2.ContainerInfo)
+//
+// 	cc.getContainerList()
+// 	for c := range cc.containers {
+// 		if infos, err := cc.realCAdvisor.GetContainerInfoV2(c, options); err != nil {
+// 			// skip get single container info error
+// 			klog.Errorf("failed to get container cadvisor info: %v", err)
+// 		} else {
+// 			for n, info := range infos {
+// 				containerInfos[n] = &info
+// 			}
+// 		}
+// 	}
+//
+// 	return containerInfos
+// }

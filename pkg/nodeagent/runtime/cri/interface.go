@@ -17,63 +17,59 @@ limitations under the License.
 package cri
 
 import (
-	"centaurusinfra.io/fornax-serverless/pkg/nodeagent/runtime"
+	"time"
+
 	"k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/types"
 	criv1 "k8s.io/cri-api/pkg/apis/runtime/v1"
 )
 
 type RuntimeService interface {
-	runtime.RuntimeDependency
-	Name() string
+	GetCRIVersion() CRIVersion
 
-	CRIVersion() (string, error)
+	GetRuntimeStatus() (*criv1.RuntimeStatus, error)
 
-	Status() (*criv1.RuntimeStatus, error)
+	GetPods(includeContainers bool) ([]*Pod, error)
 
-	GetPods(all bool) ([]*Pod, error)
+	GetPodStatus(podSandboxID string, containerIDs []string) (*PodStatus, error)
 
-	GetPodsCache() ([]*Pod, error)
+	GetContainerStatus(containerID string) (*ContainerStatus, error)
 
-	CreateSandbox(pod *v1.Pod, pullSecrets []v1.Secret) PodStatus
+	CreateSandbox(pod *v1.Pod, pullSecrets []v1.Secret) (*Pod, error)
 
-	CreateContainer(pod *v1.Pod, container *v1.Container, pullSecrets []v1.Secret) ContainerStatus
+	CreateContainer(pod *v1.Pod, container *v1.Container, pullSecrets []v1.Secret) (*ContainerStatus, error)
 
-	StartContainer(podID types.UID, containerID ContainerID) error
+	StartContainer(containerID string) error
 
-	TerminatePod(podID types.UID, gracePeriodOverride *int64) error
+	TerminatePod(podSandboxID string) error
 
-	TerminateContainer(podID types.UID, containerID ContainerID) error
-
-	GetPodStatus(podID types.UID, name, namespace string) (PodStatus, error)
-
-	GetContainerStatus(pod *v1.Pod, uid types.UID, name, namespace string) (ContainerStatus, error)
-
-	UpdateContainer(podID types.UID, containerID ContainerID, container *v1.Container) error
+	TerminateContainer(containerID string, gracePeriod time.Duration) error
 
 	GetImageLabel() (string, error)
 }
 
-// Pod is a sandbox container and a group of containers.
-type Pod struct {
-	ID         types.UID
-	Name       string
-	Namespace  string
-	IPs        []string
-	Sandbox    *criv1.Container
-	Containers []*criv1.Container
+type CRIVersion struct {
+	Version           string
+	RuntimeName       string
+	RuntimeVersion    string
+	RuntimeApiVersion string
 }
 
-type ContainerID string
+// Pod is a sandbox container and a group of containers.
+type Pod struct {
+	ID           types.UID
+	IPs          []string
+	Name         string
+	Namespace    string
+	SandboxID    string
+	SandboxState criv1.PodSandboxState
+	Containers   map[string]*criv1.Container
+}
 
 // PodStatus represents the status of the pod and its containers.
 type PodStatus struct {
-	ID                types.UID
-	Name              string
-	Namespace         string
-	IPs               []string
 	SandboxStatus     *criv1.PodSandboxStatus
-	ContainerStatuses []*criv1.ContainerStatus
+	ContainerStatuses map[string]*criv1.ContainerStatus
 }
 
 // ContainerWorkingStatus is a fornax container status which can put a container in standby
@@ -88,7 +84,7 @@ const (
 
 // ContainerWorkingStatus represents the cri status of a container and fornax status.
 type ContainerStatus struct {
-	ID              ContainerID
+	ID              string
 	Name            string
 	WorkingStatus   ContainerWorkingStatus
 	ContainerStatus *criv1.ContainerStatus

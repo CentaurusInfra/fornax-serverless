@@ -44,7 +44,7 @@ manifests: controller-gen ## Generate WebhookConfiguration, ClusterRole and Cust
 
 .PHONY: generate
 generate: controller-gen openapi-gen client-gen ## generate-client-gen ## Generate code containing DeepCopy, DeepCopyInto, and DeepCopyObject method implementations.
-	# $(CONTROLLER_GEN) object:headerFile="hack/boilerplate.go.txt" paths="./..."
+	$(CONTROLLER_GEN) object:headerFile="hack/boilerplate.go.txt" paths="./..."
 	# $(OPENAPI_GEN) --go-header-file="hack/boilerplate.go.txt" --input-dirs="./pkg/apis/core/..." --output-package="centaurusinfra.io/fornax-serverless/pkg/apis/openapi"
 
 GENERATE_GROUPS = $(shell pwd)/hack/generate-groups.sh
@@ -139,9 +139,9 @@ OPENAPI_GEN = $(shell pwd)/bin/openapi-gen
 openapi-gen: ## Download openapi-gen locally if necessary.
 	$(call go-get-tool,$(OPENAPI_GEN),k8s.io/kube-openapi/cmd/openapi-gen@v0.0.0-20211115234752-e816edb12b65)
 
-CLIENT_GEN = $(shell pwd)/bin/client-gen
-LISTER_GEN = $(shell pwd)/bin/lister-gen
-INFORMER_GEN = $(shell pwd)/bin/informer-gen
+CLIENT_GEN = $(shell pwd)/bin/client-gen		## use it to generate clientset
+LISTER_GEN = $(shell pwd)/bin/lister-gen		## use it to generate lister watch 
+INFORMER_GEN = $(shell pwd)/bin/informer-gen    ## use it to generate informer info
 .PHONY: client-gen
 client-gen: ## Download client-gen, lister-gen and informer-gen locally if necessary.
 	$(call go-get-tool,$(CLIENT_GEN),k8s.io/code-generator/cmd/client-gen@v0.23.1)

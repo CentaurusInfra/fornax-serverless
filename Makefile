@@ -44,7 +44,7 @@ manifests: controller-gen ## Generate WebhookConfiguration, ClusterRole and Cust
 
 .PHONY: generate
 generate: controller-gen openapi-gen client-gen generate-client-gen ## Generate code containing DeepCopy, DeepCopyInto, and DeepCopyObject method implementations.
-	$(CONTROLLER_GEN) object:headerFile="hack/boilerplate.go.txt" paths="./..."
+	$(CONTROLLER_GEN) object:headerFile="hack/boilerplate.go.txt" paths="./pkg/..."
 	# $(OPENAPI_GEN) --go-header-file="hack/boilerplate.go.txt" --input-dirs="./pkg/apis/core/..." --output-package="centaurusinfra.io/fornax-serverless/pkg/apis/openapi"
 
 GENERATE_GROUPS = $(shell pwd)/hack/generate-groups.sh
@@ -52,7 +52,7 @@ GENERATE_GROUPS = $(shell pwd)/hack/generate-groups.sh
 generate-client-gen:  ## Generate code containing clientset, lister, and informer method implementations.
 	$(GENERATE_GROUPS) "client, lister, informer"  centaurusinfra.io/fornax-serverless/pkg/client "centaurusinfra.io/fornax-serverless/pkg/apis" "core:v1" \
 	--go-header-file hack/boilerplate.go.txt \
-	paths="./..."
+	paths="./pkg/..."
 
 
 .PHONY: fmt

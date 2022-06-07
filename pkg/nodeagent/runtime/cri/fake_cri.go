@@ -17,8 +17,9 @@ limitations under the License.
 package cri
 
 import (
-	"k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/types"
+	"time"
+
+	v1 "k8s.io/api/core/v1"
 	criv1 "k8s.io/cri-api/pkg/apis/runtime/v1"
 )
 
@@ -26,169 +27,57 @@ var _ RuntimeService = &FakeRuntimeService{}
 
 type FakeRuntimeService struct{}
 
-// Start implements RuntimeService
-func (*FakeRuntimeService) Start() error {
+// GetPodStatus implements RuntimeService
+func (*FakeRuntimeService) GetPodStatus(podSandboxID string, containerIDs []string) (*PodStatus, error) {
 	panic("unimplemented")
-}
-
-// Stop implements RuntimeService
-func (*FakeRuntimeService) Stop() error {
-	panic("unimplemented")
-}
-
-// UpdateNodeStatus implements RuntimeService
-func (*FakeRuntimeService) UpdateNodeStatus(*v1.Node) error {
-	panic("unimplemented")
-}
-
-// CRIVersion implements RuntimeService
-func (*FakeRuntimeService) CRIVersion() (string, error) {
-	return "v1", nil
 }
 
 // CreateContainer implements RuntimeService
-func (*FakeRuntimeService) CreateContainer(pod *v1.Pod, container *v1.Container, pullSecrets []v1.Secret) ContainerStatus {
-	return ContainerStatus{
-		ID:            "",
-		Name:          "",
-		WorkingStatus: "",
-		ContainerStatus: &criv1.ContainerStatus{
-			Id: "",
-			Metadata: &criv1.ContainerMetadata{
-				Name:                 "",
-				Attempt:              0,
-				XXX_NoUnkeyedLiteral: struct{}{},
-				XXX_sizecache:        0,
-			},
-			State:                0,
-			CreatedAt:            0,
-			StartedAt:            0,
-			FinishedAt:           0,
-			ExitCode:             0,
-			Image:                &criv1.ImageSpec{},
-			ImageRef:             "",
-			Reason:               "",
-			Message:              "",
-			Labels:               map[string]string{},
-			Annotations:          map[string]string{},
-			Mounts:               []*criv1.Mount{},
-			LogPath:              "",
-			XXX_NoUnkeyedLiteral: struct{}{},
-			XXX_sizecache:        0,
-		},
-	}
+func (*FakeRuntimeService) CreateContainer(pod *v1.Pod, container *v1.Container, pullSecrets []v1.Secret) (*ContainerStatus, error) {
+	panic("unimplemented")
 }
 
 // CreateSandbox implements RuntimeService
-func (*FakeRuntimeService) CreateSandbox(pod *v1.Pod, pullSecrets []v1.Secret) PodStatus {
-	return PodStatus{
-		ID:        "",
-		Name:      "",
-		Namespace: "",
-		IPs:       []string{},
-		SandboxStatus: &criv1.PodSandboxStatus{
-			Id: "",
-			Metadata: &criv1.PodSandboxMetadata{
-				Name:                 "",
-				Uid:                  "",
-				Namespace:            "",
-				Attempt:              0,
-				XXX_NoUnkeyedLiteral: struct{}{},
-				XXX_sizecache:        0,
-			},
-			State:                0,
-			CreatedAt:            0,
-			Network:              &criv1.PodSandboxNetworkStatus{},
-			Linux:                &criv1.LinuxPodSandboxStatus{},
-			Labels:               map[string]string{},
-			Annotations:          map[string]string{},
-			RuntimeHandler:       "",
-			XXX_NoUnkeyedLiteral: struct{}{},
-			XXX_sizecache:        0,
-		},
-		ContainerStatuses: []*criv1.ContainerStatus{},
-	}
+func (*FakeRuntimeService) CreateSandbox(pod *v1.Pod, pullSecrets []v1.Secret) (*Pod, error) {
+	panic("unimplemented")
+}
+
+// GetCRIVersion implements RuntimeService
+func (*FakeRuntimeService) GetCRIVersion() CRIVersion {
+	panic("unimplemented")
 }
 
 // GetContainerStatus implements RuntimeService
-func (*FakeRuntimeService) GetContainerStatus(pod *v1.Pod, uid types.UID, name string, namespace string) (ContainerStatus, error) {
-	return ContainerStatus{
-		ID:            "",
-		Name:          name,
-		WorkingStatus: "",
-		ContainerStatus: &criv1.ContainerStatus{
-			Id: "",
-			Metadata: &criv1.ContainerMetadata{
-				Name:                 name,
-				Attempt:              0,
-				XXX_NoUnkeyedLiteral: struct{}{},
-				XXX_sizecache:        0,
-			},
-			State:                0,
-			CreatedAt:            0,
-			StartedAt:            0,
-			FinishedAt:           0,
-			ExitCode:             0,
-			Image:                &criv1.ImageSpec{},
-			ImageRef:             "",
-			Reason:               "",
-			Message:              "",
-			Labels:               map[string]string{},
-			Annotations:          map[string]string{},
-			Mounts:               []*criv1.Mount{},
-			LogPath:              "",
-			XXX_NoUnkeyedLiteral: struct{}{},
-			XXX_sizecache:        0,
-		},
-	}, nil
+func (*FakeRuntimeService) GetContainerStatus(containerID string) (*ContainerStatus, error) {
+	panic("unimplemented")
 }
 
 // GetImageLabel implements RuntimeService
 func (*FakeRuntimeService) GetImageLabel() (string, error) {
-	return "imagelabel", nil
-}
-
-// GetPodStatus implements RuntimeService
-func (*FakeRuntimeService) GetPodStatus(podID types.UID, name string, namespace string) (PodStatus, error) {
-	return PodStatus{}, nil
+	panic("unimplemented")
 }
 
 // GetPods implements RuntimeService
-func (*FakeRuntimeService) GetPods(all bool) ([]*Pod, error) {
-	return []*Pod{}, nil
+func (*FakeRuntimeService) GetPods(includeTerminated bool) ([]*Pod, error) {
+	panic("unimplemented")
 }
 
-// GetPodsCache implements RuntimeService
-func (*FakeRuntimeService) GetPodsCache() ([]*Pod, error) {
-	return []*Pod{}, nil
-}
-
-// Name implements RuntimeService
-func (*FakeRuntimeService) Name() string {
-	return "FakeRuntimeService"
+// GetRuntimeStatus implements RuntimeService
+func (*FakeRuntimeService) GetRuntimeStatus() (*criv1.RuntimeStatus, error) {
+	panic("unimplemented")
 }
 
 // StartContainer implements RuntimeService
-func (*FakeRuntimeService) StartContainer(podID types.UID, containerID ContainerID) error {
-	return nil
-}
-
-// Status implements RuntimeService
-func (*FakeRuntimeService) Status() (*criv1.RuntimeStatus, error) {
-	return &criv1.RuntimeStatus{}, nil
+func (*FakeRuntimeService) StartContainer(containerID string) error {
+	panic("unimplemented")
 }
 
 // TerminateContainer implements RuntimeService
-func (*FakeRuntimeService) TerminateContainer(podID types.UID, containerID ContainerID) error {
-	return nil
+func (*FakeRuntimeService) TerminateContainer(containerID string, gracePeriod time.Duration) error {
+	panic("unimplemented")
 }
 
 // TerminatePod implements RuntimeService
-func (*FakeRuntimeService) TerminatePod(podID types.UID, gracePeriodOverride *int64) error {
-	return nil
-}
-
-// UpdateContainer implements RuntimeService
-func (*FakeRuntimeService) UpdateContainer(podID types.UID, containerID ContainerID, container *v1.Container) error {
-	return nil
+func (*FakeRuntimeService) TerminatePod(podSandboxID string) error {
+	panic("unimplemented")
 }

@@ -59,6 +59,7 @@ message FornaxCoreConfiguration {
 
 message NodeConfiguration {
   required k8s.io.api.core.v1.Node node = 1;
+  repeated k8s.io.api.core.v1.Pod daemonPods = 2;
 }
 
 message NodeRegistry {

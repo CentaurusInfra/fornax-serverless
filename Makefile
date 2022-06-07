@@ -54,7 +54,6 @@ generate-client-gen:  ## Generate code containing clientset, lister, and informe
 	--go-header-file hack/boilerplate.go.txt \
 	paths="./pkg/..."
 
-
 .PHONY: fmt
 fmt: ## Run go fmt against code.
 	go fmt ./...

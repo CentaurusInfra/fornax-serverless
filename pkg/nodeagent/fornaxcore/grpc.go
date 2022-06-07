@@ -18,6 +18,7 @@ package fornaxcore
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"time"
 
@@ -35,6 +36,21 @@ type FornaxCoreConfiguration struct {
 	connTimeout    time.Duration
 	callTimeout    time.Duration
 	maxRecvMsgSize int
+}
+
+const (
+	DefaultConnTimeout    = 5 * time.Second
+	DefaultCallTimeout    = 5 * time.Second
+	DefaultMaxRecvMsgSize = 5
+)
+
+func NewFornaxCoreConfiguration(endpoint string) *FornaxCoreConfiguration {
+	return &FornaxCoreConfiguration{
+		endpoint:       endpoint,
+		connTimeout:    DefaultConnTimeout,
+		callTimeout:    DefaultCallTimeout,
+		maxRecvMsgSize: DefaultMaxRecvMsgSize,
+	}
 }
 
 type FornaxCoreClient interface {
@@ -61,10 +77,18 @@ func (f *fornaxCoreClient) GetMessage(receiver string, channel chan *fornax.Forn
 
 // PutMessage implements FornaxCore
 func (f *fornaxCoreClient) PutMessage(message *fornax.FornaxCoreMessage) error {
+	if f.service == nil {
+		return fmt.Errorf("fornax core %s is not initialized yet", f.config.endpoint)
+	}
+
 	ctx, cancel := context.WithTimeout(context.Background(), f.config.callTimeout)
 	defer cancel()
 	opts := grpc.EmptyCallOption{}
-	f.service.PutMessage(ctx, message, opts)
+	_, err := f.service.PutMessage(ctx, message, opts)
+	if err != nil {
+		klog.ErrorS(err, "failed to send message to fornax core", "endpoint", f.config.endpoint)
+		return err
+	}
 	return nil
 }
 
@@ -130,8 +154,14 @@ func (f *fornaxCoreClient) recvMessage() {
 		}
 
 		if f.getMessageClient == nil {
-			f.initGetMessageClient()
+			err := f.initGetMessageClient()
+			if err != nil {
+				klog.ErrorS(err, "can not init fornax core get message client", "endpoint", f.config.endpoint)
+				time.Sleep(2 * time.Second)
+				continue
+			}
 		}
+
 		msg, err := f.getMessageClient.Recv()
 		if err == io.EOF {
 			klog.ErrorS(err, "fornaxCore closed stream at server side, reset to get a new stream client")
@@ -177,11 +207,6 @@ func (f *fornaxCoreClient) Stop() error {
 
 // Start implements FornaxCore
 func (f *fornaxCoreClient) Start() error {
-	err := f.connect()
-	if err != nil {
-		return err
-	}
-
 	go f.recvMessage()
 	return nil
 }

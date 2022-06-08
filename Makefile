@@ -48,12 +48,15 @@ generate: controller-gen openapi-gen client-gen generate-client-gen ## Generate 
 	# $(OPENAPI_GEN) --go-header-file="hack/boilerplate.go.txt" --input-dirs="./pkg/apis/core/..." --output-package="centaurusinfra.io/fornax-serverless/pkg/apis/openapi"
 
 GENERATE_GROUPS = $(shell pwd)/hack/generate-groups.sh
+REPO_ROOT_DIR = $(shell pwd)
 .PHONY: generate-client-gen
 generate-client-gen:  ## Generate code containing clientset, lister, and informer method implementations.
-	$(GENERATE_GROUPS) "client, lister, informer"  centaurusinfra.io/fornax-serverless/pkg/client "centaurusinfra.io/fornax-serverless/pkg/apis" "core:v1" \
-	-h hack/boilerplate.go.txt \
-	#--go-header-file hack/boilerplate.go.txt \
-	
+	$(GENERATE_GROUPS) "client, lister, informer"  centaurusinfra.io/fornax-serverless/pkg/client centaurusinfra.io/fornax-serverless/pkg/apis "core:v1" \
+	--go-header-file $(REPO_ROOT_DIR)/hack/boilerplate.go.txt \
+	--output-base $(REPO_ROOT_DIR) \
+
+	mv ./centaurusinfra.io/fornax-serverless/pkg/client ./pkg/
+	rm -rf ./centaurusinfra.io
 
 .PHONY: fmt
 fmt: ## Run go fmt against code.

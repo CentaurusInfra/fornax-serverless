@@ -51,7 +51,9 @@ GENERATE_GROUPS = $(shell pwd)/hack/generate-groups.sh
 .PHONY: generate-client-gen
 generate-client-gen:  ## Generate code containing clientset, lister, and informer method implementations.
 	$(GENERATE_GROUPS) "client, lister, informer"  centaurusinfra.io/fornax-serverless/pkg/client "centaurusinfra.io/fornax-serverless/pkg/apis" "core:v1" \
-	--go-header-file hack/boilerplate.go.txt \
+	-h hack/boilerplate.go.txt \
+	#--go-header-file hack/boilerplate.go.txt \
+	
 
 .PHONY: fmt
 fmt: ## Run go fmt against code.

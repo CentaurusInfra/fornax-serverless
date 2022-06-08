@@ -57,7 +57,7 @@ generate-client-gen:  ## Generate code containing clientset, lister, and informe
 
 .PHONY: fmt
 fmt: ## Run go fmt against code.
-	go fmt -v ./...
+	go fmt ./...
 
 .PHONY: vet
 vet: ## Run go vet against code.

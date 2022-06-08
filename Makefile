@@ -55,6 +55,8 @@ generate-client-gen:  ## Generate code containing clientset, lister, and informe
 	--go-header-file $(REPO_ROOT_DIR)/hack/boilerplate.go.txt \
 	--output-base $(REPO_ROOT_DIR) \
 
+	# Delete existing code
+	rm -rf ./pkg/client
 	mv ./centaurusinfra.io/fornax-serverless/pkg/client ./pkg/
 	rm -rf ./centaurusinfra.io
 

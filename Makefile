@@ -57,6 +57,8 @@ generate-client-gen:  ## Generate code containing clientset, lister, and informe
 
 	# Delete existing code
 	rm -rf ./pkg/client
+	
+	# Move and cleanup
 	mv ./centaurusinfra.io/fornax-serverless/pkg/client ./pkg/
 	rm -rf ./centaurusinfra.io
 

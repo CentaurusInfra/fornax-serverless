@@ -10,7 +10,6 @@ require (
 	github.com/google/cadvisor v0.44.1
 	github.com/grpc-ecosystem/go-grpc-middleware v1.3.0
 	github.com/mattn/go-sqlite3 v1.14.13
-	github.com/pkg/errors v0.9.1
 	github.com/stretchr/testify v1.7.1
 	golang.org/x/sys v0.0.0-20220520151302-bc2c85ada10a
 	google.golang.org/grpc v1.47.0
@@ -22,9 +21,6 @@ require (
 	k8s.io/cri-api v0.24.0
 	k8s.io/klog v1.0.0
 	k8s.io/klog/v2 v2.60.1
-	k8s.io/kube-openapi v0.0.0-20220328201542-3ee0da9b0b42
-	k8s.io/kubernetes v0.0.0-00010101000000-000000000000
-	k8s.io/mount-utils v0.24.1
 	sigs.k8s.io/apiserver-runtime v1.1.1
 )
 
@@ -44,6 +40,7 @@ require (
 	github.com/coreos/go-systemd/v22 v22.3.2 // indirect
 	github.com/cyphar/filepath-securejoin v0.2.3 // indirect
 	github.com/davecgh/go-spew v1.1.1 // indirect
+	github.com/docker/distribution v2.8.1+incompatible // indirect
 	github.com/docker/go-units v0.4.0 // indirect
 	github.com/emicklei/go-restful v2.9.5+incompatible // indirect
 	github.com/euank/go-kmsg-parser v2.0.0+incompatible // indirect
@@ -81,6 +78,7 @@ require (
 	github.com/opencontainers/runc v1.1.2 // indirect
 	github.com/opencontainers/runtime-spec v1.0.3-0.20210326190908-1c3f411f0417 // indirect
 	github.com/opencontainers/selinux v1.10.0 // indirect
+	github.com/pkg/errors v0.9.1 // indirect
 	github.com/pmezard/go-difflib v1.0.0 // indirect
 	github.com/prometheus/client_golang v1.12.1 // indirect
 	github.com/prometheus/client_model v0.2.0 // indirect
@@ -124,7 +122,7 @@ require (
 	gopkg.in/yaml.v2 v2.4.0 // indirect
 	gopkg.in/yaml.v3 v3.0.0-20210107192922-496545a6307b // indirect
 	k8s.io/component-base v0.24.1 // indirect
-	k8s.io/component-helpers v0.24.1 // indirect
+	k8s.io/kube-openapi v0.0.0-20220328201542-3ee0da9b0b42 // indirect
 	k8s.io/utils v0.0.0-20220210201930-3a6ce19ff2f9 // indirect
 	sigs.k8s.io/apiserver-network-proxy/konnectivity-client v0.0.30 // indirect
 	sigs.k8s.io/json v0.0.0-20211208200746-9f7c6b3444d2 // indirect

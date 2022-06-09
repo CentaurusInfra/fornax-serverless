@@ -43,9 +43,15 @@ manifests: controller-gen ## Generate WebhookConfiguration, ClusterRole and Cust
 	$(CONTROLLER_GEN) rbac:roleName=manager-role crd webhook paths="./pkg/..." output:crd:artifacts:config=config/crd/bases
 
 .PHONY: generate
-generate: controller-gen openapi-gen ## Generate code containing DeepCopy, DeepCopyInto, and DeepCopyObject method implementations.
+generate: controller-gen openapi-gen client-gen ## generate-client-gen ## Generate code containing DeepCopy, DeepCopyInto, and DeepCopyObject method implementations.
 	$(CONTROLLER_GEN) object:headerFile="hack/boilerplate.go.txt" paths="./pkg/..."
 	# $(OPENAPI_GEN) --go-header-file="hack/boilerplate.go.txt" --input-dirs="./pkg/apis/core/..." --output-package="centaurusinfra.io/fornax-serverless/pkg/apis/openapi"
+
+GENERATE_GROUPS = $(shell pwd)/hack/generate-groups.sh
+.PHONY: generate-client-gen
+generate-client-gen:  ## Generate code containing clientset, lister, and informer method implementations.
+	$(GENERATE_GROUPS) "client, lister, informer"  centaurusinfra.io/fornax-serverless/pkg/client "centaurusinfra.io/fornax-serverless/pkg/apis" "core:v1" \
+	--go-header-file hack/boilerplate.go.txt \
 
 .PHONY: fmt
 fmt: ## Run go fmt against code.
@@ -131,6 +137,15 @@ OPENAPI_GEN = $(shell pwd)/bin/openapi-gen
 .PHONY: openapi-gen
 openapi-gen: ## Download openapi-gen locally if necessary.
 	$(call go-get-tool,$(OPENAPI_GEN),k8s.io/kube-openapi/cmd/openapi-gen@v0.0.0-20211115234752-e816edb12b65)
+
+CLIENT_GEN = $(shell pwd)/bin/client-gen		## use it to generate clientset
+LISTER_GEN = $(shell pwd)/bin/lister-gen		## use it to generate lister watch 
+INFORMER_GEN = $(shell pwd)/bin/informer-gen    ## use it to generate informer info
+.PHONY: client-gen
+client-gen: ## Download client-gen, lister-gen and informer-gen locally if necessary.
+	$(call go-get-tool,$(CLIENT_GEN),k8s.io/code-generator/cmd/client-gen@v0.23.1)
+	$(call go-get-tool,$(LISTER_GEN),k8s.io/code-generator/cmd/lister-gen@v0.23.1)
+	$(call go-get-tool,$(INFORMER_GEN),k8s.io/code-generator/cmd/informer-gen@v0.23.1)
 
 PROTOC_GEN = $(shell pwd)/bin/protoc-gen-go
 PROTOC_GEN_GRPC = $(shell pwd)/bin/protoc-gen-go-grpc

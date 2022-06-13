@@ -15,7 +15,7 @@ metadata:
     name: nginx-endpoint
 spec:
   protocol: TCP
-  ingressGwipAddress: 172.13.0.1
+  ingressGWIPAddress: 172.13.0.1
   ingressPort: 30001
   destinations:
     - ipAddress: 192.168.1

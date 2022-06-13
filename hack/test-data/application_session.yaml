@@ -4,6 +4,11 @@ metadata:
   name: nginx-session-1
   labels:
     application: nginx2
+  ownerReferences:
+  - apiVersion: core.fornax-serverless.centaurusinfra.io/v1
+    kind: Application
+    name: nginx2
+    uid: ad834522-d9a5-4841-beac-991ff3798c00
 spec:
   sessionName: my-nginx2-session
   sessionData: my-nginx2-session-data

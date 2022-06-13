@@ -62,7 +62,7 @@ func (in *ClientSession) GetObjectMeta() *metav1.ObjectMeta {
 }
 
 func (in *ClientSession) NamespaceScoped() bool {
-	return false
+	return true
 }
 
 func (in *ClientSession) New() runtime.Object {

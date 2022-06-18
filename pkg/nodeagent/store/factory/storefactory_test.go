@@ -22,40 +22,38 @@ import (
 	"testing"
 
 	fornaxv1 "centaurusinfra.io/fornax-serverless/pkg/apis/core/v1"
-	"centaurusinfra.io/fornax-serverless/pkg/nodeagent/pod"
-	"centaurusinfra.io/fornax-serverless/pkg/nodeagent/runtime/cri"
-	"centaurusinfra.io/fornax-serverless/pkg/nodeagent/session"
+	"centaurusinfra.io/fornax-serverless/pkg/nodeagent/runtime"
 	"centaurusinfra.io/fornax-serverless/pkg/nodeagent/store/sqlite"
+	fornaxtypes "centaurusinfra.io/fornax-serverless/pkg/nodeagent/types"
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-func NewATestContainer(id string) *pod.Container {
-	testobj := pod.Container{
-		Identifier:      id,
-		Container:       v1.Container{},
-		RuntimeConainer: cri.ContainerStatus{},
+func NewATestContainer(id string) *fornaxtypes.Container {
+	testobj := fornaxtypes.Container{
+		ContainerSpec:    &v1.Container{},
+		RuntimeContainer: &runtime.Container{},
 	}
 	return &testobj
 }
 
-func NewATestSession(id string) *session.Session {
-	testSession := session.Session{
+func NewATestSession(id string) *fornaxtypes.Session {
+	testSession := fornaxtypes.Session{
 		Identifier:    id,
 		PodIdentifier: "",
-		Pod:           v1.Pod{},
+		Pod:           &v1.Pod{},
 		Session:       &fornaxv1.ApplicationSession{},
 		SessionState:  "",
 	}
 	return &testSession
 }
 
-func NewATestPod(id string) *pod.Pod {
-	testPod := pod.Pod{
-		Identifier:  id,
-		Application: fornaxv1.Application{},
-		PodState:    "PodStateCreated",
-		Pod: v1.Pod{
+func NewATestPod(id string) *fornaxtypes.FornaxPod {
+	testPod := fornaxtypes.FornaxPod{
+		Identifier:    id,
+		ApplicationId: "applicationId",
+		PodState:      "PodStateCreated",
+		PodSpec: &v1.Pod{
 			TypeMeta: metav1.TypeMeta{
 				Kind:       "Pod",
 				APIVersion: "k8s.io/core/v1",
@@ -64,9 +62,9 @@ func NewATestPod(id string) *pod.Pod {
 			Spec:       v1.PodSpec{},
 			Status:     v1.PodStatus{},
 		},
-		ConfigMap:        v1.ConfigMap{},
-		RuntimePod:       cri.Pod{},
-		RuntimePodStatus: cri.PodStatus{},
+		ConfigMapSpec:    &v1.ConfigMap{},
+		RuntimePod:       &runtime.Pod{},
+		RuntimePodStatus: &runtime.PodStatus{},
 	}
 	return &testPod
 }
@@ -117,7 +115,7 @@ func TestPodStore_GetPod(t *testing.T) {
 	tests := []struct {
 		name       string
 		identifier string
-		want       *pod.Pod
+		want       *fornaxtypes.FornaxPod
 		wantErr    bool
 	}{
 		{
@@ -157,7 +155,7 @@ func TestPodStore_PutPod(t *testing.T) {
 	testPod2.PodState = "PodStateTerminated"
 	tests := []struct {
 		name    string
-		args    *pod.Pod
+		args    *fornaxtypes.FornaxPod
 		wantErr bool
 	}{
 		{
@@ -231,7 +229,7 @@ func TestSessionStore_GetSession(t *testing.T) {
 	tests := []struct {
 		name       string
 		identifier string
-		want       *session.Session
+		want       *fornaxtypes.Session
 		wantErr    bool
 	}{
 		{
@@ -272,7 +270,7 @@ func TestSessionStore_PutSession(t *testing.T) {
 	testSession2.SessionState = "SessionStateClosed"
 	tests := []struct {
 		name    string
-		session *session.Session
+		session *fornaxtypes.Session
 		wantErr bool
 	}{
 		{
@@ -341,7 +339,7 @@ func TestContainerStore_GetContainer(t *testing.T) {
 	tests := []struct {
 		name       string
 		identifier string
-		want       *pod.Container
+		want       *fornaxtypes.Container
 		wantErr    bool
 	}{
 		{
@@ -379,7 +377,7 @@ func TestContainerStore_PutContainer(t *testing.T) {
 	testobj := NewATestContainer("testcontainer1")
 	tests := []struct {
 		name      string
-		container *pod.Container
+		container *fornaxtypes.Container
 		wantErr   bool
 	}{
 		{

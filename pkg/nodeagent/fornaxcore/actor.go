@@ -17,6 +17,8 @@ limitations under the License.
 package fornaxcore
 
 import (
+	"errors"
+
 	"centaurusinfra.io/fornax-serverless/pkg/fornaxcore/grpc"
 	"centaurusinfra.io/fornax-serverless/pkg/message"
 	"k8s.io/klog/v2"
@@ -74,6 +76,8 @@ func (n *FornaxCoreActor) Start(nodeActor message.ActorRef) error {
 					switch {
 					case msgType == grpc.MessageType_UNSPECIFIED:
 						klog.Warningf("receiving message with unspecified type from fornaxcore, skip")
+					case msgType == grpc.MessageType_FORNAX_CORE_CONFIGURATION:
+						n.onFornaxCoreConfigurationCommand(msg.GetFornaxCoreConfiguration())
 					default:
 						// all fornaxcore message is sent to node actor to handle, fornaxcore actor is message broker
 						n.innerActor.Reference().Send(n.nodeActor, msg)
@@ -102,20 +106,78 @@ func (n *FornaxCoreActor) FornaxCoreMessageProcessor(msg message.ActorMessage) (
 	go func() {
 		for _, v := range n.fornaxcores {
 			if err := v.PutMessage(msg.Body.(*grpc.FornaxCoreMessage)); err != nil {
-				klog.ErrorS(err, "failed to send message to fornax cor ")
+				klog.ErrorS(err, "failed to send message to fornax core")
 			}
 		}
 	}()
 	return nil, nil
 }
 
-func NewFornaxCoreActor(identifier string, configs []*FornaxCoreConfiguration) (*FornaxCoreActor, message.ActorRef) {
+// fornaxcore configuration tell node if fornaxcore has any change, currently only handle fornaxcore join and leave
+// and setup connection with new fornaxcore and disconnect from old one
+func (n *FornaxCoreActor) onFornaxCoreConfigurationCommand(msg *grpc.FornaxCoreConfiguration) error {
+	// reinitialize fornaxcore clients according configuration
+	newips := []string{}
+	newipset := map[string]bool{}
+	primaryIp := msg.GetPrimary().GetIp()
+	if len(primaryIp) == 0 {
+		return errors.New("primary ip in fornax core configuration is nil")
+	}
+	_, found := n.fornaxcores[primaryIp]
+	if !found {
+		newips = append(newips, primaryIp)
+		newipset[primaryIp] = true
+	}
+
+	for _, v := range msg.GetStandbys() {
+		_, found := n.fornaxcores[v.GetIp()]
+		if !found {
+			newips = append(newips, v.GetIp())
+			newipset[v.GetIp()] = true
+		}
+	}
+
+	oldfornaxcores := map[string]FornaxCoreClient{}
+	for k, v := range n.fornaxcores {
+		_, found := newipset[k]
+		if !found {
+			// disappearing fornax core, mark it old and remove it from fornaxcores and close connection to it
+			oldfornaxcores[k] = v
+		}
+	}
+
+	newfornaxcores := InitFornaxCoreClients(newips)
+	for k, v := range newfornaxcores {
+		n.fornaxcores[k] = v
+	}
+
+	for k, v := range oldfornaxcores {
+		delete(n.fornaxcores, k)
+		v.Stop()
+	}
+	return nil
+}
+
+func (n *FornaxCoreActor) Reference() message.ActorRef {
+	return n.innerActor.Reference()
+}
+
+func InitFornaxCoreClients(ips []string) map[string]FornaxCoreClient {
+	configs := []*FornaxCoreConfiguration{}
+	for _, v := range ips {
+		configs = append(configs, NewFornaxCoreConfiguration(v))
+	}
 	fornaxcores := map[string]FornaxCoreClient{}
 	for _, v := range configs {
 		f := NewFornaxCoreClient(*v)
 		fornaxcores[v.endpoint] = f
 	}
 
+	return fornaxcores
+}
+
+func NewFornaxCoreActor(identifier string, fornaxCoreIps []string) *FornaxCoreActor {
+	fornaxcores := InitFornaxCoreClients(fornaxCoreIps)
 	actor := &FornaxCoreActor{
 		identifier:  identifier,
 		stop:        false,
@@ -125,5 +187,5 @@ func NewFornaxCoreActor(identifier string, configs []*FornaxCoreConfiguration) (
 	}
 
 	actor.innerActor = message.NewLocalChannelActor(identifier, actor.FornaxCoreMessageProcessor)
-	return actor, actor.innerActor.Reference()
+	return actor
 }

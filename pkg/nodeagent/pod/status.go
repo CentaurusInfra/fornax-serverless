@@ -1,0 +1,224 @@
+/*
+Copyright 2022.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
+
+package pod
+
+import (
+	"time"
+
+	podcontainer "centaurusinfra.io/fornax-serverless/pkg/nodeagent/pod/container"
+	"centaurusinfra.io/fornax-serverless/pkg/nodeagent/types"
+
+	v1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+)
+
+func SetPodStatus(fppod *types.FornaxPod) {
+	apiPodStatus := fppod.PodSpec.Status.DeepCopy()
+	apiPodStatus.Phase = ToV1PodPhase(fppod)
+
+	MergePodConditions(fppod, apiPodStatus.Conditions)
+	if apiPodStatus.Conditions == nil {
+		apiPodStatus.Conditions = []v1.PodCondition{}
+	}
+
+	apiPodStatus.PodIP = fppod.RuntimePod.IPs[0]
+	podIps := []v1.PodIP{}
+	for _, v := range fppod.RuntimePod.IPs {
+		podIps = append(podIps, v1.PodIP{
+			IP: v,
+		})
+	}
+	apiPodStatus.PodIPs = podIps
+
+	//TODO
+	// 4/ add qos status
+
+	fppod.PodSpec.Status = *apiPodStatus
+}
+
+func ToV1PodPhase(fppod *types.FornaxPod) v1.PodPhase {
+	var podPhase v1.PodPhase
+
+	switch fppod.PodState {
+	case types.PodStateCreating:
+		podPhase = v1.PodPending
+	case types.PodStateCreated:
+		podPhase = v1.PodPending
+	case types.PodStateRunning:
+		podPhase = v1.PodRunning
+	case types.PodStateTerminating:
+		podPhase = v1.PodUnknown
+	case types.PodStateTerminated:
+		podPhase = v1.PodSucceeded
+	default:
+		podPhase = v1.PodUnknown
+	}
+
+	// check container runtime state
+	for _, v := range fppod.RuntimePodStatus.ContainerStatuses {
+		if v.FinishedAt != 0 || v.ExitCode != 0 {
+			podPhase = v1.PodFailed
+			break
+		}
+	}
+
+	return podPhase
+}
+
+func MergePodConditions(fppod *types.FornaxPod, apiPodConditions []v1.PodCondition) []v1.PodCondition {
+	conditions := map[v1.PodConditionType]*v1.PodCondition{}
+
+	initReadyCondition := v1.PodCondition{
+		Type:          v1.PodInitialized,
+		Status:        v1.ConditionUnknown,
+		LastProbeTime: metav1.Time{Time: time.Now()},
+	}
+	conditions[v1.PodInitialized] = &initReadyCondition
+
+	containerReadyCondition := v1.PodCondition{
+		Type:          v1.ContainersReady,
+		Status:        v1.ConditionUnknown,
+		LastProbeTime: metav1.Time{Time: time.Now()},
+	}
+	conditions[v1.ContainersReady] = &containerReadyCondition
+
+	podReadyCondition := v1.PodCondition{
+		Type:          v1.PodReady,
+		Status:        v1.ConditionUnknown,
+		LastProbeTime: metav1.Time{Time: time.Now()},
+	}
+	conditions[v1.PodReady] = &podReadyCondition
+
+	podScheduledCondition := v1.PodCondition{
+		Type:          v1.PodScheduled,
+		Status:        v1.ConditionTrue,
+		LastProbeTime: metav1.Time{Time: time.Now()},
+	}
+	conditions[v1.PodScheduled] = &podScheduledCondition
+
+	// check init ready status
+	if fppod.PodState == types.PodStateRunning || fppod.PodState == types.PodStateCreated {
+		initReadyCondition.Status = v1.ConditionUnknown
+		initReadyCondition.Message = "container created, waiting for it finish"
+		initReadyCondition.Reason = "container created, waiting for it finish"
+
+		// check runtime status
+		allInitContainerNormal := true
+		for _, v := range fppod.Containers {
+			if v.InitContainer {
+				if podcontainer.ContainerStatusUnknown(v.ContainerStatus) || podcontainer.ContainerStatusRunning(v.ContainerStatus) {
+					containerReadyCondition.Status = v1.ConditionFalse
+					containerReadyCondition.Message = "init container not finished yet"
+					containerReadyCondition.Reason = "init container not finished yet"
+					allInitContainerNormal = false
+					break
+				}
+				if podcontainer.ContainerExitAbnormal(v.ContainerStatus) {
+					containerReadyCondition.Status = v1.ConditionFalse
+					containerReadyCondition.Message = "init container exit abnormally"
+					containerReadyCondition.Reason = "init container exit abnormally"
+					allInitContainerNormal = false
+					break
+				}
+				allInitContainerNormal = allInitContainerNormal && podcontainer.ContainerExitNormal(v.ContainerStatus)
+			}
+		}
+		if allInitContainerNormal {
+			containerReadyCondition.Status = v1.ConditionTrue
+			containerReadyCondition.Message = "init container exit normally"
+			containerReadyCondition.Reason = "init container exit normally"
+		}
+	}
+
+	// check container ready status
+	allContainerNormal := true
+	allContainerReady := true
+	if len(fppod.PodSpec.Spec.Containers)+len(fppod.PodSpec.Spec.InitContainers) != len(fppod.RuntimePod.Containers) {
+		containerReadyCondition.Status = v1.ConditionFalse
+		containerReadyCondition.Message = "missing some containers"
+		containerReadyCondition.Reason = "missing some containers"
+	} else {
+		// check runtime status
+		for _, v := range fppod.Containers {
+			if !v.InitContainer {
+				if podcontainer.ContainerExit(v.ContainerStatus) || podcontainer.ContainerStatusUnknown(v.ContainerStatus) {
+					containerReadyCondition.Status = v1.ConditionFalse
+					containerReadyCondition.Message = "one container is not running"
+					containerReadyCondition.Reason = "one container is not running"
+					allContainerNormal = false
+					allContainerReady = false
+					break
+				}
+
+				allContainerNormal = allContainerNormal && podcontainer.ContainerStatusRunning(v.ContainerStatus)
+				allContainerReady = allContainerReady && v.State == types.ContainerStateReady
+			}
+		}
+	}
+	if allContainerNormal {
+		containerReadyCondition.Status = v1.ConditionTrue
+		containerReadyCondition.Message = "all pod containers are running"
+		containerReadyCondition.Reason = "all pod containers are running"
+	}
+
+	// check pod ready status
+	if containerReadyCondition.Status == v1.ConditionTrue && initReadyCondition.Status == v1.ConditionTrue {
+		if fppod.PodState == types.PodStateRunning {
+			podReadyCondition.Status = v1.ConditionTrue
+			podReadyCondition.Message = "all pod containers are ready"
+			podReadyCondition.Reason = "all pod containers are ready"
+		}
+	} else {
+		podReadyCondition.Status = v1.ConditionFalse
+		podReadyCondition.Message = "some pod containers are not running normally"
+		podReadyCondition.Reason = "some pod containers are not running normally"
+	}
+
+	// merg old condition with new condtion and delete merged new condition
+	for _, oldCondition := range apiPodConditions {
+		newCondtion := conditions[oldCondition.Type]
+		oldCondition.Status = newCondtion.Status
+		oldCondition.LastProbeTime = newCondtion.LastProbeTime
+		if len(newCondtion.Reason) > 0 {
+			oldCondition.Reason = newCondtion.Reason
+		}
+		if len(newCondtion.Message) > 0 {
+			oldCondition.Message = newCondtion.Message
+		}
+		if oldCondition.Status != newCondtion.Status {
+			oldCondition.LastTransitionTime = newCondtion.LastProbeTime
+		}
+		delete(conditions, oldCondition.Type)
+	}
+
+	// if there are still not merged new condition, append them into apiPodConditions
+	if len(conditions) > 0 {
+		for _, v := range conditions {
+			apiPodConditions = append(apiPodConditions, *v)
+		}
+	}
+
+	return apiPodConditions
+}
+
+func PodInTerminating(fppod *types.FornaxPod) bool {
+	return len(fppod.PodState) != 0 && (fppod.PodState == types.PodStateTerminating || fppod.PodState == types.PodStateTerminated)
+}
+
+func PodCreated(fppod *types.FornaxPod) bool {
+	return (len(fppod.PodState) != 0 && fppod.PodState != types.PodStateCreating) || fppod.RuntimePod != nil
+}

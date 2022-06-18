@@ -31,7 +31,7 @@ type ActorMessage struct {
 }
 
 type ActorRef interface {
-	Send(replyReceiver ActorRef, msg interface{}) error
+	Send(receiver ActorRef, msg interface{}) error
 }
 
 var _ ActorRef = &LocalChannelActorRef{}
@@ -134,7 +134,7 @@ func (a *LocalChannelActor) OnReceive(msg ActorMessage) error {
 		return err
 	}
 
-	if reply != nil {
+	if msg.Sender != nil && reply != nil {
 		a.Reference().Send(msg.Sender, reply)
 	}
 	return nil

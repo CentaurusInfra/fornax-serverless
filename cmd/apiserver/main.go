@@ -52,6 +52,7 @@ func main() {
 		}
 	}
 
+	// +kubebuilder:scaffold:resource-register
 	err := builder.APIServer.
 		WithLocalDebugExtension().
 		WithResourceAndStorage(&fornaxv1.Application{}, storageFunc).
@@ -64,6 +65,32 @@ func main() {
 			fmt.Println(config.Authentication.APIAudiences)
 			return config
 		}).
+		// WithResource(&v1.Pod{}).
+		// WithResource(&k8scorev1.FornaxNode{}).
+		// WithResource(&k8scorev1.FornaxSecret{}).
+		// WithResource(&k8scorev1.FornaxConfigMap{}).
+		// WithResource(&k8scorev1.FornaxServiceAccount{}).
+		// WithFlagFns(fns ...func(set *pflag.FlagSet) *pflag.FlagSet).
+		// // Authentication is the configuration for authentication
+		// Authentication AuthenticationInfo
+		//
+		// // Authorization is the configuration for authorization
+		// Authorization AuthorizationInfo
+
+		// LoopbackClientConfig is a config for a privileged loopback connection to the API server
+		// This is required for proper functioning of the PostStartHooks on a GenericAPIServer
+		// TODO: move into SecureServing(WithLoopback) as soon as insecure serving is gone
+		// LoopbackClientConfig * restclient.Config
+
+		// EgressSelector provides a lookup mechanism for dialing outbound connections.
+		// It does so based on a EgressSelectorConfiguration which was read at startup.
+		// EgressSelector * egressselector.EgressSelector
+
+		// WithServerFns(func(server *builder.GenericAPIServer) *builder.GenericAPIServer {
+		//  apiGroupInfo := *apiserver.APIGroupInfo{}
+		//  server.InstallLegacyAPIGroup(apiserver.DefaultLegacyAPIPrefix, apiGroupInfo)
+		//  return server
+		// }).
 		Execute()
 	if err != nil {
 		klog.Fatal(err)

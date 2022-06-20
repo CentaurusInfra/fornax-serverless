@@ -7,7 +7,7 @@ import "google/protobuf/empty.proto";
 import "k8s.io/api/core/v1/generated.proto";
 
 service FornaxCoreService {
-  rpc getMessage(google.protobuf.Empty) returns (stream FornaxCoreMessage);
+  rpc getMessage(NodeIdentifier) returns (stream FornaxCoreMessage);
   rpc putMessage(FornaxCoreMessage) returns (google.protobuf.Empty);
 }
 
@@ -29,7 +29,7 @@ enum MessageType {
  
 message FornaxCoreMessage {
   required string messageIdentifier = 1;
-  required string nodeIdentifier = 2;
+  required NodeIdentifier nodeIdentifier = 2;
   required MessageType messageType = 3;
   oneof MessageBody {
     FornaxCoreConfiguration fornaxCoreConfiguration = 100;
@@ -55,6 +55,11 @@ message FornaxCore {
 message FornaxCoreConfiguration {
   required FornaxCore primary = 1;
   repeated FornaxCore standbys = 2;
+}
+
+message NodeIdentifier {
+  required string ip = 1;
+  required string identifier = 2;
 }
 
 message NodeConfiguration {

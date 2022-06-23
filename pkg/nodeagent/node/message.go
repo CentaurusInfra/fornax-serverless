@@ -21,18 +21,26 @@ import (
 	"centaurusinfra.io/fornax-serverless/pkg/nodeagent/pod"
 )
 
-func BuildFornaxGrpcNodeState(node FornaxNode) grpc.NodeState {
+func BuildFornaxGrpcNodeState(node *FornaxNode) *grpc.FornaxCoreMessage {
 	podStates := []*grpc.PodState{}
 	// sessionStates := []*grpc.SessionState{}
 	for _, v := range node.Pods {
 		s := pod.BuildFornaxcoreGrpcPodState(v)
-		podStates = append(podStates, s)
+		podStates = append(podStates, s.GetPodState())
 	}
-	return grpc.NodeState{
+	ns := grpc.NodeState{
 		NodeIp:    &node.NodeConfig.NodeIP,
 		Node:      node.V1Node,
 		PodStates: podStates,
 		// TODO, add sessionStates
 		// SessionStates: sessionStates,
+	}
+
+	messageType := grpc.MessageType_NODE_STATE
+	return &grpc.FornaxCoreMessage{
+		MessageType: &messageType,
+		MessageBody: &grpc.FornaxCoreMessage_NodeState{
+			NodeState: &ns,
+		},
 	}
 }

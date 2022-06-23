@@ -32,10 +32,12 @@ type PodContainerProbeResult struct {
 type ProbeType string
 
 const (
-	LivenessProbe      ProbeType = "liveness"
-	ReadinessProbe     ProbeType = "readiness"
-	StartupProbe       ProbeType = "startup"
-	RuntimeStatusProbe ProbeType = "runtime"
+	LivenessProbe                ProbeType = "liveness"
+	ReadinessProbe               ProbeType = "readiness"
+	StartupProbe                 ProbeType = "startup"
+	RuntimeStatusProbe           ProbeType = "runtime"
+	RunningContainerProbeSeconds           = int32(10)
+	InitialContainerProbeSeconds           = int32(10)
 )
 
 type ProbeResult string
@@ -131,6 +133,13 @@ func (prober *ContainerProber) ExecProbe() (interface{}, error) {
 		if err != nil {
 			return nil, err
 		}
+		if ContainerExit(status) {
+			// do not probe anymore
+			prober.Stop()
+		} else if ContainerRunning(status) {
+			// probe it with less frequency
+			prober.Ticker.Reset(time.Duration(RunningContainerProbeSeconds) * time.Second)
+		}
 		return status, nil
 	default:
 	}
@@ -164,12 +173,11 @@ func NewRuntimeStatusProbeSpec() *v1.Probe {
 			TCPSocket: nil,
 			GRPC:      nil,
 		},
-		InitialDelaySeconds:           1,
-		TimeoutSeconds:                10,
-		PeriodSeconds:                 10,
-		SuccessThreshold:              1,
-		FailureThreshold:              1,
-		TerminationGracePeriodSeconds: new(int64),
+		InitialDelaySeconds: InitialContainerProbeSeconds,
+		TimeoutSeconds:      10,
+		PeriodSeconds:       InitialContainerProbeSeconds,
+		SuccessThreshold:    1,
+		FailureThreshold:    1,
 	}
 	return probe
 }

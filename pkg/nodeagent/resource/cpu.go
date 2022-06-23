@@ -61,22 +61,30 @@ func (m *CPUManager) Start() error {
 
 // GetReservedResource implements ResoureManager
 func (*CPUManager) GetReservedResource() NodeResource {
-	panic("unimplemented")
+	return NodeResource{
+		Resources: map[v1.ResourceName]resource.Quantity{},
+	}
 }
 
 // GetAllocatedResource implements ResoureManager
 func (*CPUManager) GetAllocatedResource() NodeResource {
-	panic("unimplemented")
+	return NodeResource{
+		Resources: map[v1.ResourceName]resource.Quantity{},
+	}
 }
 
 // GetAvailableResource implements ResoureManager
 func (*CPUManager) GetAvailableResource() NodeResource {
-	panic("unimplemented")
+	return NodeResource{
+		Resources: map[v1.ResourceName]resource.Quantity{},
+	}
 }
 
 // GetPodResource implements ResoureManager
 func (*CPUManager) GetPodResource(v1.Pod) PodResource {
-	panic("unimplemented")
+	return PodResource{
+		Resources: map[v1.ResourceName]resource.Quantity{},
+	}
 }
 
 // ReserveResource implements ResoureManager

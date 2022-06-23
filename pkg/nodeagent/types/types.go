@@ -75,7 +75,6 @@ type FornaxPod struct {
 	PodSpec                 *v1.Pod               `json:"podSpec,omitempty"`
 	ConfigMapSpec           *v1.ConfigMap         `json:"configMapSpec,omitempty"`
 	RuntimePod              *runtime.Pod          `json:"runtimePod,omitempty"`
-	RuntimePodStatus        *runtime.PodStatus    `json:"runtimePodStatus,omitempty"`
 	Containers              map[string]*Container `json:"containers,omitempty"`
 	LastStateTransitionTime time.Time             `json:"lastStateTransitionTime,omitempty"`
 }
@@ -90,7 +89,7 @@ type Session struct {
 }
 
 func UniquePodName(pod *FornaxPod) string {
-	return fmt.Sprintf("Namespace:%s,Name%s,UID:%s", pod.PodSpec.Namespace, pod.PodSpec.Name, pod.PodSpec.UID)
+	return fmt.Sprintf("Namespace:%s,Name:%s,UID:%s", pod.PodSpec.Namespace, pod.PodSpec.Name, pod.PodSpec.UID)
 }
 
 func PodIsNotStandBy(pod *FornaxPod) bool {

@@ -47,7 +47,7 @@ const (
 	PID                               = "PID"
 	DefaultRootPath                   = "/var/lib/nodeagent"
 	DefaultDBName                     = "nodeagent.sqlite"
-	DefaultContainerRuntimeEndpoint   = "unix:///var/run/dockershim.sock"
+	DefaultContainerRuntimeEndpoint   = "unix:///run/containerd/containerd.sock"
 	DefaultMaxPods                    = 100
 	DefaultPodPidLimits               = -1
 	DefaultCgroupRoot                 = "/"
@@ -55,7 +55,7 @@ const (
 	DefaultMaxContainerPerPod         = 10
 	DefaultMounter                    = "mount"
 	DefaultPodsPerCore                = 0
-	DefaultNodeAgentCgroupName        = "nodeagent"
+	DefaultNodeAgentCgroupName        = ""
 	DefaultSystemCgroupName           = ""
 	DefaultPodsDirName                = "pods"
 	DefaultPodLogsRootPath            = "/var/log/pods"
@@ -81,6 +81,7 @@ type NodeConfiguration struct {
 	FornaxCoreIPs            []string
 	Hostname                 string
 	MemoryQoS                bool
+	DisableSwap              bool
 	MaxPods                  int
 	MaxContainerPerPod       int
 	MounterPath              string // a mounter bin path, leave it empty if use default
@@ -88,6 +89,7 @@ type NodeConfiguration struct {
 	NodeAgentCgroupName      string
 	OOMScoreAdj              int32
 	QOSReserved              map[v1.ResourceName]int64
+	PodLogRootPath           string
 	PodPidLimits             int // default 100
 	PodsPerCore              int
 	PodCgroupName            string
@@ -134,6 +136,7 @@ func DefaultNodeConfiguration() (*NodeConfiguration, error) {
 		NodeAgentCgroupName:      DefaultNodeAgentCgroupName,
 		OOMScoreAdj:              -999,
 		QOSReserved:              map[v1.ResourceName]int64{},
+		PodLogRootPath:           DefaultPodLogsRootPath,
 		PodPidLimits:             DefaultPodPidLimits,
 		PodsPerCore:              DefaultPodsPerCore,
 		PodCgroupName:            DefaultPodCgroupName,
@@ -143,6 +146,7 @@ func DefaultNodeConfiguration() (*NodeConfiguration, error) {
 		ProtectKernelDefaults:    false,
 		SystemCgroupName:         DefaultSystemCgroupName,
 		MemoryQoS:                true,
+		DisableSwap:              true,
 		EnforceCPULimits:         true,
 		CPUCFSQuota:              true,
 		CPUCFSQuotaPeriod:        100 * time.Millisecond,
@@ -167,6 +171,13 @@ func ValidateNodeConfiguration(nodeConfig NodeConfiguration) []error {
 		}
 	}
 
+	if _, err = os.Stat(nodeConfig.PodLogRootPath); os.IsNotExist(err) {
+		err = os.Mkdir(nodeConfig.PodLogRootPath, os.FileMode(int(0755)))
+		if err != nil {
+			errs = append(errs, fmt.Errorf("%s does not exist, and can not be created due to %v", nodeConfig.PodLogRootPath, err))
+		}
+	}
+
 	dbDir := fmt.Sprintf("%s/db", nodeConfig.RootPath)
 	if _, err = os.Stat(dbDir); os.IsNotExist(err) {
 		err = os.Mkdir(dbDir, os.FileMode(int(0755)))
@@ -179,6 +190,8 @@ func ValidateNodeConfiguration(nodeConfig NodeConfiguration) []error {
 }
 
 func AddConfigFlags(flagSet *pflag.FlagSet, nodeConfig *NodeConfiguration) {
+	flagSet.BoolVar(&nodeConfig.DisableSwap, "disable-swap", nodeConfig.DisableSwap, "should disable swap, fail when host swap is on")
+
 	flagSet.StringVar(&nodeConfig.NodeIP, "node-ip", nodeConfig.NodeIP, "IPv4 addresses of the node. If unset, use the node's default IPv4 address")
 
 	flagSet.StringVar(&nodeConfig.ContainerRuntimeEndpoint, "remote-runtime-endpoint", nodeConfig.ContainerRuntimeEndpoint, "container runtime remote endpoint")

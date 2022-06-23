@@ -17,6 +17,7 @@ limitations under the License.
 package pod
 
 import (
+	"errors"
 	"time"
 
 	podcontainer "centaurusinfra.io/fornax-serverless/pkg/nodeagent/pod/container"
@@ -26,28 +27,40 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
+var (
+	ErrCreateSandboxConfig   = errors.New("CreateSandboxConfigError")
+	ErrCreateSandbox         = errors.New("CreateSandboxError")
+	ErrCreateContainerConfig = errors.New("CreateContainerConfigError")
+	ErrCreateContainer       = errors.New("CreateContainerError")
+	ErrRunContainer          = errors.New("RunContainerError")
+	ErrRecoverPod            = errors.New("RecoverPodError")
+)
+
 func SetPodStatus(fppod *types.FornaxPod) {
-	apiPodStatus := fppod.PodSpec.Status.DeepCopy()
-	apiPodStatus.Phase = ToV1PodPhase(fppod)
+	// pod phase
+	podStatus := &fppod.PodSpec.Status
+	podStatus.Phase = ToV1PodPhase(fppod)
 
-	MergePodConditions(fppod, apiPodStatus.Conditions)
-	if apiPodStatus.Conditions == nil {
-		apiPodStatus.Conditions = []v1.PodCondition{}
+	// pod condition
+	if podStatus.Conditions == nil {
+		podStatus.Conditions = []v1.PodCondition{}
 	}
+	SetPodConditions(fppod)
 
-	apiPodStatus.PodIP = fppod.RuntimePod.IPs[0]
+	// pod ip
+	if len(fppod.RuntimePod.IPs) > 0 {
+		podStatus.PodIP = fppod.RuntimePod.IPs[0]
+	}
 	podIps := []v1.PodIP{}
 	for _, v := range fppod.RuntimePod.IPs {
 		podIps = append(podIps, v1.PodIP{
 			IP: v,
 		})
 	}
-	apiPodStatus.PodIPs = podIps
+	podStatus.PodIPs = podIps
 
 	//TODO
-	// 4/ add qos status
-
-	fppod.PodSpec.Status = *apiPodStatus
+	// add resource status
 }
 
 func ToV1PodPhase(fppod *types.FornaxPod) v1.PodPhase {
@@ -69,8 +82,8 @@ func ToV1PodPhase(fppod *types.FornaxPod) v1.PodPhase {
 	}
 
 	// check container runtime state
-	for _, v := range fppod.RuntimePodStatus.ContainerStatuses {
-		if v.FinishedAt != 0 || v.ExitCode != 0 {
+	for _, v := range fppod.Containers {
+		if podcontainer.ContainerExitAbnormal(v.ContainerStatus) {
 			podPhase = v1.PodFailed
 			break
 		}
@@ -79,7 +92,7 @@ func ToV1PodPhase(fppod *types.FornaxPod) v1.PodPhase {
 	return podPhase
 }
 
-func MergePodConditions(fppod *types.FornaxPod, apiPodConditions []v1.PodCondition) []v1.PodCondition {
+func SetPodConditions(fppod *types.FornaxPod) {
 	conditions := map[v1.PodConditionType]*v1.PodCondition{}
 
 	initReadyCondition := v1.PodCondition{
@@ -111,7 +124,7 @@ func MergePodConditions(fppod *types.FornaxPod, apiPodConditions []v1.PodConditi
 	conditions[v1.PodScheduled] = &podScheduledCondition
 
 	// check init ready status
-	if fppod.PodState == types.PodStateRunning || fppod.PodState == types.PodStateCreated {
+	if fppod.PodState == types.PodStateCreating || fppod.PodState == types.PodStateCreated {
 		initReadyCondition.Status = v1.ConditionUnknown
 		initReadyCondition.Message = "container created, waiting for it finish"
 		initReadyCondition.Reason = "container created, waiting for it finish"
@@ -120,7 +133,7 @@ func MergePodConditions(fppod *types.FornaxPod, apiPodConditions []v1.PodConditi
 		allInitContainerNormal := true
 		for _, v := range fppod.Containers {
 			if v.InitContainer {
-				if podcontainer.ContainerStatusUnknown(v.ContainerStatus) || podcontainer.ContainerStatusRunning(v.ContainerStatus) {
+				if !podcontainer.ContainerExit(v.ContainerStatus) {
 					containerReadyCondition.Status = v1.ConditionFalse
 					containerReadyCondition.Message = "init container not finished yet"
 					containerReadyCondition.Reason = "init container not finished yet"
@@ -138,9 +151,9 @@ func MergePodConditions(fppod *types.FornaxPod, apiPodConditions []v1.PodConditi
 			}
 		}
 		if allInitContainerNormal {
-			containerReadyCondition.Status = v1.ConditionTrue
-			containerReadyCondition.Message = "init container exit normally"
-			containerReadyCondition.Reason = "init container exit normally"
+			initReadyCondition.Status = v1.ConditionTrue
+			initReadyCondition.Message = "init container exit normally"
+			initReadyCondition.Reason = "init container exit normally"
 		}
 	}
 
@@ -155,7 +168,7 @@ func MergePodConditions(fppod *types.FornaxPod, apiPodConditions []v1.PodConditi
 		// check runtime status
 		for _, v := range fppod.Containers {
 			if !v.InitContainer {
-				if podcontainer.ContainerExit(v.ContainerStatus) || podcontainer.ContainerStatusUnknown(v.ContainerStatus) {
+				if !podcontainer.ContainerRunning(v.ContainerStatus) {
 					containerReadyCondition.Status = v1.ConditionFalse
 					containerReadyCondition.Message = "one container is not running"
 					containerReadyCondition.Reason = "one container is not running"
@@ -164,7 +177,7 @@ func MergePodConditions(fppod *types.FornaxPod, apiPodConditions []v1.PodConditi
 					break
 				}
 
-				allContainerNormal = allContainerNormal && podcontainer.ContainerStatusRunning(v.ContainerStatus)
+				allContainerNormal = allContainerNormal && podcontainer.ContainerRunning(v.ContainerStatus)
 				allContainerReady = allContainerReady && v.State == types.ContainerStateReady
 			}
 		}
@@ -184,35 +197,30 @@ func MergePodConditions(fppod *types.FornaxPod, apiPodConditions []v1.PodConditi
 		}
 	} else {
 		podReadyCondition.Status = v1.ConditionFalse
-		podReadyCondition.Message = "some pod containers are not running normally"
-		podReadyCondition.Reason = "some pod containers are not running normally"
+		podReadyCondition.Message = "some pod containers are not running"
+		podReadyCondition.Reason = "some pod containers are not running"
 	}
 
 	// merg old condition with new condtion and delete merged new condition
-	for _, oldCondition := range apiPodConditions {
-		newCondtion := conditions[oldCondition.Type]
-		oldCondition.Status = newCondtion.Status
-		oldCondition.LastProbeTime = newCondtion.LastProbeTime
-		if len(newCondtion.Reason) > 0 {
-			oldCondition.Reason = newCondtion.Reason
+	for _, oldCondition := range fppod.PodSpec.Status.Conditions {
+		newCondtion, found := conditions[oldCondition.Type]
+		if found {
+
+			if oldCondition.Status != newCondtion.Status {
+				newCondtion.LastTransitionTime = oldCondition.LastProbeTime
+			}
+		} else {
+			newCondtion = &oldCondition
 		}
-		if len(newCondtion.Message) > 0 {
-			oldCondition.Message = newCondtion.Message
-		}
-		if oldCondition.Status != newCondtion.Status {
-			oldCondition.LastTransitionTime = newCondtion.LastProbeTime
-		}
-		delete(conditions, oldCondition.Type)
 	}
 
 	// if there are still not merged new condition, append them into apiPodConditions
-	if len(conditions) > 0 {
-		for _, v := range conditions {
-			apiPodConditions = append(apiPodConditions, *v)
-		}
+	newConditions := []v1.PodCondition{}
+	for _, v := range conditions {
+		newConditions = append(newConditions, *v)
 	}
 
-	return apiPodConditions
+	fppod.PodSpec.Status.Conditions = newConditions
 }
 
 func PodInTerminating(fppod *types.FornaxPod) bool {

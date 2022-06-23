@@ -16,7 +16,6 @@ limitations under the License.
 package pod
 
 import (
-	"errors"
 	"fmt"
 	"strings"
 
@@ -29,36 +28,29 @@ import (
 	"centaurusinfra.io/fornax-serverless/pkg/nodeagent/types"
 )
 
-var (
-	ErrCreateContainerConfig = errors.New("CreateContainerConfigError")
-	ErrPreCreateHook         = errors.New("PreCreateHookError")
-	ErrCreateContainer       = errors.New("CreateContainerError")
-	ErrRunContainer          = errors.New("RunContainerError")
-	ErrPreStartHook          = errors.New("PreStartHookError")
-	ErrPostStartHook         = errors.New("PostStartHookError")
-)
-
 // createContainer starts a container and returns a message indicates why it is failed on error.
 // It starts the container through the following steps:
 // * pull the image
 // * create the container
 // * start the container
-func (a *PodActor) createContainer(podSandboxConfig *criv1.PodSandboxConfig,
-	v1Container *v1.Container,
-	pullSecrets []*v1.Secret,
+func (a *PodActor) createContainer(podSandboxConfig *criv1.PodSandboxConfig, containerSpec *v1.Container, pullSecrets []*v1.Secret,
 ) (*cruntime.Container, error) {
 
+	klog.InfoS("Pull image for container", "pod", types.UniquePodName(a.pod), "container", containerSpec.Name)
 	pod := a.pod.PodSpec
 	// pull the image.
-	imageRef, err := a.dependencies.ImageManager.PullImageForContainer(v1Container, podSandboxConfig)
+	imageRef, err := a.dependencies.ImageManager.PullImageForContainer(containerSpec, podSandboxConfig)
 	if err != nil {
+		klog.ErrorS(err, "Failed to pull image", "pod", types.UniquePodName(a.pod), "container", containerSpec.Name)
 		return nil, err
 	}
 
 	// create the container log dir
-	logDir, err := BuildContainerLogsDirectory(pod.Namespace, pod.Name, pod.UID, v1Container.Name)
+	klog.InfoS("Create container log dir", "pod", types.UniquePodName(a.pod), "container", containerSpec.Name)
+	logDir, err := BuildContainerLogsDirectory(pod.Namespace, pod.Name, pod.UID, containerSpec.Name)
 	if err != nil {
-		klog.InfoS("Log directory exists but could not calculate restartCount", "logDir", logDir, "err", err)
+		klog.ErrorS(err, "Failed to create container log", "pod", types.UniquePodName(a.pod), "container", containerSpec.Name, "logDir", logDir)
+		return nil, ErrCreateContainerConfig
 	}
 
 	// target, err := spec.getTargetID(podStatus)
@@ -68,14 +60,18 @@ func (a *PodActor) createContainer(podSandboxConfig *criv1.PodSandboxConfig,
 	// }
 
 	// create the container runtime configuration
-	containerConfig, err := a.generateContainerConfig(v1Container, imageRef)
+	klog.InfoS("Generate container runtime config", "pod", types.UniquePodName(a.pod), "container", containerSpec.Name)
+	containerConfig, err := a.generateContainerConfig(containerSpec, imageRef)
 	if err != nil {
+		klog.ErrorS(err, "Failed to generate container runtime config", "pod", types.UniquePodName(a.pod), "container", containerSpec.Name)
 		return nil, ErrCreateContainerConfig
 	}
 
 	// call runtime to create the container
+	klog.InfoS("Call runtime to create container", "pod", types.UniquePodName(a.pod), "container", containerSpec.Name)
 	runtimeContainer, err := a.dependencies.CRIRuntimeService.CreateContainer(a.pod.RuntimePod.Sandbox.Id, containerConfig, podSandboxConfig)
 	if err != nil {
+		klog.ErrorS(err, "Failed to call runtime to create container", "pod", types.UniquePodName(a.pod), "container", containerSpec.Name)
 		return nil, ErrCreateContainer
 	}
 	return runtimeContainer, nil
@@ -94,10 +90,13 @@ func (m *PodActor) generateContainerConfig(container *v1.Container, imageRef *cr
 		return nil, fmt.Errorf("create log directory for container %s failed: %v", container.Name, err)
 	}
 	containerLogsPath := ContainerLogFileName(container.Name, 0)
-	envs, err := cruntime.MakeEnvironmentVariables(pod, container, []*v1.ConfigMap{}, []*v1.Secret{}, m.pod.RuntimePod.IPs[0], m.pod.RuntimePod.IPs)
+	podIP := ""
+	if len(m.pod.RuntimePod.IPs) > 0 {
+		podIP = m.pod.RuntimePod.IPs[0]
+	}
+	envs, err := cruntime.MakeEnvironmentVariables(pod, container, []*v1.ConfigMap{}, []*v1.Secret{}, podIP, m.pod.RuntimePod.IPs)
 	if err != nil {
 		return nil, err
-
 	}
 
 	commands := []string{}
@@ -126,7 +125,7 @@ func (m *PodActor) generateContainerConfig(container *v1.Container, imageRef *cr
 		Metadata: &criv1.ContainerMetadata{
 			Name: container.Name,
 		},
-		Image:       imageRef.GetSpec(),
+		Image:       &criv1.ImageSpec{Image: imageRef.Id},
 		Command:     commands,
 		Args:        args,
 		WorkingDir:  container.WorkingDir,
@@ -141,9 +140,13 @@ func (m *PodActor) generateContainerConfig(container *v1.Container, imageRef *cr
 	}
 
 	// set platform specific configurations.
-	uid := imageRef.GetUid()
+	var uid *int64
+	if imageRef.Uid != nil {
+		value := imageRef.GetUid().Value
+		uid = &value
+	}
 	username := imageRef.GetUsername()
-	generateLinuxContainerConfig(m.nodeConfig, container, pod, &uid.Value, username, true)
+	generateLinuxContainerConfig(m.nodeConfig, container, pod, uid, username, true)
 
 	// set environment variables
 	criEnvs := make([]*criv1.KeyValue, len(envs))

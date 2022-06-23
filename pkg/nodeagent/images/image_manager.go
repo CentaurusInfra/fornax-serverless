@@ -18,6 +18,7 @@ package images
 
 import (
 	"fmt"
+	"strings"
 
 	dockerref "github.com/docker/distribution/reference"
 	v1 "k8s.io/api/core/v1"
@@ -70,7 +71,7 @@ func (m *imageManager) PullImageForContainer(container *v1.Container, podSandbox
 
 	image, found := m.imageRefs[imageWithTag]
 	if found {
-		klog.Infof("Container image %q already present on machine", container.Image)
+		klog.Infof("Container image with tag %s already present on machine", imageWithTag)
 		return image, nil
 	}
 
@@ -85,37 +86,49 @@ func (m *imageManager) PullImageForContainer(container *v1.Container, podSandbox
 		return nil, ErrImageInspect
 	}
 
-	present := len(images) == 1
-	if !shouldPullImage(container, present) {
-		if present {
-			image = images[0]
-			m.imageRefs[imageWithTag] = image
-			klog.Errorf("Container image %q already present on machine", container.Image)
-			return image, nil
+	present := false
+	for _, v := range images {
+		for _, t := range v.GetRepoTags() {
+			present = strings.HasSuffix(t, imageWithTag) || present
 		}
-		klog.Errorf("Container image %q is not present with pull policy of Never", container.Image)
-		return nil, ErrImageNeverPull
+		if present {
+			image = v
+			break
+		}
+	}
+
+	if image != nil {
+		m.imageRefs[imageWithTag] = image
+		klog.InfoS("Container image already present on machine", "image", image, "tag", imageWithTag)
+		return image, nil
 	}
 
 	_, err = m.imageService.PullImage(imageSpec, m.authConfig, podSandboxConfig)
 	if err != nil {
-		klog.ErrorS(err, "Failed to pull image", imageWithTag)
+		klog.ErrorS(err, "Failed to pull image", "image", imageWithTag)
 		return nil, ErrImagePull
 	}
+
 	images, err = m.imageService.ListImages(&criv1.ImageFilter{
 		Image: imageSpec,
 	})
+
 	if err != nil {
-		klog.ErrorS(err, "Failed to list image", imageWithTag)
+		klog.ErrorS(err, "Failed to list image", "image", imageWithTag)
 		return nil, ErrImageInspect
 	}
 
-	if len(images) == 1 {
-		m.imageRefs[imageWithTag] = images[0]
-	} else {
-		klog.Errorf("Failed to pull image %s", &imageWithTag)
-		return nil, ErrImageInspect
+	for _, v := range images {
+		for _, t := range v.GetRepoTags() {
+			present = strings.HasSuffix(t, imageWithTag) || present
+		}
+		if present {
+			image = v
+			m.imageRefs[imageWithTag] = image
+			break
+		}
 	}
+
 	return image, nil
 }
 

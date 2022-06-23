@@ -66,7 +66,7 @@ func GetVolumeDevicePluginDir(rootPath string, pluginName string) string {
 // getPodDir returns the full path to the per-pod directory for the pod with
 // the given UID.
 func GetPodDir(rootPath string, podUID types.UID) string {
-	return filepath.Join(rootPath, string(podUID))
+	return filepath.Join(GetPodsDir(rootPath), string(podUID))
 }
 
 // getPodVolumesSubpathsDir returns the full path to the per-pod subpaths directory under

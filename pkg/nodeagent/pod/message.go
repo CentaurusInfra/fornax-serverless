@@ -23,7 +23,7 @@ import (
 	criv1 "k8s.io/cri-api/pkg/apis/runtime/v1"
 )
 
-func BuildFornaxcoreGrpcPodStateForTerminatedPod(pod *fornaxtypes.FornaxPod) *grpc.PodState {
+func BuildFornaxcoreGrpcPodStateForTerminatedPod(pod *fornaxtypes.FornaxPod) *grpc.FornaxCoreMessage {
 	state := grpc.PodState_Terminated
 	s := grpc.PodState{
 		PodIdentifier: (*string)(&pod.Identifier),
@@ -32,10 +32,16 @@ func BuildFornaxcoreGrpcPodStateForTerminatedPod(pod *fornaxtypes.FornaxPod) *gr
 		PodStatus:     pod.PodSpec.Status.DeepCopy(),
 		Resource:      &grpc.PodResource{},
 	}
-	return &s
+	messageType := grpc.MessageType_POD_STATE
+	return &grpc.FornaxCoreMessage{
+		MessageType: &messageType,
+		MessageBody: &grpc.FornaxCoreMessage_PodState{
+			PodState: &s,
+		},
+	}
 }
 
-func BuildFornaxcoreGrpcPodState(pod *fornaxtypes.FornaxPod) *grpc.PodState {
+func BuildFornaxcoreGrpcPodState(pod *fornaxtypes.FornaxPod) *grpc.FornaxCoreMessage {
 	s := grpc.PodState{
 		PodIdentifier: (*string)(&pod.Identifier),
 		AppIdentifier: (*string)(&pod.ApplicationId),
@@ -44,7 +50,13 @@ func BuildFornaxcoreGrpcPodState(pod *fornaxtypes.FornaxPod) *grpc.PodState {
 		// TODO
 		Resource: &grpc.PodResource{},
 	}
-	return &s
+	messageType := grpc.MessageType_POD_STATE
+	return &grpc.FornaxCoreMessage{
+		MessageType: &messageType,
+		MessageBody: &grpc.FornaxCoreMessage_PodState{
+			PodState: &s,
+		},
+	}
 }
 
 func PodStateToFornaxState(pod *fornaxtypes.FornaxPod) *grpc.PodState_State {

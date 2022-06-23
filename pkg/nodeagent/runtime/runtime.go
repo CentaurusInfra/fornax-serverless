@@ -110,7 +110,7 @@ func (m *remoteRuntimeManager) CreateContainer(podSandboxID string, containerCon
 // CreateSandbox implements cri.RuntimeService
 // if RunPodSandbox succeeded but failed in following steps, return it still, it will be cleaned by node
 func (r *remoteRuntimeManager) CreateSandbox(sandboxConfig *criv1.PodSandboxConfig, runtimeClassName string) (*Pod, error) {
-	klog.Infof("Run pod sandbox %s using sandbox config %v", sandboxConfig)
+	klog.Infof("Run pod sandbox using sandbox config: %v", sandboxConfig)
 	podSandBoxID, err := r.runtimeService.RunPodSandbox(sandboxConfig, runtimeClassName)
 	if err != nil {
 		message := fmt.Sprintf("Failed to create pod sandbox for pod %s, error: %v", sandboxConfig.Metadata.Name, err)
@@ -146,6 +146,7 @@ func (r *remoteRuntimeManager) CreateSandbox(sandboxConfig *criv1.PodSandboxConf
 		klog.ErrorS(err, "Failed to get pod sandbox status;", "pod", sandboxConfig.Metadata.Name)
 		return pod, err
 	}
+	klog.Infof("Get pod sandbox status: %v", sandboxStatus)
 	if len(sandboxStatus.GetNetwork().GetIp()) > 0 {
 		pod.IPs = append(pod.IPs, sandboxStatus.GetNetwork().GetIp())
 	}
@@ -259,7 +260,7 @@ func (r *remoteRuntimeManager) GetPods(includeContainers bool) ([]*Pod, error) {
 
 // StopContainer implements RuntimeService
 func (r *remoteRuntimeManager) StopContainer(containerID string, timeout time.Duration) error {
-	klog.InfoS("start container", "containerID", containerID)
+	klog.InfoS("Stop container", "containerID", containerID)
 
 	err := r.runtimeService.StopContainer(containerID, int64(timeout.Seconds()))
 	if err != nil {
@@ -271,7 +272,7 @@ func (r *remoteRuntimeManager) StopContainer(containerID string, timeout time.Du
 
 // StartContainer implements cri.RuntimeService
 func (r *remoteRuntimeManager) StartContainer(containerID string) error {
-	klog.InfoS("start container", "containerID", containerID)
+	klog.InfoS("Start container", "containerID", containerID)
 
 	err := r.runtimeService.StartContainer(containerID)
 	if err != nil {

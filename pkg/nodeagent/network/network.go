@@ -45,8 +45,8 @@ func GetLocalV4IP() ([]net.IP, error) {
 		if ipnet, ok := address.(*net.IPNet); ok && !ipnet.IP.IsLoopback() {
 			if v := ipnet.IP.To4(); v != nil {
 				// only get normal ip
-				if !(v.IsLoopback() || v.IsLinkLocalMulticast() || v.IsLinkLocalUnicast() || v.IsUnspecified() || v.IsGlobalUnicast() || v.IsMulticast() || v.IsInterfaceLocalMulticast()) {
-					ips = append(ips, ipnet.IP)
+				if !(v.IsLoopback() || v.IsLinkLocalMulticast() || v.IsLinkLocalUnicast() || v.IsUnspecified() || v.IsMulticast() || v.IsInterfaceLocalMulticast()) {
+					ips = append(ips, v)
 				}
 			}
 		}

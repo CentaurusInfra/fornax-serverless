@@ -16,7 +16,10 @@ limitations under the License.
 
 package resource
 
-import v1 "k8s.io/api/core/v1"
+import (
+	v1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
+)
 
 var _ ResoureManager = &VolumeManager{}
 
@@ -33,22 +36,30 @@ func (*VolumeManager) WaitForAttachAndMount(*v1.Pod) error {
 
 // GetReservedResource implements ResoureManager
 func (*VolumeManager) GetReservedResource() NodeResource {
-	panic("unimplemented")
+	return NodeResource{
+		Resources: map[v1.ResourceName]resource.Quantity{},
+	}
 }
 
 // GetAllocatedResource implements ResoureManager
 func (*VolumeManager) GetAllocatedResource() NodeResource {
-	panic("unimplemented")
+	return NodeResource{
+		Resources: map[v1.ResourceName]resource.Quantity{},
+	}
 }
 
 // GetAvailableResource implements ResoureManager
 func (*VolumeManager) GetAvailableResource() NodeResource {
-	panic("unimplemented")
+	return NodeResource{
+		Resources: map[v1.ResourceName]resource.Quantity{},
+	}
 }
 
 // GetPodResource implements ResoureManager
 func (*VolumeManager) GetPodResource(v1.Pod) PodResource {
-	panic("unimplemented")
+	return PodResource{
+		Resources: map[v1.ResourceName]resource.Quantity{},
+	}
 }
 
 // ReserveResource implements ResoureManager

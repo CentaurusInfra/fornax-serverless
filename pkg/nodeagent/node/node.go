@@ -23,6 +23,7 @@ import (
 	"sort"
 	"time"
 
+	default_config "centaurusinfra.io/fornax-serverless/pkg/config"
 	"centaurusinfra.io/fornax-serverless/pkg/nodeagent/dependency"
 	"centaurusinfra.io/fornax-serverless/pkg/nodeagent/runtime"
 	"centaurusinfra.io/fornax-serverless/pkg/nodeagent/store/factory"
@@ -32,6 +33,7 @@ import (
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/util/uuid"
 
 	// criv1 "k8s.io/cri-api/pkg/apis/runtime/v1"
 	"k8s.io/klog/v2"
@@ -56,12 +58,20 @@ func (n *FornaxNode) initV1Node() (*v1.Node, error) {
 			APIVersion: "v1",
 		},
 		ObjectMeta: metav1.ObjectMeta{
-			Name: string(hostname),
-			Labels: map[string]string{
-				v1.LabelHostname:   hostname,
-				v1.LabelOSStable:   goruntime.GOOS,
-				v1.LabelArchStable: goruntime.GOARCH,
-			},
+			Name:            hostname,
+			Namespace:       default_config.DefaultFornaxCoreNodeNameSpace,
+			UID:             uuid.NewUUID(),
+			ResourceVersion: "1",
+			Generation:      0,
+			// CreationTimestamp:          metav1.Time{},
+			// DeletionTimestamp:          &metav1.Time{},
+			DeletionGracePeriodSeconds: new(int64),
+			Labels:                     map[string]string{v1.LabelHostname: hostname, v1.LabelOSStable: goruntime.GOOS, v1.LabelArchStable: goruntime.GOARCH},
+			Annotations:                map[string]string{},
+			OwnerReferences:            []metav1.OwnerReference{},
+			Finalizers:                 []string{},
+			ZZZ_DeprecatedClusterName:  "",
+			ManagedFields:              []metav1.ManagedFieldsEntry{},
 		},
 		Spec: v1.NodeSpec{},
 		Status: v1.NodeStatus{
@@ -139,7 +149,6 @@ func LoadPodsFromContainerRuntime(runtimeService runtime.RuntimeService, db *fac
 			status, err := runtimeService.GetPodStatus(podObj.RuntimePod.Id, containerIDs)
 			if err == nil {
 				if status != nil {
-					podObj.RuntimePodStatus = status
 					for _, v := range podObj.Containers {
 						runtimeStatus, found := status.ContainerStatuses[v.RuntimeContainer.Id]
 						if found {
@@ -203,9 +212,7 @@ func ValidateNodeSpec(apiNode *v1.Node) []error {
 	errors := []error{}
 	if len(apiNode.Spec.PodCIDR) == 0 {
 		errors = append(errors, fmt.Errorf("api node spec pod cidr is nil"))
-	}
-
-	if _, _, err := net.ParseCIDR(apiNode.Spec.PodCIDR); err != nil {
+	} else if _, _, err := net.ParseCIDR(apiNode.Spec.PodCIDR); err != nil {
 		errors = append(errors, fmt.Errorf("api node spec PodCIDR %s is invalid", apiNode.Spec.PodCIDR))
 	}
 
@@ -215,10 +222,6 @@ func ValidateNodeSpec(apiNode *v1.Node) []error {
 		}
 	}
 
-	if _, _, err := net.ParseCIDR(apiNode.Spec.PodCIDR); err != nil {
-		errors = append(errors, fmt.Errorf("api node spec PodCIDR %s is invalid", apiNode.Spec.PodCIDR))
-	}
-
 	if len(apiNode.Spec.PodCIDRs) > 0 && apiNode.Spec.PodCIDRs[0] != apiNode.Spec.PodCIDR {
 		errors = append(errors, fmt.Errorf("api node spec podcidrs[0] %s does not match podcidr %s", apiNode.Spec.PodCIDRs[0], apiNode.Spec.PodCIDR))
 	}
@@ -226,7 +229,7 @@ func ValidateNodeSpec(apiNode *v1.Node) []error {
 }
 
 func (n *FornaxNode) Init() error {
-	return n.Dependencies.Complete(n.NodeConfig, n.activePods)
+	return n.Dependencies.Complete(n.V1Node, n.NodeConfig, n.activePods)
 }
 
 func (n *FornaxNode) activePods() []*v1.Pod {

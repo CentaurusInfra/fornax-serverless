@@ -76,7 +76,7 @@ func ResourceListFromMachineInfo(info *cadvisorinfov1.MachineInfo) v1.ResourceLi
 		pageSizeBytes := int64(hugepagesInfo.PageSize * 1024)
 		hugePagesBytes := pageSizeBytes * int64(hugepagesInfo.NumPages)
 		pageSizeQuantity := ResourceQuantity(pageSizeBytes, v1.ResourceMemory)
-		name := v1.ResourceName(fmt.Sprintf("%s_%s", v1.ResourceHugePagesPrefix, pageSizeQuantity.String()))
+		name := v1.ResourceName(fmt.Sprintf("%s%s", v1.ResourceHugePagesPrefix, pageSizeQuantity.String()))
 		resources[name] = ResourceQuantity(hugePagesBytes, v1.ResourceMemory)
 	}
 

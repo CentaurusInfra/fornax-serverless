@@ -58,7 +58,7 @@ func (c *cadvisorInfoProvider) GetNodeCAdvisorInfo() (*NodeCAdvisorInfo, error) 
 		if err == nil {
 			c.nodeCAdvisorInfo = info
 		} else {
-			klog.ErrorS(err, "failed to get NodeCAdvisorInfo")
+			klog.ErrorS(err, "failed to collect NodeCAdvisorInfo")
 			return nil, err
 		}
 	}
@@ -119,6 +119,10 @@ func NewCAdvisorInfoProvider(
 		nil,
 		"",
 		time.Duration(0))
+	if err != nil {
+		return nil, err
+	}
+	err = m.Start()
 	if err != nil {
 		return nil, err
 	}

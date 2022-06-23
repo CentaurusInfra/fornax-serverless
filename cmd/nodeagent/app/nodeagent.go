@@ -145,15 +145,17 @@ func run(ctx context.Context, nodeConfig config.NodeConfiguration, dependencies 
 		Pods:         map[string]*fornaxtypes.FornaxPod{},
 		Dependencies: dependencies,
 	}
-	nodeActor, err := node.NewNodeActor(fornaxNode)
+	nodeActor, err := node.NewNodeActor(&fornaxNode)
 	if err != nil {
 		klog.Errorf("can not initialize node actor, error %v", err)
 	}
 
+	klog.Info("Starting FornaxNode")
 	err = nodeActor.Start()
 	if err != nil {
-		klog.Errorf("can not start node actor, error %v", err)
+		klog.Errorf("Can not start node, error %v", err)
 	}
+	klog.Info("FornaxNode started")
 
 	// wait until shutdown signal is received
 	select {

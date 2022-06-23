@@ -25,6 +25,7 @@ import (
 	"centaurusinfra.io/fornax-serverless/pkg/nodeagent/runtime"
 	"centaurusinfra.io/fornax-serverless/pkg/nodeagent/store/factory"
 	"centaurusinfra.io/fornax-serverless/pkg/nodeagent/store/sqlite"
+	v1 "k8s.io/api/core/v1"
 	criv1 "k8s.io/cri-api/pkg/apis/runtime/v1"
 	"k8s.io/klog/v2"
 	kubeletcm "k8s.io/kubernetes/pkg/kubelet/cm"
@@ -167,13 +168,14 @@ func InitCAdvisor(cAdvisorConfig cadvisor.CAdvisorConfig, CRIRuntime runtime.Run
 	return cadvisor.NewCAdvisorInfoProvider(cAdvisorConfig, CRIRuntime)
 }
 
-func (n *Dependencies) Complete(nodeConfig config.NodeConfiguration, activePods kubeletcm.ActivePodsFunc) error {
+func (n *Dependencies) Complete(node *v1.Node, nodeConfig config.NodeConfiguration, activePods kubeletcm.ActivePodsFunc) error {
 
 	// SqliteStore
 	var err error
 	if n.PodStore == nil {
 		n.PodStore, err = InitPodStore(nodeConfig.DatabaseURL)
 		if err != nil {
+			klog.ErrorS(err, "Failed to init node agent store")
 			return err
 		}
 	}
@@ -186,18 +188,26 @@ func (n *Dependencies) Complete(nodeConfig config.NodeConfiguration, activePods 
 	// CRIRuntime
 	if n.CRIRuntimeService == nil {
 		n.CRIRuntimeService, err = InitRuntimeService(nodeConfig.ContainerRuntimeEndpoint)
+		if err != nil {
+			klog.ErrorS(err, "Failed to init runtime service")
+			return err
+		}
 	}
 
 	// CRIRuntime
 	if n.ImageManager == nil {
 		n.ImageManager, err = InitImageService(nodeConfig.ContainerRuntimeEndpoint)
+		if err != nil {
+			klog.ErrorS(err, "Failed to init runtime image manager")
+			return err
+		}
 	}
 
 	// cAdvisor
 	if n.CAdvisor == nil {
 		n.CAdvisor, err = InitCAdvisor(cadvisor.DefaultCAdvisorConfig(nodeConfig), n.CRIRuntimeService)
 		if err != nil {
-			klog.ErrorS(err, "failed to init cadvisor")
+			klog.ErrorS(err, "Failed to init cadvisor info provider")
 			return err
 		}
 	}
@@ -205,9 +215,9 @@ func (n *Dependencies) Complete(nodeConfig config.NodeConfiguration, activePods 
 	// QosManager
 	if n.QosManager == nil {
 		mounter := mount.New(nodeConfig.MounterPath)
-		n.QosManager, err = qos.NewQoSManager(activePods, mounter, n.CAdvisor, nodeConfig)
+		n.QosManager, err = qos.NewQoSManager(node, activePods, mounter, n.CAdvisor, nodeConfig)
 		if err != nil {
-			klog.ErrorS(err, "failed to init qos manager")
+			klog.ErrorS(err, "Failed to init qos manager")
 			return err
 		}
 	}

@@ -37,6 +37,6 @@ func ContainerStatusUnknown(status *runtime.ContainerStatus) bool {
 	return status != nil && status.RuntimeStatus != nil && status.RuntimeStatus.State == criv1.ContainerState_CONTAINER_UNKNOWN
 }
 
-func ContainerStatusRunning(status *runtime.ContainerStatus) bool {
+func ContainerRunning(status *runtime.ContainerStatus) bool {
 	return status != nil && status.RuntimeStatus != nil && status.RuntimeStatus.State == criv1.ContainerState_CONTAINER_RUNNING
 }

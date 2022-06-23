@@ -26,6 +26,7 @@ import (
 	kubeletcm "k8s.io/kubernetes/pkg/kubelet/cm"
 	"k8s.io/kubernetes/pkg/kubelet/cm/cpuset"
 
+	"centaurusinfra.io/fornax-serverless/pkg/event"
 	"centaurusinfra.io/fornax-serverless/pkg/nodeagent/cadvisor"
 	"centaurusinfra.io/fornax-serverless/pkg/nodeagent/config"
 	"centaurusinfra.io/fornax-serverless/pkg/nodeagent/resource"
@@ -98,6 +99,7 @@ func (qos *QoSManagerImpl) UpdateQOSCgroups() error {
 }
 
 func NewQoSManager(
+	node *v1.Node,
 	activePods kubeletcm.ActivePodsFunc,
 	mountUtil mount.Interface,
 	cadvisor cadvisor.CAdvisorInfoProvider,
@@ -107,7 +109,7 @@ func NewQoSManager(
 	capacity := v1.ResourceList{}
 	nodeCAdvisorInfo, err := cadvisor.GetNodeCAdvisorInfo()
 	if err != nil {
-		return nil, fmt.Errorf("failed to get node cadvisor info: %v", err)
+		return nil, fmt.Errorf("Failed to get node cadvisor info: %v", err)
 	}
 
 	machineInfo := nodeCAdvisorInfo.MachineInfo
@@ -119,9 +121,9 @@ func NewQoSManager(
 	for name, res := range resource.EphemeralResourceListFromFsInfo(rootFs) {
 		capacity[name] = res
 	}
-	cm, err := kubeletcm.NewContainerManager(mountUtil, capacity, kubletCMNodeConfig, true, false, nil)
+	cm, err := kubeletcm.NewContainerManager(mountUtil, node, capacity, kubletCMNodeConfig, nodeConfig.DisableSwap, false, event.NewNoopEventRecorder())
 	if err != nil {
-		return nil, fmt.Errorf("failed to new a kubelet container manager for qos management, %v", err)
+		return nil, fmt.Errorf("Failed to new a kubelet container manager for qos management, %v", err)
 	}
 
 	err = cm.Start(activePods, capacity)

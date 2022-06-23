@@ -119,8 +119,11 @@ func BuildContainerLogsDirectory(podNamespace, podName string, podUID types.UID,
 func BuildPodLogsDirectory(podNamespace, podName string, podUID types.UID) (string, error) {
 	podpath := filepath.Join(config.DefaultPodLogsRootPath, podNamespace, podName, string(podUID))
 	if _, err := os.Stat(podpath); os.IsNotExist(err) {
-		err = os.Mkdir(podpath, os.FileMode(int(0755)))
-		return "", err
+		err = os.MkdirAll(podpath, os.FileMode(int(0755)))
+		if err != nil {
+			return podpath, err
+		}
+		return podpath, nil
 	}
 	return podpath, nil
 }

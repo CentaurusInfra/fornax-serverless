@@ -62,9 +62,8 @@ func NewATestPod(id string) *fornaxtypes.FornaxPod {
 			Spec:       v1.PodSpec{},
 			Status:     v1.PodStatus{},
 		},
-		ConfigMapSpec:    &v1.ConfigMap{},
-		RuntimePod:       &runtime.Pod{},
-		RuntimePodStatus: &runtime.PodStatus{},
+		ConfigMapSpec: &v1.ConfigMap{},
+		RuntimePod:    &runtime.Pod{},
 	}
 	return &testPod
 }

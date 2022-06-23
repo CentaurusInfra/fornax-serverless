@@ -18,8 +18,10 @@ package fornaxcore
 
 import (
 	"errors"
+	"fmt"
+	"time"
 
-	"centaurusinfra.io/fornax-serverless/pkg/fornaxcore/grpc"
+	fornax "centaurusinfra.io/fornax-serverless/pkg/fornaxcore/grpc"
 	"centaurusinfra.io/fornax-serverless/pkg/message"
 	"k8s.io/klog/v2"
 )
@@ -30,12 +32,14 @@ import (
 // fornaxcore actor talk with node actor using proto.actor protocol
 
 type FornaxCoreActor struct {
-	identifier  string
-	stop        bool
-	innerActor  message.Actor
-	fornaxcores map[string]FornaxCoreClient
-	channel     chan *grpc.FornaxCoreMessage
-	nodeActor   message.ActorRef
+	nodeIP        string
+	identifier    string
+	stop          bool
+	innerActor    message.Actor
+	fornaxcores   map[string]FornaxCoreClient
+	fornaxChannel chan *fornax.FornaxCoreMessage
+	nodeActor     message.ActorRef
+	messageSeq    int64
 }
 
 func (n *FornaxCoreActor) Start(nodeActor message.ActorRef) error {
@@ -43,14 +47,11 @@ func (n *FornaxCoreActor) Start(nodeActor message.ActorRef) error {
 	n.nodeActor = nodeActor
 
 	// init innerActor to talk with node actor and pod actors
-	if err := n.innerActor.Start(); err != nil {
-		return err
-	}
+	n.innerActor.Start()
 
 	// listen to fornax grpc message
 	for _, v := range n.fornaxcores {
-		if err := v.Start(); err != nil {
-			v.GetMessage(n.identifier, n.channel)
+		if err := v.GetMessage(fmt.Sprintf("FornaxCoreActor@%s", n.identifier), n.fornaxChannel); err != nil {
 			return err
 		}
 	}
@@ -59,31 +60,30 @@ func (n *FornaxCoreActor) Start(nodeActor message.ActorRef) error {
 	go func() {
 		for {
 			if n.stop {
-				close(n.channel)
-				klog.InfoS("fornaxcore actor exit")
+				close(n.fornaxChannel)
+				klog.InfoS("Fornaxcore actor exit")
 				break
 			}
 			select {
-			case msg, ok := <-n.channel:
+			case msg, ok := <-n.fornaxChannel:
 				if ok {
-					klog.InfoS("receive a message from fornaxcore: %v", &msg)
-					if msg.GetNodeIdentifier() != n.identifier {
-						klog.Warningf("message meant to send to different node %s, skip it", msg.GetMessageIdentifier)
+					if *msg.GetNodeIdentifier().Identifier != n.identifier {
+						klog.Warningf("Received a message meant to send to different node %s, skip it", msg.GetMessageIdentifier)
 					}
 
 					// send these messages to proper node/pod/session actors
 					msgType := msg.GetMessageType()
 					switch {
-					case msgType == grpc.MessageType_UNSPECIFIED:
-						klog.Warningf("receiving message with unspecified type from fornaxcore, skip")
-					case msgType == grpc.MessageType_FORNAX_CORE_CONFIGURATION:
+					case msgType == fornax.MessageType_UNSPECIFIED:
+						klog.Warningf("Received message with unspecified type from fornaxcore, skip")
+					case msgType == fornax.MessageType_FORNAX_CORE_CONFIGURATION:
 						n.onFornaxCoreConfigurationCommand(msg.GetFornaxCoreConfiguration())
 					default:
 						// all fornaxcore message is sent to node actor to handle, fornaxcore actor is message broker
-						n.innerActor.Reference().Send(n.nodeActor, msg)
+						message.Send(n.innerActor.Reference(), n.nodeActor, msg)
 					}
 				} else {
-					klog.Warningf("receiving message from fornaxcore meet error")
+					klog.Warningf("Receiving message from fornaxcore meet error")
 				}
 			}
 		}
@@ -105,7 +105,15 @@ func (n *FornaxCoreActor) Stop() error {
 func (n *FornaxCoreActor) FornaxCoreMessageProcessor(msg message.ActorMessage) (interface{}, error) {
 	go func() {
 		for _, v := range n.fornaxcores {
-			if err := v.PutMessage(msg.Body.(*grpc.FornaxCoreMessage)); err != nil {
+			msgBody := msg.Body.(*fornax.FornaxCoreMessage)
+			messageSeq := fmt.Sprintf("%d", n.messageSeq)
+			msgBody.MessageIdentifier = &messageSeq
+			n.messageSeq += 1
+			msgBody.NodeIdentifier = &fornax.NodeIdentifier{
+				Ip:         &n.nodeIP,
+				Identifier: &n.identifier,
+			}
+			if err := v.PutMessage(msgBody); err != nil {
 				klog.ErrorS(err, "failed to send message to fornax core")
 			}
 		}
@@ -115,7 +123,7 @@ func (n *FornaxCoreActor) FornaxCoreMessageProcessor(msg message.ActorMessage) (
 
 // fornaxcore configuration tell node if fornaxcore has any change, currently only handle fornaxcore join and leave
 // and setup connection with new fornaxcore and disconnect from old one
-func (n *FornaxCoreActor) onFornaxCoreConfigurationCommand(msg *grpc.FornaxCoreConfiguration) error {
+func (n *FornaxCoreActor) onFornaxCoreConfigurationCommand(msg *fornax.FornaxCoreConfiguration) error {
 	// reinitialize fornaxcore clients according configuration
 	newips := []string{}
 	newipset := map[string]bool{}
@@ -146,8 +154,9 @@ func (n *FornaxCoreActor) onFornaxCoreConfigurationCommand(msg *grpc.FornaxCoreC
 		}
 	}
 
-	newfornaxcores := InitFornaxCoreClients(newips)
+	newfornaxcores := InitFornaxCoreClients(n.nodeIP, n.identifier, newips)
 	for k, v := range newfornaxcores {
+		v.Start()
 		n.fornaxcores[k] = v
 	}
 
@@ -162,30 +171,35 @@ func (n *FornaxCoreActor) Reference() message.ActorRef {
 	return n.innerActor.Reference()
 }
 
-func InitFornaxCoreClients(ips []string) map[string]FornaxCoreClient {
+func InitFornaxCoreClients(nodeIp, nodeName string, fornaxCoreIps []string) map[string]FornaxCoreClient {
 	configs := []*FornaxCoreConfiguration{}
-	for _, v := range ips {
+	for _, v := range fornaxCoreIps {
 		configs = append(configs, NewFornaxCoreConfiguration(v))
 	}
 	fornaxcores := map[string]FornaxCoreClient{}
 	for _, v := range configs {
-		f := NewFornaxCoreClient(*v)
+		f := NewFornaxCoreClient(&fornax.NodeIdentifier{
+			Ip:         &nodeIp,
+			Identifier: &nodeName,
+		}, v)
+		f.Start()
 		fornaxcores[v.endpoint] = f
 	}
 
 	return fornaxcores
 }
 
-func NewFornaxCoreActor(identifier string, fornaxCoreIps []string) *FornaxCoreActor {
-	fornaxcores := InitFornaxCoreClients(fornaxCoreIps)
+func NewFornaxCoreActor(nodeIP, nodeName string, fornaxCoreIps []string) *FornaxCoreActor {
+	fornaxcores := InitFornaxCoreClients(nodeIP, nodeName, fornaxCoreIps)
 	actor := &FornaxCoreActor{
-		identifier:  identifier,
-		stop:        false,
-		fornaxcores: fornaxcores,
-		channel:     make(chan *grpc.FornaxCoreMessage, 30),
-		nodeActor:   nil,
+		nodeIP:        nodeIP,
+		identifier:    nodeName,
+		stop:          false,
+		fornaxcores:   fornaxcores,
+		fornaxChannel: make(chan *fornax.FornaxCoreMessage, 30),
+		messageSeq:    time.Now().Unix() + 1, // use current epeco for starting message seq, so, it will be different everytime when nodeagent start
 	}
 
-	actor.innerActor = message.NewLocalChannelActor(identifier, actor.FornaxCoreMessageProcessor)
+	actor.innerActor = message.NewLocalChannelActor(nodeName, actor.FornaxCoreMessageProcessor)
 	return actor
 }

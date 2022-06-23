@@ -85,7 +85,7 @@ func SetNodeStatus(node *FornaxNode) error {
 			Type:               v1.NodeReady,
 			Status:             v1.ConditionTrue,
 			Reason:             "NodeRuntime Ready",
-			Message:            "node is ready to get pod",
+			Message:            "Node is ready to get pod",
 			LastHeartbeatTime:  currentTime,
 			LastTransitionTime: currentTime,
 		}
@@ -226,6 +226,7 @@ func UpdateNodeCapacity(cc cadvisor.CAdvisorInfoProvider, nodeConfig config.Node
 		node.Status.Capacity = v1.ResourceList{}
 	}
 
+	klog.Infof("cadvisor info %v", info.MachineInfo)
 	if info == nil {
 		node.Status.Capacity[v1.ResourceCPU] = *k8sresource.NewMilliQuantity(0, k8sresource.DecimalSI)
 		node.Status.Capacity[v1.ResourceMemory] = k8sresource.MustParse("0Gi")
@@ -255,7 +256,7 @@ func UpdateNodeCapacity(cc cadvisor.CAdvisorInfoProvider, nodeConfig config.Node
 
 func UpdateAllocatableResourceQuantity(resourceName v1.ResourceName, node *v1.Node, reservedQuantity v1.ResourceList) {
 	zeroQuanity := resource.ResourceQuantity(0, resourceName)
-	capacity, ok := node.Status.Capacity[v1.ResourceCPU]
+	capacity, ok := node.Status.Capacity[resourceName]
 	if ok {
 		value := capacity.DeepCopy()
 		var resValue k8sresource.Quantity
@@ -267,9 +268,9 @@ func UpdateAllocatableResourceQuantity(resourceName v1.ResourceName, node *v1.No
 		if value.Sign() < 0 {
 			value.Set(0)
 		}
-		node.Status.Allocatable[v1.ResourceCPU] = value
+		node.Status.Allocatable[resourceName] = value
 	} else {
-		node.Status.Allocatable[v1.ResourceCPU] = zeroQuanity
+		node.Status.Allocatable[resourceName] = zeroQuanity
 	}
 }
 
@@ -302,5 +303,6 @@ func IsNodeStatusReady(myNode *FornaxNode) bool {
 		}
 	}
 
+	klog.InfoS("Node Ready status", "cpu", cpuReady, "mem", memReady, "daemon", daemonReady, "nodeCondition", nodeConditionReady)
 	return (cpuReady && memReady && daemonReady && nodeConditionReady)
 }

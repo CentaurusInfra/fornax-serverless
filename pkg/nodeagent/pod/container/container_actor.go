@@ -48,24 +48,26 @@ func (a *PodContainerActor) Reference() message.ActorRef {
 }
 
 func (a *PodContainerActor) Stop() {
+	klog.InfoS("Stopping container actor", "pod", types.UniquePodName(a.pod), "container", a.container.ContainerSpec.Name)
+
 	a.innerActor.Stop()
 	for _, v := range a.probers {
 		v.Stop()
 	}
 }
 
-func (a *PodContainerActor) Start(recreate bool) error {
+func (a *PodContainerActor) Start() error {
+	klog.InfoS("Starting container actor", "pod", types.UniquePodName(a.pod), "container", a.container.ContainerSpec.Name, "init container", a.container.InitContainer)
+
 	a.innerActor.Start()
 
-	if recreate {
-		// recovered container actor from node agent will load runtime status, startup probers
+	if a.container.ContainerStatus.RuntimeStatus != nil {
+		// recovered container actor from node agent db already has a container status loaded, only need to startup probers
 		a.startStartupProbers()
 	} else {
 		// newly created container does not have runtime status yet, it's populated by container actor's runtime status prober
-		a.Notify(internal.PodContainerCreated{
-			Pod:       a.pod,
-			Container: a.container,
-		})
+		a.container.State = types.ContainerStateCreated
+		a.notify(internal.PodContainerCreated{Pod: a.pod, Container: a.container})
 
 		if a.container.InitContainer || types.PodIsNotStandBy(a.pod) {
 			err := a.startContainer()
@@ -79,8 +81,8 @@ func (a *PodContainerActor) Start(recreate bool) error {
 	return nil
 }
 
-func (a *PodContainerActor) Notify(msg interface{}) {
-	a.innerActor.Reference().Send(a.supervisor, msg)
+func (a *PodContainerActor) notify(msg interface{}) {
+	message.Send(a.innerActor.Reference(), a.supervisor, msg)
 }
 
 func (a *PodContainerActor) messageProcess(msg message.ActorMessage) (interface{}, error) {
@@ -96,6 +98,7 @@ func (a *PodContainerActor) messageProcess(msg message.ActorMessage) (interface{
 }
 
 func (a *PodContainerActor) startContainer() error {
+	klog.InfoS("Starting container", "pod", types.UniquePodName(a.pod), "container", a.container.ContainerSpec.Name)
 	// if not standby pod, start
 	err := a.dependencies.CRIRuntimeService.StartContainer(a.container.RuntimeContainer.Id)
 	if err != nil {
@@ -108,7 +111,8 @@ func (a *PodContainerActor) startContainer() error {
 }
 
 func (a *PodContainerActor) startStartupProbers() {
-	if a.container.ContainerSpec.StartupProbe != nil {
+	klog.InfoS("Starting container startup probers", "pod", types.UniquePodName(a.pod), "container", a.container.ContainerSpec.Name)
+	if !a.container.InitContainer && a.container.ContainerSpec.StartupProbe != nil {
 		startupProber := NewContainerProber(a.onContainerProbeResult,
 			a.pod.PodSpec.DeepCopy(),
 			a.container.RuntimeContainer.Id,
@@ -117,13 +121,9 @@ func (a *PodContainerActor) startStartupProbers() {
 			a.dependencies.CRIRuntimeService,
 		)
 		a.probers[StartupProbe] = startupProber
+		startupProber.Start()
 	} else {
 		// no startup probe, assume it started
-		a.Notify(internal.PodContainerStarted{
-			Pod:       a.pod,
-			Container: a.container,
-		})
-
 		a.onContainerStarted()
 	}
 
@@ -136,25 +136,23 @@ func (a *PodContainerActor) startStartupProbers() {
 		a.dependencies.CRIRuntimeService,
 	)
 	a.probers[RuntimeStatusProbe] = runtimeStatusProber
+	runtimeStatusProber.Start()
 }
 
 // handle probe result, notify pod container status change
-func (a *PodContainerActor) onContainerProbeResult(msg PodContainerProbeResult, probeStatus interface{}) {
+func (a *PodContainerActor) onContainerProbeResult(result PodContainerProbeResult, probeStatus interface{}) {
+	klog.InfoS("Received container prober result", "pod", types.UniquePodName(a.pod), "container", a.container.ContainerSpec.Name, "result", result)
 	// notify pod container status
-	switch msg.ProbeType {
+	switch result.ProbeType {
 	case StartupProbe:
-		if msg.Result == ProbeResultFailed {
+		if result.Result == ProbeResultFailed {
 			// startup failure is treated as container failed, need pod to restart or terminate
-			a.Notify(internal.PodContainerFailed{
+			a.notify(internal.PodContainerFailed{
 				Pod:       a.pod,
 				Container: a.container,
 			})
-		} else if msg.Result == ProbeResultSuccess {
+		} else if result.Result == ProbeResultSuccess {
 			// run container post started hook
-			a.Notify(internal.PodContainerStarted{
-				Pod:       a.pod,
-				Container: a.container,
-			})
 			a.onContainerStarted()
 		}
 		// remove startup prober after received result
@@ -162,27 +160,21 @@ func (a *PodContainerActor) onContainerProbeResult(msg PodContainerProbeResult, 
 		delete(a.probers, StartupProbe)
 	case LivenessProbe:
 		// liveness failure is treated as container failed, need pod to restart or terminate
-		if msg.Result == ProbeResultFailed {
-			a.Notify(internal.PodContainerFailed{
-				Pod:       a.pod,
-				Container: a.container,
-			})
+		if result.Result == ProbeResultFailed {
+			a.onContainerFailed()
 		}
 	case ReadinessProbe:
 		// readiness failure is treated as container unhealthy, pod can not take new traffic
-		if msg.Result == ProbeResultFailed {
-			a.Notify(internal.PodContainerUnhealthy{
+		if result.Result == ProbeResultFailed {
+			a.notify(internal.PodContainerUnhealthy{
 				Pod:       a.pod,
 				Container: a.container,
 			})
-		} else if msg.Result == ProbeResultSuccess {
-			a.Notify(internal.PodContainerReady{
-				Pod:       a.pod,
-				Container: a.container,
-			})
+		} else if result.Result == ProbeResultSuccess {
+			a.onContainerReady()
 		}
 	case RuntimeStatusProbe:
-		if msg.Result == ProbeResultFailed || probeStatus == nil {
+		if result.Result == ProbeResultFailed || probeStatus == nil {
 			// no status found, hesitate to make decision
 			break
 		}
@@ -190,11 +182,12 @@ func (a *PodContainerActor) onContainerProbeResult(msg PodContainerProbeResult, 
 		containerStatus := probeStatus.(*runtime.ContainerStatus)
 		// if runtime container exit or disapper, check it as failed
 		if containerStatus.RuntimeStatus == nil {
-			a.Notify(internal.PodContainerFailed{
+			a.notify(internal.PodContainerFailed{
 				Pod:       a.pod,
 				Container: a.container,
 			})
 		} else {
+			klog.InfoS("Container Runtime Status", "status", containerStatus.RuntimeStatus)
 			if a.container.ContainerStatus == nil {
 				a.container.ContainerStatus = containerStatus
 			} else {
@@ -202,27 +195,56 @@ func (a *PodContainerActor) onContainerProbeResult(msg PodContainerProbeResult, 
 			}
 
 			// when container exit, report it
-			if ContainerExit(a.container.ContainerStatus) {
-				a.Notify(internal.PodContainerFailed{
-					Pod:       a.pod,
-					Container: a.container,
-				})
+			if ContainerExit(a.container.ContainerStatus) && !a.container.InitContainer {
+				a.onContainerFailed()
 			}
 
 			// use runtime status probe as readiness probe if it does not have it
-			if a.container.ContainerSpec.ReadinessProbe == nil && ContainerStatusRunning(a.container.ContainerStatus) {
-				a.Notify(internal.PodContainerReady{
-					Pod:       a.pod,
-					Container: a.container,
-				})
+			if a.container.ContainerSpec.ReadinessProbe == nil && ContainerRunning(a.container.ContainerStatus) {
+				if a.container.State == types.ContainerStateStarted {
+					a.onContainerReady()
+				}
 			}
 		}
 	}
 }
 
+func (a *PodContainerActor) onContainerFailed() (interface{}, error) {
+	pod := a.pod
+	container := a.container
+	a.notify(internal.PodContainerFailed{Pod: a.pod, Container: a.container})
+
+	klog.InfoS("Container failed",
+		"pod", pod.Identifier,
+		"podName", pod.PodSpec.Name,
+		"containerName", container.ContainerSpec.Name,
+	)
+
+	return nil, nil
+}
+
+func (a *PodContainerActor) onContainerReady() (interface{}, error) {
+	pod := a.pod
+	container := a.container
+	a.container.State = types.ContainerStateReady
+
+	klog.InfoS("Container ready",
+		"pod", pod.Identifier,
+		"podName", pod.PodSpec.Name,
+		"containerName", container.ContainerSpec.Name,
+	)
+
+	a.notify(internal.PodContainerReady{Pod: a.pod, Container: a.container})
+	return nil, nil
+}
+
 func (a *PodContainerActor) onContainerStarted() (interface{}, error) {
 	pod := a.pod
 	container := a.container
+	if a.container.State == types.ContainerStateCreated {
+		a.container.State = types.ContainerStateStarted
+		a.notify(internal.PodContainerStarted{Pod: a.pod, Container: a.container})
+	}
 
 	if a.inStoppingProcess() {
 		klog.InfoS("container is being terminated, ignore startup probe message",
@@ -233,49 +255,52 @@ func (a *PodContainerActor) onContainerStarted() (interface{}, error) {
 		return nil, nil
 	}
 
-	// start pod liveness and readiness probe after startup
-	klog.InfoS("start pod liveness and readiness prober",
-		"pod", pod.Identifier,
-		"podName", pod.PodSpec.Name,
-		"containerName", container.ContainerSpec.Name,
-	)
-	if a.container.ContainerSpec.LivenessProbe != nil {
-		prober := NewContainerProber(a.onContainerProbeResult,
-			a.pod.PodSpec.DeepCopy(),
-			a.container.RuntimeContainer.Id,
-			a.container.ContainerSpec.LivenessProbe.DeepCopy(),
-			LivenessProbe,
-			a.dependencies.CRIRuntimeService,
+	// start liveness and readiness prober for non init container
+	if !a.container.InitContainer {
+		// start pod liveness and readiness probe after startup
+		klog.InfoS("start pod liveness and readiness prober",
+			"pod", pod.Identifier,
+			"podName", pod.PodSpec.Name,
+			"containerName", container.ContainerSpec.Name,
 		)
-		a.probers[LivenessProbe] = prober
-		prober.Start()
-	}
-	if a.container.ContainerSpec.ReadinessProbe != nil {
-		prober := NewContainerProber(a.onContainerProbeResult,
-			a.pod.PodSpec.DeepCopy(),
-			a.container.RuntimeContainer.Id,
-			a.container.ContainerSpec.ReadinessProbe.DeepCopy(),
-			ReadinessProbe,
-			a.dependencies.CRIRuntimeService,
-		)
-		a.probers[ReadinessProbe] = prober
-		prober.Start()
-	}
+		if a.container.ContainerSpec.LivenessProbe != nil {
+			prober := NewContainerProber(a.onContainerProbeResult,
+				a.pod.PodSpec.DeepCopy(),
+				a.container.RuntimeContainer.Id,
+				a.container.ContainerSpec.LivenessProbe.DeepCopy(),
+				LivenessProbe,
+				a.dependencies.CRIRuntimeService,
+			)
+			a.probers[LivenessProbe] = prober
+			prober.Start()
+		}
+		if a.container.ContainerSpec.ReadinessProbe != nil {
+			prober := NewContainerProber(a.onContainerProbeResult,
+				a.pod.PodSpec.DeepCopy(),
+				a.container.RuntimeContainer.Id,
+				a.container.ContainerSpec.ReadinessProbe.DeepCopy(),
+				ReadinessProbe,
+				a.dependencies.CRIRuntimeService,
+			)
+			a.probers[ReadinessProbe] = prober
+			prober.Start()
+		}
 
-	klog.InfoS("run post start lifecycle handler",
-		"pod", pod.Identifier,
-		"podName", pod.PodSpec.Name,
-		"containerName", container.ContainerSpec.Name,
-	)
-	if container.ContainerSpec.Lifecycle != nil && container.ContainerSpec.Lifecycle.PostStart != nil {
-		errMsg, err := a.runLifecycleHandler(pod, container, container.ContainerSpec.Lifecycle.PostStart)
-		if err != nil {
-			klog.ErrorS(err, "post start lifecycle handler failed",
-				"pod", pod.Identifier,
-				"podName", pod.PodSpec.Name,
-				"containerName", container.ContainerSpec.Name,
-				"errMsg", errMsg)
-			return nil, err
+		klog.InfoS("run post start lifecycle handler",
+			"pod", pod.Identifier,
+			"podName", pod.PodSpec.Name,
+			"containerName", container.ContainerSpec.Name,
+		)
+		if container.ContainerSpec.Lifecycle != nil && container.ContainerSpec.Lifecycle.PostStart != nil {
+			errMsg, err := a.runLifecycleHandler(pod, container, container.ContainerSpec.Lifecycle.PostStart)
+			if err != nil {
+				klog.ErrorS(err, "post start lifecycle handler failed",
+					"pod", pod.Identifier,
+					"podName", pod.PodSpec.Name,
+					"containerName", container.ContainerSpec.Name,
+					"errMsg", errMsg)
+				return nil, err
+			}
 		}
 	}
 
@@ -337,20 +362,30 @@ func (a *PodContainerActor) stopContainer(timeout time.Duration) (interface{}, e
 				"podName", pod.PodSpec.Name,
 				"containerName", container.ContainerSpec.Name)
 			return nil, err
-		} else {
-			a.container.State = types.ContainerStateStopped
 		}
 
 		// stop probers except runtime status prober, let it to update runtime status
-		for k, prober := range a.probers {
-			if k != RuntimeStatusProbe {
-				prober.Stop()
-			}
+		for _, prober := range a.probers {
+			prober.Stop()
+		}
+
+		// pull stopped container status immediately to speed up state report and metrics
+		var status *runtime.ContainerStatus
+		status, err = a.dependencies.CRIRuntimeService.GetContainerStatus(container.RuntimeContainer.Id)
+		if err != nil {
+			klog.ErrorS(err, "stop pod container failed",
+				"pod", pod.Identifier,
+				"podName", pod.PodSpec.Name,
+				"containerName", container.ContainerSpec.Name)
+			return nil, err
+		} else {
+			a.container.ContainerStatus = status
 		}
 	}
 
+	a.container.State = types.ContainerStateStopped
 	// notify pod container stopped
-	a.Notify(internal.PodContainerStopped{
+	a.notify(internal.PodContainerStopped{
 		Pod:       pod,
 		Container: container,
 	})
@@ -358,12 +393,14 @@ func (a *PodContainerActor) stopContainer(timeout time.Duration) (interface{}, e
 }
 
 func NewPodContainerActor(supervisor message.ActorRef, pod *types.FornaxPod, container *types.Container, dependencies *dependency.Dependencies) *PodContainerActor {
-	id := fmt.Sprintf("%s:%s", string(pod.Identifier), string(container.ContainerSpec.Name))
+	id := fmt.Sprintf("%s:%s", types.UniquePodName(pod), string(container.ContainerSpec.Name))
 	pca := &PodContainerActor{
+		stop:         false,
 		pod:          pod,
 		container:    container,
 		dependencies: dependencies,
 		supervisor:   supervisor,
+		probers:      map[ProbeType]*ContainerProber{},
 	}
 	pca.innerActor = *message.NewLocalChannelActor(id, pca.messageProcess)
 	return pca

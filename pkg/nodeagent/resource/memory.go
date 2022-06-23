@@ -16,7 +16,10 @@ limitations under the License.
 
 package resource
 
-import v1 "k8s.io/api/core/v1"
+import (
+	v1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
+)
 
 var _ ResoureManager = &MemoryManager{}
 
@@ -25,22 +28,30 @@ type MemoryManager struct {
 
 // GetReservedResource implements ResoureManager
 func (*MemoryManager) GetReservedResource() NodeResource {
-	panic("unimplemented")
+	return NodeResource{
+		Resources: map[v1.ResourceName]resource.Quantity{},
+	}
 }
 
 // GetAllocatedResource implements ResoureManager
 func (*MemoryManager) GetAllocatedResource() NodeResource {
-	panic("unimplemented")
+	return NodeResource{
+		Resources: map[v1.ResourceName]resource.Quantity{},
+	}
 }
 
 // GetAvailableResource implements ResoureManager
 func (*MemoryManager) GetAvailableResource() NodeResource {
-	panic("unimplemented")
+	return NodeResource{
+		Resources: map[v1.ResourceName]resource.Quantity{},
+	}
 }
 
 // GetPodResource implements ResoureManager
 func (*MemoryManager) GetPodResource(v1.Pod) PodResource {
-	panic("unimplemented")
+	return PodResource{
+		Resources: map[v1.ResourceName]resource.Quantity{},
+	}
 }
 
 // ReserveResource implements ResoureManager

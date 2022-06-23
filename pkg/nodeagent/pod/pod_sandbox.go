@@ -33,17 +33,19 @@ import (
 // createPodSandbox creates a pod sandbox and returns (podSandBoxID, message, error).
 func (m *PodActor) createPodSandbox() (*runtime.Pod, error) {
 	pod := m.pod.PodSpec
+	klog.InfoS("Generate pod sandbox config", "pod", types.UniquePodName(m.pod))
 	podSandboxConfig, err := m.generatePodSandboxConfig()
 	if err != nil {
-		message := fmt.Sprintf("Failed to generate sandbox config for pod %q: %v", format.Pod(pod), err)
+		message := fmt.Sprintf("Failed to generate sandbox config for pod %s", types.UniquePodName(m.pod))
 		klog.ErrorS(err, message)
 		return nil, err
 	}
 
 	// Create pod logs directory
+	klog.InfoS("Make pod log dir", "pod", types.UniquePodName(m.pod))
 	err = os.MkdirAll(podSandboxConfig.LogDirectory, 0755)
 	if err != nil {
-		message := fmt.Sprintf("Failed to create log directory for pod %q: %v", format.Pod(pod), err)
+		message := fmt.Sprintf("Failed to create log directory %s", podSandboxConfig.LogDirectory)
 		klog.ErrorS(err, message)
 		return nil, err
 	}
@@ -60,6 +62,7 @@ func (m *PodActor) createPodSandbox() (*runtime.Pod, error) {
 	//  }
 	// }
 
+	klog.InfoS("Call runtime to create sandbox", "pod", types.UniquePodName(m.pod))
 	runtimepod, err := m.dependencies.CRIRuntimeService.CreateSandbox(podSandboxConfig, runtimeHandler)
 	if err != nil {
 		message := fmt.Sprintf("Failed to create sandbox for pod %q: %v", format.Pod(pod), err)

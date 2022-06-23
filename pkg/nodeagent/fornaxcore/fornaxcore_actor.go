@@ -71,7 +71,7 @@ func (n *FornaxCoreActor) Start(nodeActor message.ActorRef) error {
 						klog.Warningf("Received a message meant to send to different node %s, skip it", msg.GetMessageIdentifier)
 					}
 
-					// send these messages to proper node/pod/session actors
+					// fornaxcore actor is message broker, all fornaxcore message is sent to node actor to handle execept fornaxcore configuration
 					msgType := msg.GetMessageType()
 					switch {
 					case msgType == fornax.MessageType_UNSPECIFIED:
@@ -79,16 +79,21 @@ func (n *FornaxCoreActor) Start(nodeActor message.ActorRef) error {
 					case msgType == fornax.MessageType_FORNAX_CORE_CONFIGURATION:
 						n.onFornaxCoreConfigurationCommand(msg.GetFornaxCoreConfiguration())
 					default:
-						// all fornaxcore message is sent to node actor to handle, fornaxcore actor is message broker
-						message.Send(n.innerActor.Reference(), n.nodeActor, msg)
+						// TODO handle error
+						n.notify(n.nodeActor, msg)
 					}
 				} else {
+					// TODO handle error
 					klog.Warningf("Receiving message from fornaxcore meet error")
 				}
 			}
 		}
 	}()
 	return nil
+}
+
+func (n *FornaxCoreActor) notify(receiver message.ActorRef, msg interface{}) error {
+	return message.Send(n.innerActor.Reference(), receiver, msg)
 }
 
 func (n *FornaxCoreActor) Stop() error {
@@ -102,7 +107,7 @@ func (n *FornaxCoreActor) Stop() error {
 
 // when fornaxcore actor received another actor's message, it meant to send to fornaxcore a grpc message
 // do not return error as it works as proxy, node/pod/session actors are supposed to resend new state
-func (n *FornaxCoreActor) FornaxCoreMessageProcessor(msg message.ActorMessage) (interface{}, error) {
+func (n *FornaxCoreActor) actorMessageProcess(msg message.ActorMessage) (interface{}, error) {
 	go func() {
 		for _, v := range n.fornaxcores {
 			msgBody := msg.Body.(*fornax.FornaxCoreMessage)
@@ -200,6 +205,6 @@ func NewFornaxCoreActor(nodeIP, nodeName string, fornaxCoreIps []string) *Fornax
 		messageSeq:    time.Now().Unix() + 1, // use current epeco for starting message seq, so, it will be different everytime when nodeagent start
 	}
 
-	actor.innerActor = message.NewLocalChannelActor(nodeName, actor.FornaxCoreMessageProcessor)
+	actor.innerActor = message.NewLocalChannelActor(nodeName, actor.actorMessageProcess)
 	return actor
 }

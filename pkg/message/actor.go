@@ -42,8 +42,8 @@ type LocalChannelActorRef struct {
 	Channel *chan ActorMessage
 }
 
-func Send(sender, receiver ActorRef, msg interface{}) error {
-	return receiver.Receive(ActorMessage{Sender: sender, Body: msg})
+func Send(from, to ActorRef, msg interface{}) error {
+	return to.Receive(ActorMessage{Sender: from, Body: msg})
 }
 
 func (a *LocalChannelActorRef) Receive(msg ActorMessage) error {

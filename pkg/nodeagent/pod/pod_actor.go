@@ -87,13 +87,14 @@ func (n *PodActor) Start() {
 				ticker.Stop()
 				break
 			}
-		}
 
-		select {
-		case _ = <-ticker.C:
-			// ticking, state if it has failed last time
-			if n.lastError != nil {
-				n.notify(n.Reference(), HouseKeeping{})
+			select {
+			case _ = <-ticker.C:
+				// ticking, state if it has failed last time
+				klog.InfoS("Pod actor ticking", "pod", types.UniquePodName(n.pod))
+				if n.lastError != nil {
+					n.notify(n.Reference(), HouseKeeping{})
+				}
 			}
 		}
 	}()
@@ -125,7 +126,7 @@ func (n *PodActor) notifyContainer(containerName string, msg interface{}) error 
 	return n.notify(ca.Reference(), msg)
 }
 
-func (a *PodActor) messageProcess(msg message.ActorMessage) (interface{}, error) {
+func (a *PodActor) actorMessageProcess(msg message.ActorMessage) (interface{}, error) {
 	oldPodState := a.pod.PodState
 	var err error
 	switch msg.Body.(type) {
@@ -150,12 +151,12 @@ func (a *PodActor) messageProcess(msg message.ActorMessage) (interface{}, error)
 	default:
 	}
 
-	// n.dependencies.PodStore.PutPod(n.pod)
 	if err != nil {
 		a.lastError = err
 		return nil, err
 	} else {
 		SetPodStatus(a.pod)
+		err = a.dependencies.PodStore.PutPod(a.pod)
 		if oldPodState != a.pod.PodState {
 			klog.InfoS("PodState changed", "pod", types.UniquePodName(a.pod), "old state", oldPodState, "new state", a.pod.PodState)
 			a.notify(a.supervisor, internal.PodStatusChange{Pod: a.pod})
@@ -384,6 +385,6 @@ func NewPodActor(supervisor message.ActorRef, pod *fornaxtypes.FornaxPod, nodeCo
 		SessionActors:   map[string]message.ActorRef{},
 		ContainerActors: map[string]*podcontainer.PodContainerActor{},
 	}
-	actor.innerActor = message.NewLocalChannelActor(types.UniquePodName(pod), actor.messageProcess)
+	actor.innerActor = message.NewLocalChannelActor(types.UniquePodName(pod), actor.actorMessageProcess)
 	return actor
 }

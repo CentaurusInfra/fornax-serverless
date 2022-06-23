@@ -113,21 +113,24 @@ func (n *FornaxNodeActor) Start() error {
 
 // this method need dependencies initialized and load runtime status successfully and report back to fornax
 func (n *FornaxNodeActor) recreatePodStateFromRuntimeSummary(runtimeSummary ContainerWorldSummary) {
-	for _, p := range runtimeSummary.terminatedPods {
+	for _, fpod := range runtimeSummary.terminatedPods {
 		// still recreate pod actor for terminated pod in case some cleanup are required
-		n.recoverPodActor(p)
+		klog.InfoS("Recover pod actor for a terminated pod", "pod", fornaxtypes.UniquePodName(fpod), "state", fpod.PodState)
+		n.recoverPodActor(fpod)
 		// report back to fornax core, this pod is stopped
-		n.notify(n.fornoxCoreRef, pod.BuildFornaxcoreGrpcPodStateForTerminatedPod(p))
+		n.notify(n.fornoxCoreRef, pod.BuildFornaxcoreGrpcPodStateForTerminatedPod(fpod))
 	}
 
-	for _, p := range runtimeSummary.runningPods {
-		n.recoverPodActor(p)
+	for _, fpod := range runtimeSummary.runningPods {
+		klog.InfoS("Recover pod actor for a running pod", "pod", fornaxtypes.UniquePodName(fpod), "state", fpod.PodState)
+
+		n.recoverPodActor(fpod)
 		// report pod back to fornax core, and recreate pod and actors if it does not exist
-		n.notify(n.fornoxCoreRef, pod.BuildFornaxcoreGrpcPodState(p))
+		n.notify(n.fornoxCoreRef, pod.BuildFornaxcoreGrpcPodState(fpod))
 	}
 }
 
-func (n *FornaxNodeActor) MessageProcessor(msg message.ActorMessage) (interface{}, error) {
+func (n *FornaxNodeActor) actorMessageProcess(msg message.ActorMessage) (interface{}, error) {
 	switch msg.Body.(type) {
 	case *fornaxgrpc.FornaxCoreMessage:
 		return n.processFornaxCoreMessage(msg.Body.(*fornaxgrpc.FornaxCoreMessage))
@@ -136,47 +139,57 @@ func (n *FornaxNodeActor) MessageProcessor(msg message.ActorMessage) (interface{
 		n.notify(n.fornoxCoreRef, pod.BuildFornaxcoreGrpcPodState(fppod))
 	case internal.PodCleanup:
 		fppod := msg.Body.(internal.PodCleanup).Pod
+		if fppod.PodState != fornaxtypes.PodStateTerminated {
+			return nil, fmt.Errorf("Pod is not in terminated state, pod: %s", fornaxtypes.UniquePodName(fppod))
+		}
 		actor, found := n.podActors[string(fppod.Identifier)]
 		if found {
 			actor.Stop()
 			delete(n.podActors, string(fppod.Identifier))
 			delete(n.node.Pods, fppod.Identifier)
 		}
+		err := n.node.Dependencies.PodStore.DelObject(fppod.Identifier)
+		if err != nil {
+			// TODO, if failed to delete a terminated pod, it should be fine, but need better cleanup
+			return nil, err
+		}
 	default:
+		klog.InfoS("Received unknown message", "from", msg.Sender, "msg", msg.Body)
 	}
 
 	return nil, nil
 }
 
-func (n *FornaxNodeActor) processFornaxCoreMessage(msg *fornaxgrpc.FornaxCoreMessage) (interface{}, error) {
+func (n *FornaxNodeActor) processFornaxCoreMessage(msg *fornaxgrpc.FornaxCoreMessage) (reply interface{}, err error) {
 	msgType := msg.GetMessageType()
 	switch msgType {
 	case fornaxgrpc.MessageType_NODE_CONFIGURATION:
-		n.onNodeConfigurationCommand(msg.GetNodeConfiguration())
+		err = n.onNodeConfigurationCommand(msg.GetNodeConfiguration())
 
 	case fornaxgrpc.MessageType_POD_CREATE:
-		n.onPodCreateCommand(msg.GetPodCreate())
+		err = n.onPodCreateCommand(msg.GetPodCreate())
 
 	case fornaxgrpc.MessageType_POD_TERMINATE:
-		n.onPodTerminateCommand(msg.GetPodTerminate())
+		err = n.onPodTerminateCommand(msg.GetPodTerminate())
 
 	case fornaxgrpc.MessageType_POD_ACTIVE:
-		n.onPodActiveCommand(msg.GetPodActive())
+		err = n.onPodActiveCommand(msg.GetPodActive())
 
 	case fornaxgrpc.MessageType_SESSION_START:
-		n.onSessionStartCommand(msg.GetSessionStart())
+		err = n.onSessionStartCommand(msg.GetSessionStart())
 
 	case fornaxgrpc.MessageType_SESSION_CLOSE:
-		n.onSessionCloseCommand(msg.GetSessionClose())
+		err = n.onSessionCloseCommand(msg.GetSessionClose())
 
-		// messages are sent to fornaxcore, should just forward
 	case fornaxgrpc.MessageType_SESSION_STATE, fornaxgrpc.MessageType_POD_STATE, fornaxgrpc.MessageType_NODE_STATE:
+		// messages are sent to fornaxcore, should just forward
 		n.notify(n.fornoxCoreRef, msg)
 
 		// messages are not supposed to be received by node
 	default:
 		klog.Errorf("Message type %s is not supposed to sent to node actor", msgType)
 	}
+	// TODO, handle error, define reply message to fornax core
 	return nil, nil
 }
 
@@ -305,8 +318,6 @@ func buildAFornaxPod(state fornaxtypes.PodState, applicationId types.UID, v1pod 
 }
 
 func (n *FornaxNodeActor) recoverPodActor(fpod *fornaxtypes.FornaxPod) (*fornaxtypes.FornaxPod, *pod.PodActor, error) {
-	klog.InfoS("Recover pod actor for a running pod", "pod", fornaxtypes.UniquePodName(fpod))
-
 	fpActor := pod.NewPodActor(n.innerActor.Reference(), fpod, &n.node.NodeConfig, n.node.Dependencies, pod.ErrRecoverPod)
 	fpActor.Start()
 	n.node.Pods[fpod.Identifier] = fpod
@@ -315,12 +326,21 @@ func (n *FornaxNodeActor) recoverPodActor(fpod *fornaxtypes.FornaxPod) (*fornaxt
 }
 
 func (n *FornaxNodeActor) createPodAndActor(state fornaxtypes.PodState, applicationId types.UID, p *v1.Pod, c *v1.ConfigMap, daemon bool) (*fornaxtypes.FornaxPod, *pod.PodActor, error) {
+	// create fornax pod obj
 	fpod, err := buildAFornaxPod(state, applicationId, p, c, string(p.GetUID()), daemon)
 	if err != nil {
-		klog.ErrorS(err, "Failed to build a FornaxPod obj from pod spec", "namespace", p.Namespace, "name", p.Name)
+		klog.ErrorS(err, "Failed to build a FornaxPod from pod spec", "namespace", p.Namespace, "name", p.Name)
 		return nil, nil, err
 	}
 
+	err = n.node.Dependencies.PodStore.PutPod(fpod)
+	if err != nil {
+		// failed to save this pod
+		klog.ErrorS(err, "Failed to save FornaxPod from pod spec", "namespace", p.Namespace, "name", p.Name)
+		return nil, nil, err
+	}
+
+	// new pod actor and start it
 	fpActor := pod.NewPodActor(n.innerActor.Reference(), fpod, &n.node.NodeConfig, n.node.Dependencies, nil)
 	fpActor.Start()
 	n.node.Pods[fpod.Identifier] = fpod
@@ -328,8 +348,7 @@ func (n *FornaxNodeActor) createPodAndActor(state fornaxtypes.PodState, applicat
 	return fpod, fpActor, nil
 }
 
-// find pod actor and send a message to it
-// if pod actor does not exist, create one
+// find pod actor and send a message to it, if pod actor does not exist, create one
 func (n *FornaxNodeActor) onPodCreateCommand(msg *fornaxgrpc.PodCreate) error {
 	if n.state != NodeStateReady {
 		return fmt.Errorf("Node is not in ready state to create a new pod")
@@ -348,8 +367,7 @@ func (n *FornaxNodeActor) onPodCreateCommand(msg *fornaxgrpc.PodCreate) error {
 	return nil
 }
 
-// find pod actor and send a message to it
-// if pod actor does not exist, create one
+// find pod actor and send a message to it, if pod actor does not exist, return error
 func (n *FornaxNodeActor) onPodTerminateCommand(msg *fornaxgrpc.PodTerminate) error {
 	podActor, found := n.podActors[*msg.PodIdentifier]
 	if !found {
@@ -361,8 +379,7 @@ func (n *FornaxNodeActor) onPodTerminateCommand(msg *fornaxgrpc.PodTerminate) er
 
 }
 
-// find pod actor and send a message to it
-// if pod actor does not exist, return error
+// find pod actor and send a message to it, if pod actor does not exist, return error
 func (n *FornaxNodeActor) onPodActiveCommand(msg *fornaxgrpc.PodActive) error {
 	if n.state != NodeStateReady {
 		return fmt.Errorf("Node is not in ready state to active a standby pod")
@@ -424,7 +441,7 @@ func NewNodeActor(node *FornaxNode) (*FornaxNodeActor, error) {
 		innerActor: nil,
 		podActors:  map[string]*pod.PodActor{},
 	}
-	actor.innerActor = message.NewLocalChannelActor(node.V1Node.GetName(), actor.MessageProcessor)
+	actor.innerActor = message.NewLocalChannelActor(node.V1Node.GetName(), actor.actorMessageProcess)
 
 	klog.Info("Starting FornaxCore actor")
 	fornaxCoreActor := fornaxcore.NewFornaxCoreActor(node.NodeConfig.NodeIP, node.V1Node.Name, node.NodeConfig.FornaxCoreIPs)

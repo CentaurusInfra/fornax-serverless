@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"time"
 
+	grpc_util "centaurusinfra.io/fornax-serverless/pkg/util"
 	criapi "k8s.io/cri-api/pkg/apis"
 	"k8s.io/klog/v2"
 	"k8s.io/kubernetes/pkg/kubelet/cri/remote"
@@ -182,7 +183,11 @@ func (r *remoteRuntimeManager) GetPodStatus(podSandboxID string, containerIDs []
 	klog.InfoS("Get pod status include sandbox and container status", "podSandboxID", podSandboxID, "containerIDs", containerIDs)
 	sandboxStatus, err := r.getPodSandboxStatus(podSandboxID)
 	if err != nil {
-		return nil, err
+		if grpc_util.NotFoundError(err) {
+			return nil, nil
+		} else {
+			return nil, err
+		}
 	}
 
 	podStatus := &PodStatus{
@@ -193,10 +198,12 @@ func (r *remoteRuntimeManager) GetPodStatus(podSandboxID string, containerIDs []
 	for _, v := range containerIDs {
 		containerStatus, errr := r.GetContainerStatus(v)
 		if errr != nil {
-			return nil, err
+			if !grpc_util.NotFoundError(err) {
+				return nil, errr
+			}
+		} else {
+			podStatus.ContainerStatuses[v] = containerStatus.RuntimeStatus
 		}
-		podStatus.ContainerStatuses[v] = containerStatus.RuntimeStatus
-
 	}
 	return podStatus, nil
 }
@@ -263,7 +270,7 @@ func (r *remoteRuntimeManager) StopContainer(containerID string, timeout time.Du
 	klog.InfoS("Stop container", "containerID", containerID)
 
 	err := r.runtimeService.StopContainer(containerID, int64(timeout.Seconds()))
-	if err != nil {
+	if err != nil && !grpc_util.NotFoundError(err) {
 		return err
 	}
 	return nil
@@ -287,6 +294,9 @@ func (r *remoteRuntimeManager) TerminateContainer(containerID string) error {
 
 	status, err := r.GetContainerStatus(containerID)
 	if err != nil {
+		if grpc_util.NotFoundError(err) {
+			return nil
+		}
 		return err
 	}
 
@@ -322,17 +332,26 @@ func (r *remoteRuntimeManager) TerminatePod(podSandboxID string, containerIDs []
 				}
 				containerIDs = append(containerIDs, v.GetId())
 			}
-			r.runtimeService.RemoveContainer(v.GetId())
+			err = r.runtimeService.RemoveContainer(v.GetId())
+			if err != nil {
+				return err
+			}
 		}
 	}
 
 	err = r.runtimeService.StopPodSandbox(podSandboxID)
 	if err != nil {
+		if grpc_util.NotFoundError(err) {
+			return nil
+		}
 		return err
 	}
 
 	err = r.runtimeService.RemovePodSandbox(podSandboxID)
 	if err != nil {
+		if grpc_util.NotFoundError(err) {
+			return nil
+		}
 		return err
 	}
 	return nil

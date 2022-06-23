@@ -148,6 +148,7 @@ func LoadPodsFromContainerRuntime(runtimeService runtime.RuntimeService, db *fac
 
 			status, err := runtimeService.GetPodStatus(podObj.RuntimePod.Id, containerIDs)
 			if err == nil {
+				// runtime service return nil if no such pod
 				if status != nil {
 					for _, v := range podObj.Containers {
 						runtimeStatus, found := status.ContainerStatuses[v.RuntimeContainer.Id]
@@ -162,11 +163,7 @@ func LoadPodsFromContainerRuntime(runtimeService runtime.RuntimeService, db *fac
 					world.runningPods = append(world.runningPods, podObj)
 				} else {
 					// store pod does not exist in container runtime, mark all containers as terminated
-					if podObj.PodState == fornaxtypes.PodStateTerminated || podObj.PodState == fornaxtypes.PodStateTerminating {
-						podObj.PodState = fornaxtypes.PodStateTerminated
-					} else {
-						podObj.PodState = fornaxtypes.PodStateFailed
-					}
+					podObj.PodState = fornaxtypes.PodStateTerminated
 					for _, v := range podObj.Containers {
 						v.State = fornaxtypes.ContainerStateTerminated
 					}

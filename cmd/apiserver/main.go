@@ -59,7 +59,8 @@ func main() {
 	port := 18001
 	certFile := ""
 	keyFile := ""
-	err := app.RunGrpcServer(context.Background(), port, certFile, keyFile)
+	// err := app.RunGrpcServer(context.Background(), port, certFile, keyFile)
+	err := app.RunIntegTestGrpcServer(context.Background(), port, certFile, keyFile)
 	if err != nil {
 		klog.Fatal(err)
 	}

@@ -151,12 +151,12 @@ func (a *PodActor) actorMessageProcess(msg message.ActorMessage) (interface{}, e
 	default:
 	}
 
+	SetPodStatus(a.pod)
+	a.dependencies.PodStore.PutPod(a.pod)
 	if err != nil {
 		a.lastError = err
 		return nil, err
 	} else {
-		SetPodStatus(a.pod)
-		err = a.dependencies.PodStore.PutPod(a.pod)
 		if oldPodState != a.pod.PodState {
 			klog.InfoS("PodState changed", "pod", types.UniquePodName(a.pod), "old state", oldPodState, "new state", a.pod.PodState)
 			a.notify(a.supervisor, internal.PodStatusChange{Pod: a.pod})
@@ -221,14 +221,14 @@ func (a *PodActor) terminate() error {
 	return nil
 }
 
-func (n *PodActor) cleanup() error {
-	klog.InfoS("Cleanup pod", "pod", types.UniquePodName(n.pod))
-	err := n.CleanupPod()
+func (a *PodActor) cleanup() error {
+	klog.InfoS("Cleanup pod", "pod", types.UniquePodName(a.pod))
+	err := a.CleanupPod()
 	if err != nil {
-		klog.ErrorS(err, "Cleanup pod failed", "Pod", types.UniquePodName(n.pod))
+		klog.ErrorS(err, "Cleanup pod failed", "Pod", types.UniquePodName(a.pod))
 		return err
 	}
-	n.notify(n.supervisor, internal.PodCleanup{Pod: n.pod})
+	a.notify(a.supervisor, internal.PodCleanup{Pod: a.pod})
 	return nil
 }
 
@@ -254,18 +254,23 @@ func (n *PodActor) housekeeping() error {
 		// pod create can not got sandbox details, recheck
 		var sandboxStatus *criv1.PodSandbox
 		sandboxStatus, err = n.dependencies.CRIRuntimeService.GetPodSandbox(pod.RuntimePod.Id)
+		// no sandbox found yet, cleanup
+		if err == nil && sandboxStatus == nil {
+			pod.PodState = types.PodStateFailed
+			err = n.cleanup()
+		}
+
+		// sandbox found, cleanup
 		if err == nil && sandboxStatus != nil {
 			if sandboxStatus.State == criv1.PodSandboxState_SANDBOX_NOTREADY {
 				pod.PodState = types.PodStateFailed
 				err = n.cleanup()
 			} else if sandboxStatus.State == criv1.PodSandboxState_SANDBOX_READY {
-				// sandbox is ready, start container
+				pod.PodState = types.PodStateFailed
+				err = n.cleanup()
+				// TODO, handle sandbox creation failure,
 				// n.startContainer(podSandboxConfig *criv1.PodSandboxConfig, v1Container *v1.Container, pullSecrets []v1.Secret, initContainer bool)
 			}
-		}
-		if err == nil && sandboxStatus == nil {
-			pod.PodState = types.PodStateFailed
-			err = n.cleanup()
 		}
 	case pod.PodState == types.PodStateCreating && pod.RuntimePod != nil && pod.RuntimePod.Sandbox != nil:
 		// could be init container failed or part of container failed

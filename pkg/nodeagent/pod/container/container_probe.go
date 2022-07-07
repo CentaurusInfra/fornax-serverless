@@ -37,7 +37,7 @@ const (
 	StartupProbe                 ProbeType = "startup"
 	RuntimeStatusProbe           ProbeType = "runtime"
 	RunningContainerProbeSeconds           = int32(10)
-	InitialContainerProbeSeconds           = int32(10)
+	InitialContainerProbeSeconds           = int32(1)
 )
 
 type ProbeResult string
@@ -137,10 +137,14 @@ func (prober *ContainerProber) ExecProbe() (interface{}, error) {
 			// do not probe anymore
 			prober.Stop()
 		} else if ContainerRunning(status) {
-			// probe it with less frequency
+			// probe running container with less frequency
 			prober.Ticker.Reset(time.Duration(RunningContainerProbeSeconds) * time.Second)
 		}
 		return status, nil
+		// TODO
+	case LivenessProbe:
+	case ReadinessProbe:
+	case StartupProbe:
 	default:
 	}
 	return nil, nil

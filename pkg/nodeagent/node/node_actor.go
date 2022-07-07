@@ -26,7 +26,9 @@ import (
 	internal "centaurusinfra.io/fornax-serverless/pkg/nodeagent/message"
 	"centaurusinfra.io/fornax-serverless/pkg/nodeagent/pod"
 	fornaxtypes "centaurusinfra.io/fornax-serverless/pkg/nodeagent/types"
+
 	"github.com/pkg/errors"
+
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/wait"
@@ -64,6 +66,7 @@ func (n *FornaxNodeActor) Stop() error {
 
 func (n *FornaxNodeActor) Start() error {
 	n.innerActor.Start()
+
 	// complete node dependencies
 	for {
 		klog.InfoS("Init node spec for node registry")
@@ -139,7 +142,9 @@ func (n *FornaxNodeActor) actorMessageProcess(msg message.ActorMessage) (interfa
 		n.notify(n.fornoxCoreRef, pod.BuildFornaxcoreGrpcPodState(fppod))
 	case internal.PodCleanup:
 		fppod := msg.Body.(internal.PodCleanup).Pod
-		if fppod.PodState != fornaxtypes.PodStateTerminated {
+		klog.InfoS("Cleanup pod actor and store", "pod", fornaxtypes.UniquePodName(fppod), "state", fppod.PodState)
+		if fppod.PodState != fornaxtypes.PodStateTerminated && fppod.PodState != fornaxtypes.PodStateFailed {
+			klog.Warning("Received cleanup when pod is not in terminated or failed state", "pod", fornaxtypes.UniquePodName(fppod))
 			return nil, fmt.Errorf("Pod is not in terminated state, pod: %s", fornaxtypes.UniquePodName(fppod))
 		}
 		actor, found := n.podActors[string(fppod.Identifier)]
@@ -160,37 +165,32 @@ func (n *FornaxNodeActor) actorMessageProcess(msg message.ActorMessage) (interfa
 	return nil, nil
 }
 
-func (n *FornaxNodeActor) processFornaxCoreMessage(msg *fornaxgrpc.FornaxCoreMessage) (reply interface{}, err error) {
+// TODO, notify fornax core fatal error
+func (n *FornaxNodeActor) processFornaxCoreMessage(msg *fornaxgrpc.FornaxCoreMessage) (interface{}, error) {
+	var err error
 	msgType := msg.GetMessageType()
 	switch msgType {
 	case fornaxgrpc.MessageType_NODE_CONFIGURATION:
 		err = n.onNodeConfigurationCommand(msg.GetNodeConfiguration())
-
 	case fornaxgrpc.MessageType_POD_CREATE:
 		err = n.onPodCreateCommand(msg.GetPodCreate())
-
 	case fornaxgrpc.MessageType_POD_TERMINATE:
 		err = n.onPodTerminateCommand(msg.GetPodTerminate())
-
 	case fornaxgrpc.MessageType_POD_ACTIVE:
 		err = n.onPodActiveCommand(msg.GetPodActive())
-
 	case fornaxgrpc.MessageType_SESSION_START:
 		err = n.onSessionStartCommand(msg.GetSessionStart())
-
 	case fornaxgrpc.MessageType_SESSION_CLOSE:
 		err = n.onSessionCloseCommand(msg.GetSessionClose())
-
 	case fornaxgrpc.MessageType_SESSION_STATE, fornaxgrpc.MessageType_POD_STATE, fornaxgrpc.MessageType_NODE_STATE:
 		// messages are sent to fornaxcore, should just forward
 		n.notify(n.fornoxCoreRef, msg)
-
 		// messages are not supposed to be received by node
 	default:
-		klog.Errorf("Message type %s is not supposed to sent to node actor", msgType)
+		klog.Warningf("FornaxCoreMessage of type %s is not handled by actor", msgType)
 	}
 	// TODO, handle error, define reply message to fornax core
-	return nil, nil
+	return nil, err
 }
 
 // initialize node with node spec provided by fornaxcore, especially pod cidr
@@ -291,20 +291,21 @@ func (n *FornaxNodeActor) initializeNodeDaemons(pods []*v1.Pod) error {
 	return nil
 }
 
-func buildAFornaxPod(state fornaxtypes.PodState, applicationId types.UID, v1pod *v1.Pod, configMap *v1.ConfigMap, podIdentifier string, daemon bool) (*fornaxtypes.FornaxPod, error) {
+func buildAFornaxPod(state fornaxtypes.PodState,
+	applicationId types.UID,
+	v1pod *v1.Pod,
+	configMap *v1.ConfigMap,
+	podIdentifier string,
+	isDaemon bool) (*fornaxtypes.FornaxPod, error) {
 	errs := pod.ValidatePodSpec(v1pod)
 	if len(errs) > 0 {
 		return nil, errors.New("Pod spec is invalid")
-	}
-	errs = pod.ValidateConfigMapSpec(configMap)
-	if len(errs) > 0 {
-		return nil, errors.New("ConfigMap spec is invalid")
 	}
 	fornaxPod := &fornaxtypes.FornaxPod{
 		Identifier:              podIdentifier,
 		ApplicationId:           applicationId,
 		PodState:                state,
-		Daemon:                  daemon,
+		Daemon:                  isDaemon,
 		PodSpec:                 v1pod.DeepCopy(),
 		RuntimePod:              nil,
 		Containers:              map[string]*fornaxtypes.Container{},
@@ -312,6 +313,10 @@ func buildAFornaxPod(state fornaxtypes.PodState, applicationId types.UID, v1pod 
 	}
 
 	if configMap != nil {
+		errs = pod.ValidateConfigMapSpec(configMap)
+		if len(errs) > 0 {
+			return nil, errors.New("ConfigMap spec is invalid")
+		}
 		fornaxPod.ConfigMapSpec = configMap.DeepCopy()
 	}
 	return fornaxPod, nil
@@ -325,18 +330,22 @@ func (n *FornaxNodeActor) recoverPodActor(fpod *fornaxtypes.FornaxPod) (*fornaxt
 	return fpod, fpActor, nil
 }
 
-func (n *FornaxNodeActor) createPodAndActor(state fornaxtypes.PodState, applicationId types.UID, p *v1.Pod, c *v1.ConfigMap, daemon bool) (*fornaxtypes.FornaxPod, *pod.PodActor, error) {
+func (n *FornaxNodeActor) createPodAndActor(state fornaxtypes.PodState,
+	applicationId types.UID,
+	v1Pod *v1.Pod,
+	v1Config *v1.ConfigMap,
+	isDaemon bool) (*fornaxtypes.FornaxPod, *pod.PodActor, error) {
 	// create fornax pod obj
-	fpod, err := buildAFornaxPod(state, applicationId, p, c, string(p.GetUID()), daemon)
+	fpod, err := buildAFornaxPod(state, applicationId, v1Pod, v1Config, string(v1Pod.GetUID()), isDaemon)
 	if err != nil {
-		klog.ErrorS(err, "Failed to build a FornaxPod from pod spec", "namespace", p.Namespace, "name", p.Name)
+		klog.ErrorS(err, "Failed to build a FornaxPod from pod spec", "namespace", v1Pod.Namespace, "name", v1Pod.Name)
 		return nil, nil, err
 	}
 
 	err = n.node.Dependencies.PodStore.PutPod(fpod)
 	if err != nil {
 		// failed to save this pod
-		klog.ErrorS(err, "Failed to save FornaxPod from pod spec", "namespace", p.Namespace, "name", p.Name)
+		klog.ErrorS(err, "Failed to save FornaxPod", "namespace", v1Pod.Namespace, "name", v1Pod.Name)
 		return nil, nil, err
 	}
 
@@ -355,13 +364,20 @@ func (n *FornaxNodeActor) onPodCreateCommand(msg *fornaxgrpc.PodCreate) error {
 	}
 	_, found := n.node.Pods[*msg.PodIdentifier]
 	if !found {
-		pod, actor, err := n.createPodAndActor(fornaxtypes.PodStateCreating, types.UID(*msg.AppIdentifier), msg.GetPod().DeepCopy(), msg.GetConfigMap().DeepCopy(), false)
+		pod, actor, err := n.createPodAndActor(
+			fornaxtypes.PodStateCreating,
+			types.UID(*msg.AppIdentifier),
+			msg.GetPod().DeepCopy(),
+			msg.GetConfigMap().DeepCopy(),
+			false,
+		)
 		if err != nil {
 			return err
 		}
 		n.notify(actor.Reference(), internal.PodCreate{Pod: pod})
 	} else {
 		// not supposed to receive create command for a existing pod, ignore it and send back pod status
+		// pod should be terminate and recreated for update case
 		return fmt.Errorf("Pod: %s already exist", *msg.PodIdentifier)
 	}
 	return nil
@@ -371,7 +387,7 @@ func (n *FornaxNodeActor) onPodCreateCommand(msg *fornaxgrpc.PodCreate) error {
 func (n *FornaxNodeActor) onPodTerminateCommand(msg *fornaxgrpc.PodTerminate) error {
 	podActor, found := n.podActors[*msg.PodIdentifier]
 	if !found {
-		return fmt.Errorf("Pod: %s does not exist, probably fornax core is not in sync", *msg.PodIdentifier)
+		return fmt.Errorf("Pod: %s does not exist, fornax core is not in sync", *msg.PodIdentifier)
 	} else {
 		n.notify(podActor.Reference(), internal.PodTerminate{})
 	}
@@ -386,7 +402,7 @@ func (n *FornaxNodeActor) onPodActiveCommand(msg *fornaxgrpc.PodActive) error {
 	}
 	podActor, found := n.podActors[*msg.PodIdentifier]
 	if !found {
-		return fmt.Errorf("Pod: %s does not exist, probably fornax core is not in sync", *msg.PodIdentifier)
+		return fmt.Errorf("Pod: %s does not exist, fornax core is not in sync", *msg.PodIdentifier)
 	} else {
 		n.notify(podActor.Reference(), internal.PodActive{})
 	}
@@ -412,7 +428,7 @@ func (n *FornaxNodeActor) onSessionStartCommand(msg *fornaxgrpc.SessionStart) er
 func (n *FornaxNodeActor) onSessionCloseCommand(msg *fornaxgrpc.SessionClose) error {
 	podActor, found := n.podActors[*msg.PodIdentifier]
 	if !found {
-		return fmt.Errorf("Pod: %s does not exist, probably fornax core is not in sync, can not close session", *msg.PodIdentifier)
+		return fmt.Errorf("Pod: %s does not exist, fornax core is not in sync, can not close session", *msg.PodIdentifier)
 	} else {
 		n.notify(podActor.Reference(), internal.SessionClose{})
 	}

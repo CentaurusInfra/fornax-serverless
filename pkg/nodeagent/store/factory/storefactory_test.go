@@ -29,14 +29,6 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-func NewATestContainer(id string) *fornaxtypes.Container {
-	testobj := fornaxtypes.Container{
-		ContainerSpec:    &v1.Container{},
-		RuntimeContainer: &runtime.Container{},
-	}
-	return &testobj
-}
-
 func NewATestSession(id string) *fornaxtypes.Session {
 	testSession := fornaxtypes.Session{
 		Identifier:    id,
@@ -287,108 +279,6 @@ func TestSessionStore_PutSession(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			if err := store.PutSession(tt.session); (err != nil) != tt.wantErr {
 				t.Errorf("SessionStore.PutSession() error = %v, wantErr %v", err, tt.wantErr)
-			}
-		})
-	}
-}
-
-func TestNewContainerSqliteStore(t *testing.T) {
-	type args struct {
-		options *sqlite.SQLiteStoreOptions
-	}
-	tests := []struct {
-		name    string
-		args    args
-		want    *ContainerStore
-		wantErr bool
-	}{
-		{
-			name: "malformed connection url",
-			args: args{
-				options: &sqlite.SQLiteStoreOptions{
-					ConnUrl: "/fff/test.db",
-				},
-			},
-			want:    nil,
-			wantErr: true,
-		},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got, err := NewContainerSqliteStore(tt.args.options)
-			if (err != nil) != tt.wantErr {
-				t.Errorf("NewContainerSqliteStore() error = %v, wantErr %v", err, tt.wantErr)
-				return
-			}
-			if !reflect.DeepEqual(got, tt.want) {
-				t.Errorf("NewContainerSqliteStore() = %v, want %v", got, tt.want)
-			}
-		})
-	}
-}
-
-func TestContainerStore_GetContainer(t *testing.T) {
-	store, _ := NewContainerSqliteStore(&sqlite.SQLiteStoreOptions{
-		ConnUrl: "./test.db",
-	})
-	defer os.Remove("./test.db")
-	testobj := NewATestContainer("testcontainer1")
-	store.PutContainer(testobj)
-
-	tests := []struct {
-		name       string
-		identifier string
-		want       *fornaxtypes.Container
-		wantErr    bool
-	}{
-		{
-			name:       "",
-			identifier: "donotexist",
-			want:       nil,
-			wantErr:    true,
-		},
-		{
-			name:       "",
-			identifier: "testcontainer1",
-			want:       testobj,
-			wantErr:    false,
-		},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got, err := store.GetContainer(tt.identifier)
-			if (err != nil) != tt.wantErr {
-				t.Errorf("ContainerStore.GetContainer() error = %v, wantErr %v", err, tt.wantErr)
-				return
-			}
-			if !reflect.DeepEqual(got, tt.want) {
-				t.Errorf("ContainerStore.GetContainer() = %v, want %v", got, tt.want)
-			}
-		})
-	}
-}
-
-func TestContainerStore_PutContainer(t *testing.T) {
-	store, _ := NewContainerSqliteStore(&sqlite.SQLiteStoreOptions{
-		ConnUrl: "./test.db",
-	})
-	defer os.Remove("./test.db")
-	testobj := NewATestContainer("testcontainer1")
-	tests := []struct {
-		name      string
-		container *fornaxtypes.Container
-		wantErr   bool
-	}{
-		{
-			name:      "get session",
-			container: testobj,
-			wantErr:   false,
-		},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			if err := store.PutContainer(tt.container); (err != nil) != tt.wantErr {
-				t.Errorf("ContainerStore.PutContainer() error = %v, wantErr %v", err, tt.wantErr)
 			}
 		})
 	}

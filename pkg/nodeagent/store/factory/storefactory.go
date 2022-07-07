@@ -32,10 +32,6 @@ type SessionStore struct {
 	store.Store
 }
 
-type ContainerStore struct {
-	store.Store
-}
-
 func NewPodSqliteStore(options *sqlite.SQLiteStoreOptions) (*PodStore, error) {
 	if store, err := sqlite.NewSqliteStore("Pod", options,
 		func(text string) (interface{}, error) { return store.JsonToPod(text) },
@@ -96,39 +92,6 @@ func (s *SessionStore) PutSession(session *types.Session) error {
 		return fmt.Errorf("nil session is passed")
 	}
 	err := s.PutObject(session.Identifier, session)
-	if err != nil {
-		return err
-	}
-	return nil
-}
-
-func NewContainerSqliteStore(options *sqlite.SQLiteStoreOptions) (*ContainerStore, error) {
-	if store, err := sqlite.NewSqliteStore("Container", options,
-		func(text string) (interface{}, error) { return store.JsonToContainer(text) },
-		func(obj interface{}) (string, error) { return store.JsonFromContainer(obj.(*types.Container)) }); err != nil {
-		return nil, err
-	} else {
-		return &ContainerStore{store}, nil
-	}
-}
-
-func (s *ContainerStore) GetContainer(identifier string) (*types.Container, error) {
-	obj, err := s.GetObject(identifier)
-	if err != nil {
-		return nil, err
-	}
-	if v, ok := obj.(*types.Container); !ok {
-		return nil, fmt.Errorf("%v not a store.Container object", obj)
-	} else {
-		return v, nil
-	}
-}
-
-func (s *ContainerStore) PutContainer(container *types.Container) error {
-	if container == nil {
-		return fmt.Errorf("nil container is passed")
-	}
-	err := s.PutObject(string(container.RuntimeContainer.Id), container)
 	if err != nil {
 		return err
 	}

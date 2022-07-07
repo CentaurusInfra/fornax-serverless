@@ -170,7 +170,7 @@ func (s *sqLiteStore) initTable() error {
 	sqlStmt := fmt.Sprintf("create table if not exists %s (identifier varchar(36) primary key, content text)", s.Table)
 	_, err := s.DB.Exec(sqlStmt)
 	if err != nil {
-		klog.Infof("failed to create table %s: %q:", s.Table, err)
+		klog.ErrorS(err, "failed to create table", "table", s.Table)
 		return err
 	}
 

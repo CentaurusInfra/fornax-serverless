@@ -17,7 +17,7 @@ SHELL = /usr/bin/env bash -o pipefail
 .SHELLFLAGS = -ec
 
 .PHONY: all
-all: build
+all: build test
 
 ##@ General
 
@@ -40,11 +40,11 @@ help: ## Display this help.
 
 .PHONY: manifests
 manifests: controller-gen ## Generate WebhookConfiguration, ClusterRole and CustomResourceDefinition objects.
-	$(CONTROLLER_GEN) rbac:roleName=manager-role crd webhook paths="./pkg/..." output:crd:artifacts:config=config/crd/bases
+	$(CONTROLLER_GEN) rbac:roleName=manager-role crd webhook paths="./pkg/apis/..." output:crd:artifacts:config=config/crd/bases
 
 .PHONY: generate
 generate: controller-gen openapi-gen client-gen ## generate-client-gen ## Generate code containing DeepCopy, DeepCopyInto, and DeepCopyObject method implementations.
-	$(CONTROLLER_GEN) object:headerFile="hack/boilerplate.go.txt" paths="./pkg/..."
+	$(CONTROLLER_GEN) object:headerFile="hack/boilerplate.go.txt" paths="./pkg/apis/core/..."
 	# $(OPENAPI_GEN) --go-header-file="hack/boilerplate.go.txt" --input-dirs="./pkg/apis/core/..." --output-package="centaurusinfra.io/fornax-serverless/pkg/apis/openapi"
 
 GENERATE_GROUPS = $(shell pwd)/hack/generate-groups.sh
@@ -71,6 +71,7 @@ test: manifests generate fmt vet envtest ## Run tests.
 build: generate fmt vet ## Build binary.
 	go build ./...
 	go build -o bin/apiserver cmd/apiserver/main.go
+	go build -o bin/nodeagent cmd/nodeagent/main.go
 
 .PHONY: run
 run: manifests generate fmt vet ## Run from your host.
@@ -155,6 +156,7 @@ protoc-gen: ## Download protc-gen locally if necessary.
 	$(call go-get-tool,$(PROTOC_GEN),google.golang.org/protobuf/cmd/protoc-gen-go@v1.28)
 	$(call go-get-tool,$(PROTOC_GEN_GRPC),google.golang.org/grpc/cmd/protoc-gen-go-grpc@v1.2)
 	$(call get-protoc,$(PROTOC))
+	go mod vendor
 	$(PROTOC) -I=./ -I=./vendor \
 		--go_out=../.. \
 		--go-grpc_out=../../ \

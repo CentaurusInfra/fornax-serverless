@@ -23,7 +23,7 @@ const _ = grpc.SupportPackageIsVersion7
 //
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 type FornaxCoreServiceClient interface {
-	GetMessage(ctx context.Context, in *empty.Empty, opts ...grpc.CallOption) (FornaxCoreService_GetMessageClient, error)
+	GetMessage(ctx context.Context, in *NodeIdentifier, opts ...grpc.CallOption) (FornaxCoreService_GetMessageClient, error)
 	PutMessage(ctx context.Context, in *FornaxCoreMessage, opts ...grpc.CallOption) (*empty.Empty, error)
 }
 
@@ -35,7 +35,7 @@ func NewFornaxCoreServiceClient(cc grpc.ClientConnInterface) FornaxCoreServiceCl
 	return &fornaxCoreServiceClient{cc}
 }
 
-func (c *fornaxCoreServiceClient) GetMessage(ctx context.Context, in *empty.Empty, opts ...grpc.CallOption) (FornaxCoreService_GetMessageClient, error) {
+func (c *fornaxCoreServiceClient) GetMessage(ctx context.Context, in *NodeIdentifier, opts ...grpc.CallOption) (FornaxCoreService_GetMessageClient, error) {
 	stream, err := c.cc.NewStream(ctx, &FornaxCoreService_ServiceDesc.Streams[0], "/centaurusinfra.io.fornaxcore.service.FornaxCoreService/getMessage", opts...)
 	if err != nil {
 		return nil, err
@@ -80,7 +80,7 @@ func (c *fornaxCoreServiceClient) PutMessage(ctx context.Context, in *FornaxCore
 // All implementations must embed UnimplementedFornaxCoreServiceServer
 // for forward compatibility
 type FornaxCoreServiceServer interface {
-	GetMessage(*empty.Empty, FornaxCoreService_GetMessageServer) error
+	GetMessage(*NodeIdentifier, FornaxCoreService_GetMessageServer) error
 	PutMessage(context.Context, *FornaxCoreMessage) (*empty.Empty, error)
 	mustEmbedUnimplementedFornaxCoreServiceServer()
 }
@@ -89,7 +89,7 @@ type FornaxCoreServiceServer interface {
 type UnimplementedFornaxCoreServiceServer struct {
 }
 
-func (UnimplementedFornaxCoreServiceServer) GetMessage(*empty.Empty, FornaxCoreService_GetMessageServer) error {
+func (UnimplementedFornaxCoreServiceServer) GetMessage(*NodeIdentifier, FornaxCoreService_GetMessageServer) error {
 	return status.Errorf(codes.Unimplemented, "method GetMessage not implemented")
 }
 func (UnimplementedFornaxCoreServiceServer) PutMessage(context.Context, *FornaxCoreMessage) (*empty.Empty, error) {
@@ -109,7 +109,7 @@ func RegisterFornaxCoreServiceServer(s grpc.ServiceRegistrar, srv FornaxCoreServ
 }
 
 func _FornaxCoreService_GetMessage_Handler(srv interface{}, stream grpc.ServerStream) error {
-	m := new(empty.Empty)
+	m := new(NodeIdentifier)
 	if err := stream.RecvMsg(m); err != nil {
 		return err
 	}

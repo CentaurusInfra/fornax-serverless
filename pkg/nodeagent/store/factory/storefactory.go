@@ -19,10 +19,9 @@ package factory
 import (
 	"fmt"
 
-	"centaurusinfra.io/fornax-serverless/pkg/nodeagent/pod"
-	"centaurusinfra.io/fornax-serverless/pkg/nodeagent/session"
 	"centaurusinfra.io/fornax-serverless/pkg/nodeagent/store"
 	"centaurusinfra.io/fornax-serverless/pkg/nodeagent/store/sqlite"
+	"centaurusinfra.io/fornax-serverless/pkg/nodeagent/types"
 )
 
 type PodStore struct {
@@ -33,37 +32,33 @@ type SessionStore struct {
 	store.Store
 }
 
-type ContainerStore struct {
-	store.Store
-}
-
 func NewPodSqliteStore(options *sqlite.SQLiteStoreOptions) (*PodStore, error) {
 	if store, err := sqlite.NewSqliteStore("Pod", options,
 		func(text string) (interface{}, error) { return store.JsonToPod(text) },
-		func(obj interface{}) (string, error) { return store.JsonFromPod(obj.(*pod.Pod)) }); err != nil {
+		func(obj interface{}) (string, error) { return store.JsonFromPod(obj.(*types.FornaxPod)) }); err != nil {
 		return nil, err
 	} else {
 		return &PodStore{store}, nil
 	}
 }
 
-func (s *PodStore) GetPod(identifier string) (*pod.Pod, error) {
+func (s *PodStore) GetPod(identifier string) (*types.FornaxPod, error) {
 	obj, err := s.GetObject(identifier)
 	if err != nil {
 		return nil, err
 	}
-	if v, ok := obj.(*pod.Pod); !ok {
+	if v, ok := obj.(*types.FornaxPod); !ok {
 		return nil, fmt.Errorf("%v not a Pod object", obj)
 	} else {
 		return v, nil
 	}
 }
 
-func (s *PodStore) PutPod(pod *pod.Pod) error {
+func (s *PodStore) PutPod(pod *types.FornaxPod) error {
 	if pod == nil {
 		return fmt.Errorf("nil pod is passed")
 	}
-	err := s.PutObject(pod.Identifier, pod)
+	err := s.PutObject(string(pod.Identifier), pod)
 	if err != nil {
 		return err
 	}
@@ -73,63 +68,30 @@ func (s *PodStore) PutPod(pod *pod.Pod) error {
 func NewSessionSqliteStore(options *sqlite.SQLiteStoreOptions) (*SessionStore, error) {
 	if store, err := sqlite.NewSqliteStore("Session", options,
 		func(text string) (interface{}, error) { return store.JsonToSession(text) },
-		func(obj interface{}) (string, error) { return store.JsonFromSession(obj.(*session.Session)) }); err != nil {
+		func(obj interface{}) (string, error) { return store.JsonFromSession(obj.(*types.Session)) }); err != nil {
 		return nil, err
 	} else {
 		return &SessionStore{store}, nil
 	}
 }
 
-func (s *SessionStore) GetSession(identifier string) (*session.Session, error) {
+func (s *SessionStore) GetSession(identifier string) (*types.Session, error) {
 	obj, err := s.GetObject(identifier)
 	if err != nil {
 		return nil, err
 	}
-	if v, ok := obj.(*session.Session); !ok {
+	if v, ok := obj.(*types.Session); !ok {
 		return nil, fmt.Errorf("%v not a Session object", obj)
 	} else {
 		return v, nil
 	}
 }
 
-func (s *SessionStore) PutSession(session *session.Session) error {
+func (s *SessionStore) PutSession(session *types.Session) error {
 	if session == nil {
 		return fmt.Errorf("nil session is passed")
 	}
 	err := s.PutObject(session.Identifier, session)
-	if err != nil {
-		return err
-	}
-	return nil
-}
-
-func NewContainerSqliteStore(options *sqlite.SQLiteStoreOptions) (*ContainerStore, error) {
-	if store, err := sqlite.NewSqliteStore("Container", options,
-		func(text string) (interface{}, error) { return store.JsonToContainer(text) },
-		func(obj interface{}) (string, error) { return store.JsonFromContainer(obj.(*pod.Container)) }); err != nil {
-		return nil, err
-	} else {
-		return &ContainerStore{store}, nil
-	}
-}
-
-func (s *ContainerStore) GetContainer(identifier string) (*pod.Container, error) {
-	obj, err := s.GetObject(identifier)
-	if err != nil {
-		return nil, err
-	}
-	if v, ok := obj.(*pod.Container); !ok {
-		return nil, fmt.Errorf("%v not a store.Container object", obj)
-	} else {
-		return v, nil
-	}
-}
-
-func (s *ContainerStore) PutContainer(container *pod.Container) error {
-	if container == nil {
-		return fmt.Errorf("nil container is passed")
-	}
-	err := s.PutObject(container.Identifier, container)
 	if err != nil {
 		return err
 	}

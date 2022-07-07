@@ -2028,8 +2028,8 @@ func (in *List) DeepCopyInto(out *List) {
 	if in.Items != nil {
 		in, out := &in.Items, &out.Items
 		*out = make([]runtime.Object, len(*in))
-		for i := range *in {
-		}
+		// for i := range *in {
+		// }
 	}
 }
 

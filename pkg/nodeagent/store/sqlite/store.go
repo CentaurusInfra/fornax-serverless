@@ -43,7 +43,7 @@ type sqLiteStore struct {
 func (s *sqLiteStore) ListObject() ([]interface{}, error) {
 	row, err := s.DB.Query(fmt.Sprintf("select identifier, content from %s", s.Table))
 	if err != nil {
-		klog.Fatal(err)
+		return nil, err
 	}
 
 	objs := []interface{}{}
@@ -54,7 +54,7 @@ func (s *sqLiteStore) ListObject() ([]interface{}, error) {
 		var text string
 		err := row.Scan(&id, &text)
 		if err != nil {
-			klog.Fatal(err)
+			return nil, err
 		}
 
 		var obj interface{}
@@ -68,10 +68,22 @@ func (s *sqLiteStore) ListObject() ([]interface{}, error) {
 }
 
 // DelObject implements store.Store
-func (s *sqLiteStore) DelObject(identifer string) error {
-	_, err := s.DB.Exec(fmt.Sprintf("delete from %s where identifier = %s", s.Table, identifer))
+func (s *sqLiteStore) DelObject(identifier string) error {
+	tx, err := s.DB.Begin()
 	if err != nil {
-		klog.Fatal(err)
+		return err
+	}
+	stmt, err := s.DB.Prepare(fmt.Sprintf("delete from %s where identifier = ?", s.Table))
+	if err != nil {
+		return err
+	}
+	defer stmt.Close()
+
+	_, err = stmt.Exec(identifier)
+	tx.Commit()
+
+	if err != nil {
+		return err
 	}
 	return nil
 }
@@ -85,16 +97,18 @@ func (s *sqLiteStore) PutObject(identifier string, obj interface{}) error {
 	}
 	tx, err := s.DB.Begin()
 	if err != nil {
-		klog.Fatal(err)
+		return err
 	}
 
 	stmt, err := tx.Prepare(fmt.Sprintf("insert or replace into %s(identifier, content) values(?, ?)", s.Table))
 	if err != nil {
-		klog.Fatal(err)
-
+		return err
 	}
 	defer stmt.Close()
 	_, err = stmt.Exec(identifier, sqlobjtext)
+	if err != nil {
+		return err
+	}
 	tx.Commit()
 
 	return nil
@@ -105,7 +119,7 @@ func (s *sqLiteStore) GetObject(identifier string) (interface{}, error) {
 	defer stmt.Close()
 	row, err := stmt.Query(identifier)
 	if err != nil {
-		klog.Fatal(err)
+		return nil, err
 	}
 
 	defer row.Close()
@@ -120,8 +134,7 @@ func (s *sqLiteStore) GetObject(identifier string) (interface{}, error) {
 		}
 		err := row.Scan(&id, &text)
 		if err != nil {
-			klog.Fatal(err)
-
+			return nil, err
 		}
 	}
 	if numOfRow == 0 {
@@ -142,7 +155,7 @@ type SQLiteStoreOptions struct {
 func (s *sqLiteStore) connect() error {
 	db, err := sql.Open("sqlite3", s.options.ConnUrl)
 	if err != nil {
-		klog.Fatal("connect sqlite failed", err)
+		klog.ErrorS(err, "connect sqlite failed")
 		return err
 	}
 	s.DB = db
@@ -157,7 +170,7 @@ func (s *sqLiteStore) initTable() error {
 	sqlStmt := fmt.Sprintf("create table if not exists %s (identifier varchar(36) primary key, content text)", s.Table)
 	_, err := s.DB.Exec(sqlStmt)
 	if err != nil {
-		klog.Infof("failed to create table %s: %q:", s.Table, err)
+		klog.ErrorS(err, "failed to create table", "table", s.Table)
 		return err
 	}
 

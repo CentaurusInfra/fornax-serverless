@@ -7,6 +7,7 @@ require (
 	github.com/davecgh/go-spew v1.1.1
 	github.com/docker/distribution v2.8.1+incompatible
 	github.com/docker/go-units v0.4.0
+	github.com/emicklei/go-restful v2.9.5+incompatible
 	github.com/fsnotify/fsnotify v1.5.4
 	github.com/gogo/protobuf v1.3.2
 	github.com/golang/mock v1.6.0
@@ -19,6 +20,7 @@ require (
 	github.com/spf13/pflag v1.0.5
 	github.com/stretchr/testify v1.7.1
 	golang.org/x/sys v0.0.0-20220520151302-bc2c85ada10a
+	golang.org/x/tools v0.1.10-0.20220218145154-897bd77cd717
 	google.golang.org/grpc v1.47.0
 	google.golang.org/protobuf v1.28.0
 	k8s.io/api v0.24.1
@@ -27,6 +29,7 @@ require (
 	k8s.io/client-go v0.24.1
 	k8s.io/component-base v0.24.1
 	k8s.io/component-helpers v0.24.1
+	k8s.io/cri-api v0.24.1
 	k8s.io/klog/v2 v2.60.1
 	k8s.io/kubelet v0.24.1
 	k8s.io/mount-utils v0.24.1
@@ -44,7 +47,6 @@ require (
 	github.com/coreos/go-semver v0.3.0 // indirect
 	github.com/coreos/go-systemd/v22 v22.3.2 // indirect
 	github.com/cyphar/filepath-securejoin v0.2.3 // indirect
-	github.com/emicklei/go-restful v2.9.5+incompatible // indirect
 	github.com/evanphx/json-patch v4.12.0+incompatible // indirect
 	github.com/felixge/httpsnoop v1.0.1 // indirect
 	github.com/go-logr/logr v1.2.0 // indirect
@@ -63,6 +65,7 @@ require (
 	github.com/json-iterator/go v1.1.12 // indirect
 	github.com/mailru/easyjson v0.7.6 // indirect
 	github.com/matttproud/golang_protobuf_extensions v1.0.2-0.20181231171920-c182affec369 // indirect
+	github.com/moby/spdystream v0.2.0 // indirect
 	github.com/moby/sys/mountinfo v0.5.0 // indirect
 	github.com/modern-go/concurrent v0.0.0-20180306012644-bacd9c7ef1dd // indirect
 	github.com/modern-go/reflect2 v1.0.2 // indirect

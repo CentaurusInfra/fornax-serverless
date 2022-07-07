@@ -22,40 +22,30 @@ import (
 	"testing"
 
 	fornaxv1 "centaurusinfra.io/fornax-serverless/pkg/apis/core/v1"
-	"centaurusinfra.io/fornax-serverless/pkg/nodeagent/pod"
-	"centaurusinfra.io/fornax-serverless/pkg/nodeagent/runtime/cri"
-	"centaurusinfra.io/fornax-serverless/pkg/nodeagent/session"
+	"centaurusinfra.io/fornax-serverless/pkg/nodeagent/runtime"
 	"centaurusinfra.io/fornax-serverless/pkg/nodeagent/store/sqlite"
+	fornaxtypes "centaurusinfra.io/fornax-serverless/pkg/nodeagent/types"
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-func NewATestContainer(id string) *pod.Container {
-	testobj := pod.Container{
-		Identifier:      id,
-		Container:       v1.Container{},
-		RuntimeConainer: cri.ContainerStatus{},
-	}
-	return &testobj
-}
-
-func NewATestSession(id string) *session.Session {
-	testSession := session.Session{
+func NewATestSession(id string) *fornaxtypes.Session {
+	testSession := fornaxtypes.Session{
 		Identifier:    id,
 		PodIdentifier: "",
-		Pod:           v1.Pod{},
+		Pod:           &v1.Pod{},
 		Session:       &fornaxv1.ApplicationSession{},
 		SessionState:  "",
 	}
 	return &testSession
 }
 
-func NewATestPod(id string) *pod.Pod {
-	testPod := pod.Pod{
-		Identifier:  id,
-		Application: fornaxv1.Application{},
-		PodState:    "PodStateCreated",
-		Pod: v1.Pod{
+func NewATestPod(id string) *fornaxtypes.FornaxPod {
+	testPod := fornaxtypes.FornaxPod{
+		Identifier:    id,
+		ApplicationId: "applicationId",
+		PodState:      "PodStateCreated",
+		PodSpec: &v1.Pod{
 			TypeMeta: metav1.TypeMeta{
 				Kind:       "Pod",
 				APIVersion: "k8s.io/core/v1",
@@ -64,9 +54,8 @@ func NewATestPod(id string) *pod.Pod {
 			Spec:       v1.PodSpec{},
 			Status:     v1.PodStatus{},
 		},
-		ConfigMap:        v1.ConfigMap{},
-		RuntimePod:       cri.Pod{},
-		RuntimePodStatus: cri.PodStatus{},
+		ConfigMapSpec: &v1.ConfigMap{},
+		RuntimePod:    &runtime.Pod{},
 	}
 	return &testPod
 }
@@ -117,7 +106,7 @@ func TestPodStore_GetPod(t *testing.T) {
 	tests := []struct {
 		name       string
 		identifier string
-		want       *pod.Pod
+		want       *fornaxtypes.FornaxPod
 		wantErr    bool
 	}{
 		{
@@ -157,7 +146,7 @@ func TestPodStore_PutPod(t *testing.T) {
 	testPod2.PodState = "PodStateTerminated"
 	tests := []struct {
 		name    string
-		args    *pod.Pod
+		args    *fornaxtypes.FornaxPod
 		wantErr bool
 	}{
 		{
@@ -231,7 +220,7 @@ func TestSessionStore_GetSession(t *testing.T) {
 	tests := []struct {
 		name       string
 		identifier string
-		want       *session.Session
+		want       *fornaxtypes.Session
 		wantErr    bool
 	}{
 		{
@@ -272,7 +261,7 @@ func TestSessionStore_PutSession(t *testing.T) {
 	testSession2.SessionState = "SessionStateClosed"
 	tests := []struct {
 		name    string
-		session *session.Session
+		session *fornaxtypes.Session
 		wantErr bool
 	}{
 		{
@@ -290,108 +279,6 @@ func TestSessionStore_PutSession(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			if err := store.PutSession(tt.session); (err != nil) != tt.wantErr {
 				t.Errorf("SessionStore.PutSession() error = %v, wantErr %v", err, tt.wantErr)
-			}
-		})
-	}
-}
-
-func TestNewContainerSqliteStore(t *testing.T) {
-	type args struct {
-		options *sqlite.SQLiteStoreOptions
-	}
-	tests := []struct {
-		name    string
-		args    args
-		want    *ContainerStore
-		wantErr bool
-	}{
-		{
-			name: "malformed connection url",
-			args: args{
-				options: &sqlite.SQLiteStoreOptions{
-					ConnUrl: "/fff/test.db",
-				},
-			},
-			want:    nil,
-			wantErr: true,
-		},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got, err := NewContainerSqliteStore(tt.args.options)
-			if (err != nil) != tt.wantErr {
-				t.Errorf("NewContainerSqliteStore() error = %v, wantErr %v", err, tt.wantErr)
-				return
-			}
-			if !reflect.DeepEqual(got, tt.want) {
-				t.Errorf("NewContainerSqliteStore() = %v, want %v", got, tt.want)
-			}
-		})
-	}
-}
-
-func TestContainerStore_GetContainer(t *testing.T) {
-	store, _ := NewContainerSqliteStore(&sqlite.SQLiteStoreOptions{
-		ConnUrl: "./test.db",
-	})
-	defer os.Remove("./test.db")
-	testobj := NewATestContainer("testcontainer1")
-	store.PutContainer(testobj)
-
-	tests := []struct {
-		name       string
-		identifier string
-		want       *pod.Container
-		wantErr    bool
-	}{
-		{
-			name:       "",
-			identifier: "donotexist",
-			want:       nil,
-			wantErr:    true,
-		},
-		{
-			name:       "",
-			identifier: "testcontainer1",
-			want:       testobj,
-			wantErr:    false,
-		},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got, err := store.GetContainer(tt.identifier)
-			if (err != nil) != tt.wantErr {
-				t.Errorf("ContainerStore.GetContainer() error = %v, wantErr %v", err, tt.wantErr)
-				return
-			}
-			if !reflect.DeepEqual(got, tt.want) {
-				t.Errorf("ContainerStore.GetContainer() = %v, want %v", got, tt.want)
-			}
-		})
-	}
-}
-
-func TestContainerStore_PutContainer(t *testing.T) {
-	store, _ := NewContainerSqliteStore(&sqlite.SQLiteStoreOptions{
-		ConnUrl: "./test.db",
-	})
-	defer os.Remove("./test.db")
-	testobj := NewATestContainer("testcontainer1")
-	tests := []struct {
-		name      string
-		container *pod.Container
-		wantErr   bool
-	}{
-		{
-			name:      "get session",
-			container: testobj,
-			wantErr:   false,
-		},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			if err := store.PutContainer(tt.container); (err != nil) != tt.wantErr {
-				t.Errorf("ContainerStore.PutContainer() error = %v, wantErr %v", err, tt.wantErr)
 			}
 		})
 	}

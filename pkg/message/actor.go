@@ -17,6 +17,8 @@ limitations under the License.
 package message
 
 import (
+	"errors"
+
 	"k8s.io/klog/v2"
 )
 
@@ -31,7 +33,7 @@ type ActorMessage struct {
 }
 
 type ActorRef interface {
-	Send(replyReceiver ActorRef, msg interface{}) error
+	Receive(msg ActorMessage) error
 }
 
 var _ ActorRef = &LocalChannelActorRef{}
@@ -40,25 +42,28 @@ type LocalChannelActorRef struct {
 	Channel *chan ActorMessage
 }
 
-func (a *LocalChannelActorRef) Send(replyReceiver ActorRef, msg interface{}) error {
+func Send(from, to ActorRef, msg interface{}) error {
+	return to.Receive(ActorMessage{Sender: from, Body: msg})
+}
+
+func (a *LocalChannelActorRef) Receive(msg ActorMessage) error {
+	var err error
 	func() {
 		defer func() {
 			if err := recover(); err != nil {
-				klog.Errorf("send message panic occurred: %v", err)
+				klog.Errorf("channel panic occurred: %v", err)
+				err = errors.New("channel panic")
 			}
 		}()
 
-		*a.Channel <- ActorMessage{
-			Sender: replyReceiver,
-			Body:   msg,
-		}
+		*a.Channel <- msg
 	}()
-	return nil
+	return err
 }
 
 type Actor interface {
-	Start() error
-	Stop() error
+	Start()
+	Stop()
 	Reference() ActorRef
 }
 
@@ -74,7 +79,7 @@ type LocalChannelActor struct {
 func NewLocalChannelActor(identifier string, messageProcessor MessageProcessFunc) *LocalChannelActor {
 	return &LocalChannelActor{
 		Identifier:  identifier,
-		channel:     make(chan ActorMessage),
+		channel:     make(chan ActorMessage, 30),
 		messageFunc: messageProcessor,
 	}
 }
@@ -92,10 +97,10 @@ type StopFunc func() error
 type MessageProcessFunc func(ActorMessage) (interface{}, error)
 
 // Start implements Actor
-func (a *LocalChannelActor) Start() error {
+func (a *LocalChannelActor) Start() {
 	a.stop = false
 	if a.channel == nil {
-		a.channel = make(chan ActorMessage, 30)
+		a.channel = make(chan ActorMessage)
 	}
 
 	go func() {
@@ -108,22 +113,18 @@ func (a *LocalChannelActor) Start() error {
 			select {
 			case msg, ok := <-a.channel:
 				if ok {
-					klog.InfoS("receive a message: %v", msg)
 					if err := a.OnReceive(msg); err != nil {
-						klog.InfoS("failed to process this message: %v", err)
+						klog.ErrorS(err, "Failed to process message", "message", msg.Body, "actor", a.Identifier)
 					}
 				}
 			}
 		}
 	}()
-
-	return nil
 }
 
 // Stop implements Actor
-func (a *LocalChannelActor) Stop() error {
+func (a *LocalChannelActor) Stop() {
 	a.stop = true
-	return nil
 }
 
 // OnReceive implements Actor
@@ -134,8 +135,8 @@ func (a *LocalChannelActor) OnReceive(msg ActorMessage) error {
 		return err
 	}
 
-	if reply != nil {
-		a.Reference().Send(msg.Sender, reply)
+	if msg.Sender != nil && reply != nil {
+		Send(a.Reference(), msg.Sender, reply)
 	}
 	return nil
 }

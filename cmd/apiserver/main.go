@@ -17,6 +17,7 @@ limitations under the License.
 package main
 
 import (
+	"context"
 	"fmt"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -28,6 +29,7 @@ import (
 	"sigs.k8s.io/apiserver-runtime/pkg/builder"
 
 	// +kubebuilder:scaffold:resource-imports
+	"centaurusinfra.io/fornax-serverless/cmd/apiserver/app"
 	fornaxv1 "centaurusinfra.io/fornax-serverless/pkg/apis/core/v1"
 )
 
@@ -52,7 +54,21 @@ func main() {
 		}
 	}
 
-	err := builder.APIServer.
+	// start fornaxcore grpc server
+	klog.Info("starting fornaxcore grpc server")
+	port := 18001
+	certFile := ""
+	keyFile := ""
+	// err := app.RunGrpcServer(context.Background(), port, certFile, keyFile)
+	err := app.RunIntegTestGrpcServer(context.Background(), port, certFile, keyFile)
+	if err != nil {
+		klog.Fatal(err)
+	}
+	klog.Info("Fornaxcore grpc server started")
+
+	klog.Info("starting fornaxcore k8s.io rest api server")
+	// +kubebuilder:scaffold:resource-register
+	apiserver := builder.APIServer.
 		WithLocalDebugExtension().
 		WithResourceAndStorage(&fornaxv1.Application{}, storageFunc).
 		WithResourceAndStorage(&fornaxv1.ApplicationInstance{}, storageFunc).
@@ -63,9 +79,38 @@ func main() {
 			fmt.Printf("%T\n", config.Authentication.Authenticator)
 			fmt.Println(config.Authentication.APIAudiences)
 			return config
-		}).
-		Execute()
+		})
+
+	// WithResource(&v1.Pod{}).
+	// WithResource(&k8scorev1.FornaxNode{}).
+	// WithResource(&k8scorev1.FornaxSecret{}).
+	// WithResource(&k8scorev1.FornaxConfigMap{}).
+	// WithResource(&k8scorev1.FornaxServiceAccount{}).
+	// WithFlagFns(fns ...func(set *pflag.FlagSet) *pflag.FlagSet).
+	// // Authentication is the configuration for authentication
+	// Authentication AuthenticationInfo
+	//
+	// // Authorization is the configuration for authorization
+	// Authorization AuthorizationInfo
+
+	// LoopbackClientConfig is a config for a privileged loopback connection to the API server
+	// This is required for proper functioning of the PostStartHooks on a GenericAPIServer
+	// TODO: move into SecureServing(WithLoopback) as soon as insecure serving is gone
+	// LoopbackClientConfig * restclient.Config
+
+	// EgressSelector provides a lookup mechanism for dialing outbound connections.
+	// It does so based on a EgressSelectorConfiguration which was read at startup.
+	// EgressSelector * egressselector.EgressSelector
+
+	// WithServerFns(func(server *builder.GenericAPIServer) *builder.GenericAPIServer {
+	//  apiGroupInfo := *apiserver.APIGroupInfo{}
+	//  server.InstallLegacyAPIGroup(apiserver.DefaultLegacyAPIPrefix, apiGroupInfo)
+	//  return server
+	// }).
+
+	err = apiserver.Execute()
 	if err != nil {
 		klog.Fatal(err)
 	}
+
 }

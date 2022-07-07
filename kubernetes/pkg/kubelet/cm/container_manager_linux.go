@@ -202,7 +202,7 @@ func ValidateSystemRequirements(mountUtil mount.Interface) (features, error) {
 // TODO(vmarmol): Add limits to the system containers.
 // Takes the absolute name of the specified containers.
 // Empty container name disables use of the specified container.
-func NewContainerManager(mountUtil mount.Interface, capacity v1.ResourceList, nodeConfig NodeConfig, failSwapOn bool, devicePluginEnabled bool, recorder record.EventRecorder) (ContainerManager, error) {
+func NewContainerManager(mountUtil mount.Interface, node *v1.Node, capacity v1.ResourceList, nodeConfig NodeConfig, failSwapOn bool, devicePluginEnabled bool, recorder record.EventRecorder) (ContainerManager, error) {
 	subsystems, err := GetCgroupSubsystems()
 	if err != nil {
 		return nil, fmt.Errorf("failed to get mounted cgroup subsystems: %v", err)
@@ -266,6 +266,7 @@ func NewContainerManager(mountUtil mount.Interface, capacity v1.ResourceList, no
 	}
 
 	cm := &ContainerManagerImpl{
+		nodeInfo:            node,
 		mountUtil:           mountUtil,
 		NodeConfig:          nodeConfig,
 		subsystems:          subsystems,
@@ -440,7 +441,8 @@ func (cm *ContainerManagerImpl) setupNode() error {
 	}
 	b := KernelTunableModify
 	if cm.NodeConfig.ProtectKernelDefaults {
-		b = KernelTunableError
+		b = KernelTunableWarn
+		// b = KernelTunableError
 	}
 	if err := SetupKernelTunables(b); err != nil {
 		return err

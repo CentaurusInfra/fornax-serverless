@@ -72,6 +72,7 @@ build: generate fmt vet ## Build binary.
 	go build ./...
 	go build -o bin/apiserver cmd/apiserver/main.go
 	go build -o bin/nodeagent cmd/nodeagent/main.go
+	go build -o bin/simulation cmd/simulation/main.go
 
 .PHONY: run
 run: manifests generate fmt vet ## Run from your host.

@@ -22,12 +22,12 @@ import (
 	"fmt"
 	"os"
 
+	"centaurusinfra.io/fornax-serverless/cmd/simulation/app/sdependency"
 	"centaurusinfra.io/fornax-serverless/cmd/simulation/app/snode"
 	"centaurusinfra.io/fornax-serverless/pkg/nodeagent/config"
-	//"centaurusinfra.io/fornax-serverless/pkg/nodeagent/dependency"
 	//"centaurusinfra.io/fornax-serverless/pkg/nodeagent/node"
 	//"centaurusinfra.io/fornax-serverless/cmd/silmulation/app/snode"
-	fornaxtypes "centaurusinfra.io/fornax-serverless/pkg/nodeagent/types"
+	//fornaxtypes "centaurusinfra.io/fornax-serverless/pkg/nodeagent/types"
 	"github.com/coreos/go-systemd/v22/daemon"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
@@ -127,10 +127,28 @@ func Run(ctx context.Context, nodeConfig config.NodeConfiguration) error {
 
 	logs.InitLogs()
 
-	// dependencies, err := dependency.InitBasicDependencies(nodeConfig)
-	// if err == nil {
-	// 	return fmt.Errorf("failed to init basic dependencies: %w", err)
+	// RunNodeAndNodeActor(ctx, nodeConfig)
+	numofnode := 10
+	for i := 0; i < numofnode; i++ {
+		go RunNodeAndNodeActor(ctx, nodeConfig)
+		klog.Infof("%d th node and node actor created \n", i)
+	}
+
+	//wait until shutdown signal is received
+	// select {
+	// case <-ctx.Done():
+	// 	break
 	// }
+
+	<-ctx.Done()
+
+	return nil
+}
+
+func RunNodeAndNodeActor(ctx context.Context, nodeConfig config.NodeConfiguration) error {
+	klog.InfoS("NodeConfiguration", "configuration", nodeConfig.Hostname)
+
+	logs.InitLogs()
 
 	// if err := run(ctx, nodeConfig, dependencies); err != nil {
 	// 	return fmt.Errorf("failed to run node agent: %w", err)
@@ -138,11 +156,16 @@ func Run(ctx context.Context, nodeConfig config.NodeConfiguration) error {
 
 	go daemon.SdNotify(false, "READY=1")
 
+	dependencies, err := sdependency.InitBasicDependencies(nodeConfig)
+	if err != nil {
+		klog.InfoS("failed to init basic dependencies: %w", err)
+	}
+
 	fornaxNode := snode.FornaxNode{
 		NodeConfig: nodeConfig,
 		V1Node:     nil,
-		Pods:       map[string]*fornaxtypes.FornaxPod{},
-		//Dependencies: dependencies,
+		//Pods:       map[string]*fornaxtypes.FornaxPod{},
+		Dependencies: dependencies,
 	}
 	nodeActor, err := snode.NewNodeActor(&fornaxNode)
 	if err != nil {
@@ -156,13 +179,13 @@ func Run(ctx context.Context, nodeConfig config.NodeConfiguration) error {
 	}
 	klog.Info("FornaxNode started")
 
-	// wait until shutdown signal is received
+	// //wait until shutdown signal is received
 	// select {
 	// case <-ctx.Done():
 	// 	break
 	// }
 
-	<-ctx.Done()
+	//<-ctx.Done()
 
 	return nil
 }

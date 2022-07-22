@@ -21,17 +21,25 @@ import (
 	"os"
 	goruntime "runtime"
 	"sort"
+	"strconv"
 	"time"
 
 	default_config "centaurusinfra.io/fornax-serverless/pkg/config"
 	//"centaurusinfra.io/fornax-serverless/pkg/nodeagent/dependency"
+	//"centaurusinfra.io/fornax-serverless/pkg/nodeagent/dependency"
+	"centaurusinfra.io/fornax-serverless/cmd/simulation/app/sdependency"
 	"centaurusinfra.io/fornax-serverless/pkg/nodeagent/runtime"
 	"centaurusinfra.io/fornax-serverless/pkg/nodeagent/store/factory"
+
+	//"centaurusinfra.io/fornax-serverless/pkg/nodeagent/resource"
 
 	"centaurusinfra.io/fornax-serverless/pkg/nodeagent/config"
 	fornaxtypes "centaurusinfra.io/fornax-serverless/pkg/nodeagent/types"
 	v1 "k8s.io/api/core/v1"
+
+	//"k8s.io/apimachinery/pkg/api/resource"
 	"k8s.io/apimachinery/pkg/api/resource"
+	k8sresource "k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/uuid"
 
@@ -39,11 +47,13 @@ import (
 	"k8s.io/klog/v2"
 )
 
+var nodenumber int32
+
 type FornaxNode struct {
 	NodeConfig config.NodeConfiguration
 	V1Node     *v1.Node
-	Pods       map[string]*fornaxtypes.FornaxPod
-	//Dependencies *dependency.Dependencies
+	//Pods       map[string]*fornaxtypes.FornaxPod
+	Dependencies *sdependency.Dependencies
 }
 
 func (n *FornaxNode) initV1Node() (*v1.Node, error) {
@@ -51,6 +61,12 @@ func (n *FornaxNode) initV1Node() (*v1.Node, error) {
 	if err != nil {
 		return nil, err
 	}
+	//following two line for test purpose
+	nodenumber++
+	m := strconv.Itoa(int(nodenumber))
+	s := fmt.Sprintf("%06s", m)
+	hostname = hostname + "-" + s
+	//end test line
 
 	node := &v1.Node{
 		TypeMeta: metav1.TypeMeta{
@@ -76,7 +92,7 @@ func (n *FornaxNode) initV1Node() (*v1.Node, error) {
 		Spec: v1.NodeSpec{},
 		Status: v1.NodeStatus{
 			Capacity:        map[v1.ResourceName]resource.Quantity{},
-			Allocatable:     map[v1.ResourceName]resource.Quantity{},
+			Allocatable:     map[v1.ResourceName]resource.Quantity{v1.ResourceCPU: *k8sresource.NewMilliQuantity(500, k8sresource.DecimalSI), v1.ResourceMemory: k8sresource.MustParse("4Gi"), v1.ResourceStorage: *k8sresource.NewQuantity(95, k8sresource.DecimalSI)},
 			Phase:           v1.NodePending,
 			Conditions:      []v1.NodeCondition{},
 			Addresses:       []v1.NodeAddress{},
@@ -237,10 +253,10 @@ func ValidateNodeSpec(apiNode *v1.Node) []error {
 // 	return n.Dependencies.Complete(n.V1Node, n.NodeConfig, n.activePods)
 // }
 
-func (n *FornaxNode) activePods() []*v1.Pod {
-	v1Pods := []*v1.Pod{}
-	for _, v := range n.Pods {
-		v1Pods = append(v1Pods, v.PodSpec.DeepCopy())
-	}
-	return v1Pods
-}
+// func (n *FornaxNode) activePods() []*v1.Pod {
+// 	v1Pods := []*v1.Pod{}
+// 	for _, v := range n.Pods {
+// 		v1Pods = append(v1Pods, v.PodSpec.DeepCopy())
+// 	}
+// 	return v1Pods
+// }

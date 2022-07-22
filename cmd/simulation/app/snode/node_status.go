@@ -26,7 +26,10 @@ import (
 	"centaurusinfra.io/fornax-serverless/pkg/nodeagent/network"
 	"centaurusinfra.io/fornax-serverless/pkg/nodeagent/resource"
 	"centaurusinfra.io/fornax-serverless/pkg/nodeagent/runtime"
-	fornaxtypes "centaurusinfra.io/fornax-serverless/pkg/nodeagent/types"
+	"github.com/pkg/errors"
+	//"google.golang.org/genproto/googleapis/type/decimal"
+
+	//fornaxtypes "centaurusinfra.io/fornax-serverless/pkg/nodeagent/types"
 
 	v1 "k8s.io/api/core/v1"
 	k8sresource "k8s.io/apimachinery/pkg/api/resource"
@@ -39,62 +42,62 @@ type NodeStatusUpdater interface {
 	UpdateNodeStatus(*v1.Node) error
 }
 
-// func SetNodeStatus(node *FornaxNode) error {
-// 	var errs = []error{}
-// 	var condition *v1.NodeCondition
-// 	var conditions = map[v1.NodeConditionType]*v1.NodeCondition{}
-// 	var err error
-// 	condition, err = UpdateNodeAddress(node.Dependencies.NetworkProvider, node.V1Node)
-// 	if err != nil {
-// 		errs = append(errs, errors.New("can not find network provider"))
-// 	}
-// 	conditions[condition.Type] = condition
+func SetNodeStatus(node *FornaxNode) error {
+	var errs = []error{}
+	var condition *v1.NodeCondition
+	var conditions = map[v1.NodeConditionType]*v1.NodeCondition{}
+	var err error
+	condition, err = UpdateNodeAddress(node.Dependencies.NetworkProvider, node.V1Node)
+	if err != nil {
+		errs = append(errs, errors.New("can not find network provider"))
+	}
+	conditions[condition.Type] = condition
 
-// 	err = UpdateNodeCapacity(node.Dependencies.CAdvisor, node.NodeConfig, node.V1Node)
-// 	if err != nil {
-// 		errs = append(errs, errors.New("can not find cadvisor"))
-// 	}
+	// err = UpdateNodeCapacity(node.Dependencies.CAdvisor, node.NodeConfig, node.V1Node)
+	// if err != nil {
+	// 	errs = append(errs, errors.New("can not find cadvisor"))
+	// }
 
-// 	condition, err = UpdateNodeRuntimeStatus(node.Dependencies.CRIRuntimeService, node.V1Node)
-// 	if err != nil {
-// 		errs = append(errs, errors.New("cand not find cri runtime"))
-// 	}
-// 	conditions[condition.Type] = condition
+	// condition, err = UpdateNodeRuntimeStatus(node.Dependencies.CRIRuntimeService, node.V1Node)
+	// if err != nil {
+	// 	errs = append(errs, errors.New("cand not find cri runtime"))
+	// }
+	// conditions[condition.Type] = condition
 
-// 	condition, err = UpdateNodeMemoryStatus(node.Dependencies.MemoryManager, node.V1Node)
-// 	if err != nil {
-// 		errs = append(errs, errors.New("can not update memory resource status"))
-// 	}
-// 	conditions[condition.Type] = condition
+	condition, err = UpdateNodeMemoryStatus(node.Dependencies.MemoryManager, node.V1Node)
+	if err != nil {
+		errs = append(errs, errors.New("can not update memory resource status"))
+	}
+	conditions[condition.Type] = condition
 
-// 	condition, err = UpdateNodeCPUStatus(node.Dependencies.CPUManager, node.V1Node)
-// 	if err != nil {
-// 		errs = append(errs, errors.New("can not update cpu resource status"))
-// 	}
-// 	conditions[condition.Type] = condition
+	condition, err = UpdateNodeCPUStatus(node.Dependencies.CPUManager, node.V1Node)
+	if err != nil {
+		errs = append(errs, errors.New("can not update cpu resource status"))
+	}
+	conditions[condition.Type] = condition
 
-// 	condition, err = UpdateNodeVolumeStatus(node.Dependencies.VolumeManager, node.V1Node)
-// 	if err != nil {
-// 		errs = append(errs, errors.New("can not update volume resource status"))
-// 	}
-// 	conditions[condition.Type] = condition
+	condition, err = UpdateNodeVolumeStatus(node.Dependencies.VolumeManager, node.V1Node)
+	if err != nil {
+		errs = append(errs, errors.New("can not update volume resource status"))
+	}
+	conditions[condition.Type] = condition
 
-// 	currentTime := metav1.NewTime(time.Now())
-// 	if len(errs) == 0 {
-// 		conditions[v1.NodeReady] = &v1.NodeCondition{
-// 			Type:               v1.NodeReady,
-// 			Status:             v1.ConditionTrue,
-// 			Reason:             "NodeRuntime Ready",
-// 			Message:            "Node is ready to get pod",
-// 			LastHeartbeatTime:  currentTime,
-// 			LastTransitionTime: currentTime,
-// 		}
-// 	}
+	currentTime := metav1.NewTime(time.Now())
+	if len(errs) == 0 {
+		conditions[v1.NodeReady] = &v1.NodeCondition{
+			Type:               v1.NodeReady,
+			Status:             v1.ConditionTrue,
+			Reason:             "NodeRuntime Ready",
+			Message:            "Node is ready to get pod",
+			LastHeartbeatTime:  currentTime,
+			LastTransitionTime: currentTime,
+		}
+	}
 
-// 	mergeNodeConditions(node.V1Node, conditions)
+	mergeNodeConditions(node.V1Node, conditions)
 
-// 	return nil
-// }
+	return nil
+}
 
 func mergeNodeConditions(node *v1.Node, conditions map[v1.NodeConditionType]*v1.NodeCondition) {
 	for i := range node.Status.Conditions {
@@ -255,7 +258,20 @@ func UpdateNodeCapacity(cc cadvisor.CAdvisorInfoProvider, nodeConfig config.Node
 }
 
 func UpdateAllocatableResourceQuantity(resourceName v1.ResourceName, node *v1.Node, reservedQuantity v1.ResourceList) {
-	zeroQuanity := resource.ResourceQuantity(0, resourceName)
+	//zeroQuanity := resource.ResourceQuantity(0, resourceName)
+	var size int64
+
+	if resourceName == "cpu" {
+		size = 500 // 1core = 1000m if you put 1000m, it mean it reserve 1000m = 1 core.
+	} else if resourceName == "memory" {
+		size = 4 * 1024 * 1024 * 1024 // 1G = 1024 * 1024 * 1024. if you put 1G, it mean preserve 1G memory
+	} else if resourceName == "storage" {
+		size = 99
+	} else {
+		size = 0
+	}
+	zeroQuanity := resource.ResourceQuantity(size, resourceName)
+
 	capacity, ok := node.Status.Capacity[resourceName]
 	if ok {
 		value := capacity.DeepCopy()
@@ -297,11 +313,17 @@ func IsNodeStatusReady(myNode *FornaxNode) bool {
 
 	// check daemon pod status
 	daemonReady := true
-	for _, v := range myNode.Pods {
-		if v.Daemon {
-			daemonReady = daemonReady && v.PodState == fornaxtypes.PodStateRunning
-		}
-	}
+	//test purpose and set true
+	// cpuReady = true
+	// memReady = true
+	// nodeConditionReady = true
+	//end test
+
+	// for _, v := range myNode.Pods {
+	// 	if v.Daemon {
+	// 		daemonReady = daemonReady && v.PodState == fornaxtypes.PodStateRunning
+	// 	}
+	// }
 
 	klog.InfoS("Node Ready status", "cpu", cpuReady, "mem", memReady, "daemon", daemonReady, "nodeCondition", nodeConditionReady)
 	return (cpuReady && memReady && daemonReady && nodeConditionReady)

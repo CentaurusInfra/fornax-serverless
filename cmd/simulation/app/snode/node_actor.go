@@ -145,7 +145,7 @@ func (n *FornaxNodeActor) MessageProcessor(msg message.ActorMessage) (interface{
 		if found {
 			actor.Stop()
 			delete(n.podActors, string(fppod.Identifier))
-			delete(n.node.Pods, fppod.Identifier)
+			//delete(n.node.Pods, fppod.Identifier)
 		}
 	default:
 	}
@@ -201,12 +201,12 @@ func (n *FornaxNodeActor) onNodeConfigurationCommand(msg *fornaxgrpc.NodeConfigu
 
 	n.node.V1Node.Spec = *apiNode.Spec.DeepCopy()
 
-	if NodeSpecPodCidrChanged(n.node.V1Node, apiNode) {
-		if len(n.node.Pods) > 0 {
-			return fmt.Errorf("change pod cidr when node has pods is not allowed, should not happen")
-		}
-		// TODO, set up pod cidr
-	}
+	// if NodeSpecPodCidrChanged(n.node.V1Node, apiNode) {
+	// 	if len(n.node.Pods) > 0 {
+	// 		return fmt.Errorf("change pod cidr when node has pods is not allowed, should not happen")
+	// 	}
+	// 	// TODO, set up pod cidr
+	// }
 
 	err := n.initializeNodeDaemons(msg.DaemonPods)
 	if err != nil {
@@ -270,15 +270,15 @@ func (n *FornaxNodeActor) initializeNodeDaemons(pods []*v1.Pod) error {
 			return errors.Errorf("Daemon pod must use host network")
 		}
 
-		_, found := n.node.Pods[string(p.UID)]
-		if !found {
-			_, actor, err := n.createPodAndActor(fornaxtypes.PodStateCreating, p.UID, p.DeepCopy(), nil, true)
-			if err != nil {
-				return err
-			} else {
-				n.notify(actor.Reference(), internal.PodCreate{})
-			}
-		}
+		// _, found := n.node.Pods[string(p.UID)]
+		// if !found {
+		// 	_, actor, err := n.createPodAndActor(fornaxtypes.PodStateCreating, p.UID, p.DeepCopy(), nil, true)
+		// 	if err != nil {
+		// 		return err
+		// 	} else {
+		// 		n.notify(actor.Reference(), internal.PodCreate{})
+		// 	}
+		// }
 	}
 	return nil
 }
@@ -315,7 +315,7 @@ func (n *FornaxNodeActor) recoverPodActor(fpod *fornaxtypes.FornaxPod) (*fornaxt
 	// fpActor := pod.NewPodActor(n.innerActor.Reference(), fpod, &n.node.NodeConfig, n.node.Dependencies, pod.ErrRecoverPod)
 	fpActor := pod.NewPodActor(n.innerActor.Reference(), fpod, &n.node.NodeConfig, nil, pod.ErrRecoverPod)
 	fpActor.Start()
-	n.node.Pods[fpod.Identifier] = fpod
+	//n.node.Pods[fpod.Identifier] = fpod
 	n.podActors[fpod.Identifier] = fpActor
 	return fpod, fpActor, nil
 }
@@ -330,7 +330,7 @@ func (n *FornaxNodeActor) createPodAndActor(state fornaxtypes.PodState, applicat
 	// fpActor := pod.NewPodActor(n.innerActor.Reference(), fpod, &n.node.NodeConfig, n.node.Dependencies, nil)
 	fpActor := pod.NewPodActor(n.innerActor.Reference(), fpod, &n.node.NodeConfig, nil, nil)
 	fpActor.Start()
-	n.node.Pods[fpod.Identifier] = fpod
+	//n.node.Pods[fpod.Identifier] = fpod
 	n.podActors[fpod.Identifier] = fpActor
 	return fpod, fpActor, nil
 }
@@ -341,17 +341,17 @@ func (n *FornaxNodeActor) onPodCreateCommand(msg *fornaxgrpc.PodCreate) error {
 	if n.state != NodeStateReady {
 		return fmt.Errorf("Node is not in ready state to create a new pod")
 	}
-	_, found := n.node.Pods[*msg.PodIdentifier]
-	if !found {
-		pod, actor, err := n.createPodAndActor(fornaxtypes.PodStateCreating, types.UID(*msg.AppIdentifier), msg.GetPod().DeepCopy(), msg.GetConfigMap().DeepCopy(), false)
-		if err != nil {
-			return err
-		}
-		n.notify(actor.Reference(), internal.PodCreate{Pod: pod})
-	} else {
-		// not supposed to receive create command for a existing pod, ignore it and send back pod status
-		return fmt.Errorf("Pod: %s already exist", *msg.PodIdentifier)
-	}
+	// _, found := n.node.Pods[*msg.PodIdentifier]
+	// if !found {
+	// 	pod, actor, err := n.createPodAndActor(fornaxtypes.PodStateCreating, types.UID(*msg.AppIdentifier), msg.GetPod().DeepCopy(), msg.GetConfigMap().DeepCopy(), false)
+	// 	if err != nil {
+	// 		return err
+	// 	}
+	// 	n.notify(actor.Reference(), internal.PodCreate{Pod: pod})
+	// } else {
+	// 	// not supposed to receive create command for a existing pod, ignore it and send back pod status
+	// 	return fmt.Errorf("Pod: %s already exist", *msg.PodIdentifier)
+	// }
 	return nil
 }
 
@@ -422,14 +422,14 @@ func NewNodeActor(node *FornaxNode) (*FornaxNodeActor, error) {
 			node.V1Node = v1node
 		}
 	}
-	//SetNodeStatus(node)
+	SetNodeStatus(node)
 
 	actor := &FornaxNodeActor{
 		stopCh:     make(chan struct{}),
 		node:       node,
 		state:      NodeStateInitializing,
 		innerActor: nil,
-		podActors:  map[string]*pod.PodActor{},
+		//podActors:  map[string]*pod.PodActor{},
 	}
 	actor.innerActor = message.NewLocalChannelActor(node.V1Node.GetName(), actor.MessageProcessor)
 

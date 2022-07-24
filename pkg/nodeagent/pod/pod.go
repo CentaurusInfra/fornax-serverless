@@ -64,7 +64,7 @@ func ValidateSecretSpec(secret *v1.Secret) []error {
 }
 
 func (a *PodActor) CreatePod() (err error) {
-	pod := a.pod.PodSpec
+	pod := a.pod.Pod
 
 	var firstSeenTime time.Time = time.Now()
 	metrics.PodWorkerStartDuration.Observe(metrics.SinceInSeconds(firstSeenTime))
@@ -229,7 +229,7 @@ func (a *PodActor) TerminatePod(gracefulPeriod time.Duration) (bool, error) {
 func (a *PodActor) CleanupPod() (err error) {
 	// cleanup podsandbox
 	klog.InfoS("Remove Pod sandbox", "pod", types.UniquePodName(a.pod))
-	pod := a.pod.PodSpec
+	pod := a.pod.Pod
 	if a.pod.RuntimePod != nil && a.pod.RuntimePod.Sandbox != nil {
 		err = a.removePodSandbox(a.pod.RuntimePod.Sandbox.Id, a.pod.RuntimePod.SandboxConfig)
 		if err != nil {

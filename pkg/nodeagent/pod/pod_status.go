@@ -37,8 +37,9 @@ var (
 )
 
 func SetPodStatus(fppod *types.FornaxPod) {
+
 	// pod phase
-	podStatus := &fppod.PodSpec.Status
+	podStatus := &fppod.Pod.Status
 	podStatus.Phase = ToV1PodPhase(fppod)
 
 	// pod condition
@@ -58,6 +59,11 @@ func SetPodStatus(fppod *types.FornaxPod) {
 		})
 	}
 	podStatus.PodIPs = podIps
+	if podStatus.StartTime == nil {
+		podStatus.StartTime = &metav1.Time{
+			Time: time.Now(),
+		}
+	}
 
 	//TODO
 	// add resource status
@@ -160,7 +166,7 @@ func SetPodConditions(fppod *types.FornaxPod) {
 	// check container ready status
 	allContainerNormal := true
 	allContainerReady := true
-	if len(fppod.PodSpec.Spec.Containers)+len(fppod.PodSpec.Spec.InitContainers) != len(fppod.RuntimePod.Containers) {
+	if len(fppod.Pod.Spec.Containers)+len(fppod.Pod.Spec.InitContainers) != len(fppod.RuntimePod.Containers) {
 		containerReadyCondition.Status = v1.ConditionFalse
 		containerReadyCondition.Message = "missing some containers"
 		containerReadyCondition.Reason = "missing some containers"
@@ -202,7 +208,7 @@ func SetPodConditions(fppod *types.FornaxPod) {
 	}
 
 	// merg old condition with new condtion and delete merged new condition
-	for _, oldCondition := range fppod.PodSpec.Status.Conditions {
+	for _, oldCondition := range fppod.Pod.Status.Conditions {
 		newCondtion, found := conditions[oldCondition.Type]
 		if found {
 
@@ -220,7 +226,7 @@ func SetPodConditions(fppod *types.FornaxPod) {
 		newConditions = append(newConditions, *v)
 	}
 
-	fppod.PodSpec.Status.Conditions = newConditions
+	fppod.Pod.Status.Conditions = newConditions
 }
 
 func PodInTerminating(fppod *types.FornaxPod) bool {

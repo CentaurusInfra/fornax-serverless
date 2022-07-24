@@ -19,10 +19,10 @@ package resource
 import (
 	"fmt"
 
+	"centaurusinfra.io/fornax-serverless/pkg/util"
 	cadvisorinfov1 "github.com/google/cadvisor/info/v1"
 	cadvisorinfov2 "github.com/google/cadvisor/info/v2"
 	v1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/api/resource"
 )
 
 type ResoureManager interface {
@@ -44,40 +44,18 @@ type PodResource struct {
 	Resources v1.ResourceList
 }
 
-const (
-	ResourcePID v1.ResourceName = "pid"
-	MaxPID                      = 100
-)
-
-func ResourceQuantity(quantity int64, resourceName v1.ResourceName) resource.Quantity {
-	switch resourceName {
-	case v1.ResourceCPU:
-		return *resource.NewMilliQuantity(quantity, resource.DecimalSI)
-	case v1.ResourceMemory:
-		return *resource.NewQuantity(quantity, resource.BinarySI)
-	case v1.ResourcePods:
-		return *resource.NewQuantity(quantity, resource.DecimalSI)
-	case v1.ResourceStorage:
-		return *resource.NewQuantity(quantity, resource.BinarySI)
-	case v1.ResourceEphemeralStorage:
-		return *resource.NewQuantity(quantity, resource.BinarySI)
-	default:
-		return *resource.NewQuantity(quantity, resource.DecimalSI)
-	}
-}
-
 func ResourceListFromMachineInfo(info *cadvisorinfov1.MachineInfo) v1.ResourceList {
 	resources := v1.ResourceList{
-		v1.ResourceCPU:    ResourceQuantity(int64(info.NumCores*1000), v1.ResourceCPU),
-		v1.ResourceMemory: ResourceQuantity(int64(info.MemoryCapacity), v1.ResourceMemory),
+		v1.ResourceCPU:    util.ResourceQuantity(int64(info.NumCores*1000), v1.ResourceCPU),
+		v1.ResourceMemory: util.ResourceQuantity(int64(info.MemoryCapacity), v1.ResourceMemory),
 	}
 
 	for _, hugepagesInfo := range info.HugePages {
 		pageSizeBytes := int64(hugepagesInfo.PageSize * 1024)
 		hugePagesBytes := pageSizeBytes * int64(hugepagesInfo.NumPages)
-		pageSizeQuantity := ResourceQuantity(pageSizeBytes, v1.ResourceMemory)
+		pageSizeQuantity := util.ResourceQuantity(pageSizeBytes, v1.ResourceMemory)
 		name := v1.ResourceName(fmt.Sprintf("%s%s", v1.ResourceHugePagesPrefix, pageSizeQuantity.String()))
-		resources[name] = ResourceQuantity(hugePagesBytes, v1.ResourceMemory)
+		resources[name] = util.ResourceQuantity(hugePagesBytes, v1.ResourceMemory)
 	}
 
 	return resources
@@ -85,7 +63,7 @@ func ResourceListFromMachineInfo(info *cadvisorinfov1.MachineInfo) v1.ResourceLi
 
 func EphemeralResourceListFromFsInfo(info *cadvisorinfov2.FsInfo) v1.ResourceList {
 	resources := v1.ResourceList{
-		v1.ResourceEphemeralStorage: ResourceQuantity(int64(info.Capacity), v1.ResourceEphemeralStorage),
+		v1.ResourceEphemeralStorage: util.ResourceQuantity(int64(info.Capacity), v1.ResourceEphemeralStorage),
 	}
 	return resources
 }

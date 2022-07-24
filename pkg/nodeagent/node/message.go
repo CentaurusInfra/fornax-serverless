@@ -29,9 +29,9 @@ func BuildFornaxGrpcNodeState(node *FornaxNode) *grpc.FornaxCoreMessage {
 		podStates = append(podStates, s.GetPodState())
 	}
 	ns := grpc.NodeState{
-		NodeIp:    &node.NodeConfig.NodeIP,
-		Node:      node.V1Node,
-		PodStates: podStates,
+		NodeRevision: &node.Revision,
+		Node:         node.V1Node,
+		PodStates:    podStates,
 		// TODO, add sessionStates
 		// SessionStates: sessionStates,
 	}

@@ -34,6 +34,7 @@ enum MessageType {
     NODE_REGISTER = 201;
     NODE_READY = 202;
     NODE_STATE = 203;
+    NODE_FULL_SYNC = 204;
     POD_CREATE = 300;
     POD_TERMINATE = 301;
     POD_ACTIVE = 302;
@@ -53,6 +54,7 @@ message FornaxCoreMessage {
     NodeRegistry nodeRegistry = 201;
     NodeReady nodeReady = 202;
     NodeState nodeState= 203;
+    NodeFullSync nodeFullSync = 204;
     PodCreate podCreate = 300;
     PodTerminate podTerminate = 301;
     PodActive podActive = 302;
@@ -78,37 +80,38 @@ message NodeIdentifier {
   required string identifier = 2;
 }
 
+/* node register with fornax core, wait for a configuration message to initialize it*/
+message NodeRegistry {
+  required int64 nodeRevision = 1;
+  required k8s.io.api.core.v1.Node node = 2;
+}
+
+/* fornax core send node configuration to node to initialize using this configuration before tell fornax it's ready*/
 message NodeConfiguration {
   required string clusterDomain = 1;
   required k8s.io.api.core.v1.Node node = 2;
   repeated k8s.io.api.core.v1.Pod daemonPods = 3;
 }
 
-message NodeRegistry {
-  required string nodeIp = 1;
-  required k8s.io.api.core.v1.Node node = 2;
-}
-
-message NodeResource {
-  required string nodeIp = 1;
-  required k8s.io.api.core.v1.Node node = 2;
-}
-
+/* node report back to fornax core, it's ready for take pod*/
 message NodeReady {
-  required string nodeIp = 1;
+  required int64 nodeRevision = 1;
   required k8s.io.api.core.v1.Node node = 2;
 }
 
+/* node report back full state to fornax core*/
 message NodeState {
-  required string nodeIp = 1;
+  required int64 nodeRevision = 1;
   required k8s.io.api.core.v1.Node node = 2;
   repeated PodState podStates = 3;
   repeated SessionState sessionStates = 4;
 }
 
+/* fornax core ask node to send its full state if node revision are not same between fornax core and node*/
+message NodeFullSync {}
+
 message PodState {
-  required string podIdentifier = 1;
-  required string appIdentifier = 2;
+  required int64 nodeRevision = 1;
   enum State {
     Creating = 0;
     Standby = 10;
@@ -118,9 +121,9 @@ message PodState {
     Terminating = 50;
     Terminated = 60;
   }
-  required State state = 3;
-  required k8s.io.api.core.v1.PodStatus podStatus = 4;
-  optional PodResource resource = 5;
+  required State state = 2;
+  required k8s.io.api.core.v1.Pod pod = 3;
+  optional PodResource resource = 4;
 }
 
 message PodResource {

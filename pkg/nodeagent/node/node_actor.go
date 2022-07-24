@@ -30,7 +30,6 @@ import (
 	"github.com/pkg/errors"
 
 	v1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/klog/v2"
 )
@@ -102,8 +101,7 @@ func (n *FornaxNodeActor) Start() error {
 				MessageType: &messageType,
 				MessageBody: &fornaxgrpc.FornaxCoreMessage_NodeRegistry{
 					NodeRegistry: &fornaxgrpc.NodeRegistry{
-						NodeIp: &n.node.NodeConfig.NodeIP,
-						Node:   n.node.V1Node,
+						Node: n.node.V1Node,
 					},
 				},
 			},
@@ -138,6 +136,8 @@ func (n *FornaxNodeActor) actorMessageProcess(msg message.ActorMessage) (interfa
 	case *fornaxgrpc.FornaxCoreMessage:
 		return n.processFornaxCoreMessage(msg.Body.(*fornaxgrpc.FornaxCoreMessage))
 	case internal.PodStatusChange:
+		// increment node revision since one pod status changed
+		n.node.Revision += 1
 		fppod := msg.Body.(internal.PodStatusChange).Pod
 		n.notify(n.fornoxCoreRef, pod.BuildFornaxcoreGrpcPodState(fppod))
 	case internal.PodCleanup:
@@ -247,8 +247,7 @@ func (n *FornaxNodeActor) onNodeConfigurationCommand(msg *fornaxgrpc.NodeConfigu
 						MessageType: &messageType,
 						MessageBody: &fornaxgrpc.FornaxCoreMessage_NodeReady{
 							NodeReady: &fornaxgrpc.NodeReady{
-								NodeIp: &n.node.NodeConfig.NodeIP,
-								Node:   n.node.V1Node,
+								Node: n.node.V1Node,
 							},
 						},
 					},
@@ -280,7 +279,7 @@ func (n *FornaxNodeActor) initializeNodeDaemons(pods []*v1.Pod) error {
 
 		_, found := n.node.Pods[string(p.UID)]
 		if !found {
-			_, actor, err := n.createPodAndActor(fornaxtypes.PodStateCreating, p.UID, p.DeepCopy(), nil, true)
+			_, actor, err := n.createPodAndActor(fornaxtypes.PodStateCreating, p.DeepCopy(), nil, true)
 			if err != nil {
 				return err
 			} else {
@@ -291,8 +290,7 @@ func (n *FornaxNodeActor) initializeNodeDaemons(pods []*v1.Pod) error {
 	return nil
 }
 
-func buildAFornaxPod(state fornaxtypes.PodState,
-	applicationId types.UID,
+func (n *FornaxNodeActor) buildAFornaxPod(state fornaxtypes.PodState,
 	v1pod *v1.Pod,
 	configMap *v1.ConfigMap,
 	podIdentifier string,
@@ -303,21 +301,22 @@ func buildAFornaxPod(state fornaxtypes.PodState,
 	}
 	fornaxPod := &fornaxtypes.FornaxPod{
 		Identifier:              podIdentifier,
-		ApplicationId:           applicationId,
 		PodState:                state,
 		Daemon:                  isDaemon,
-		PodSpec:                 v1pod.DeepCopy(),
+		Pod:                     v1pod.DeepCopy(),
 		RuntimePod:              nil,
 		Containers:              map[string]*fornaxtypes.Container{},
 		LastStateTransitionTime: time.Now(),
 	}
+	pod.SetPodStatus(fornaxPod)
+	fornaxPod.Pod.Status.HostIP = n.node.V1Node.Status.Addresses[0].Address
 
 	if configMap != nil {
 		errs = pod.ValidateConfigMapSpec(configMap)
 		if len(errs) > 0 {
 			return nil, errors.New("ConfigMap spec is invalid")
 		}
-		fornaxPod.ConfigMapSpec = configMap.DeepCopy()
+		fornaxPod.ConfigMap = configMap.DeepCopy()
 	}
 	return fornaxPod, nil
 }
@@ -331,12 +330,11 @@ func (n *FornaxNodeActor) recoverPodActor(fpod *fornaxtypes.FornaxPod) (*fornaxt
 }
 
 func (n *FornaxNodeActor) createPodAndActor(state fornaxtypes.PodState,
-	applicationId types.UID,
 	v1Pod *v1.Pod,
 	v1Config *v1.ConfigMap,
 	isDaemon bool) (*fornaxtypes.FornaxPod, *pod.PodActor, error) {
 	// create fornax pod obj
-	fpod, err := buildAFornaxPod(state, applicationId, v1Pod, v1Config, string(v1Pod.GetUID()), isDaemon)
+	fpod, err := n.buildAFornaxPod(state, v1Pod, v1Config, string(v1Pod.GetUID()), isDaemon)
 	if err != nil {
 		klog.ErrorS(err, "Failed to build a FornaxPod from pod spec", "namespace", v1Pod.Namespace, "name", v1Pod.Name)
 		return nil, nil, err
@@ -366,7 +364,6 @@ func (n *FornaxNodeActor) onPodCreateCommand(msg *fornaxgrpc.PodCreate) error {
 	if !found {
 		pod, actor, err := n.createPodAndActor(
 			fornaxtypes.PodStateCreating,
-			types.UID(*msg.AppIdentifier),
 			msg.GetPod().DeepCopy(),
 			msg.GetConfigMap().DeepCopy(),
 			false,
@@ -440,16 +437,6 @@ func (n *FornaxNodeActor) notify(receiver message.ActorRef, msg interface{}) {
 }
 
 func NewNodeActor(node *FornaxNode) (*FornaxNodeActor, error) {
-	if node.V1Node == nil {
-		v1node, err := node.initV1Node()
-		if err != nil {
-			return nil, err
-		} else {
-			node.V1Node = v1node
-		}
-	}
-	SetNodeStatus(node)
-
 	actor := &FornaxNodeActor{
 		stopCh:     make(chan struct{}),
 		node:       node,

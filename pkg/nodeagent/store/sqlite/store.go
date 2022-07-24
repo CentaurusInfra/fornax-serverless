@@ -138,7 +138,7 @@ func (s *sqLiteStore) GetObject(identifier string) (interface{}, error) {
 		}
 	}
 	if numOfRow == 0 {
-		return nil, fmt.Errorf("identifier %s has no objects", identifier)
+		return nil, store.StoreObjectNotFound
 	}
 
 	var obj interface{}

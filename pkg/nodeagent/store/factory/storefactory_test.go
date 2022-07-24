@@ -45,7 +45,7 @@ func NewATestPod(id string) *fornaxtypes.FornaxPod {
 		Identifier:    id,
 		ApplicationId: "applicationId",
 		PodState:      "PodStateCreated",
-		PodSpec: &v1.Pod{
+		Pod: &v1.Pod{
 			TypeMeta: metav1.TypeMeta{
 				Kind:       "Pod",
 				APIVersion: "k8s.io/core/v1",
@@ -54,8 +54,8 @@ func NewATestPod(id string) *fornaxtypes.FornaxPod {
 			Spec:       v1.PodSpec{},
 			Status:     v1.PodStatus{},
 		},
-		ConfigMapSpec: &v1.ConfigMap{},
-		RuntimePod:    &runtime.Pod{},
+		ConfigMap:  &v1.ConfigMap{},
+		RuntimePod: &runtime.Pod{},
 	}
 	return &testPod
 }

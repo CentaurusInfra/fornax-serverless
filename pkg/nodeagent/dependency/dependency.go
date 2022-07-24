@@ -42,6 +42,7 @@ type Dependencies struct {
 	MemoryManager     resourcemanager.MemoryManager
 	CPUManager        resourcemanager.CPUManager
 	VolumeManager     resourcemanager.VolumeManager
+	NodeStore         *factory.NodeStore
 	PodStore          *factory.PodStore
 }
 
@@ -55,6 +56,7 @@ func InitBasicDependencies(nodeConfig config.NodeConfiguration) (*Dependencies, 
 		CPUManager:        resourcemanager.CPUManager{},
 		VolumeManager:     resourcemanager.VolumeManager{},
 		PodStore:          &factory.PodStore{},
+		NodeStore:         &factory.NodeStore{},
 	}
 
 	// SqliteStore
@@ -107,6 +109,12 @@ func InitNetworkProvider(hostname string) network.NetworkAddressProvider {
 
 func InitPodStore(databaseURL string) (*factory.PodStore, error) {
 	return factory.NewPodSqliteStore(&sqlite.SQLiteStoreOptions{
+		ConnUrl: databaseURL,
+	})
+}
+
+func InitNodeStore(databaseURL string) (*factory.NodeStore, error) {
+	return factory.NewNodeSqliteStore(&sqlite.SQLiteStoreOptions{
 		ConnUrl: databaseURL,
 	})
 }

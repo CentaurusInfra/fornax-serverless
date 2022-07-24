@@ -25,7 +25,6 @@ import (
 	"centaurusinfra.io/fornax-serverless/pkg/nodeagent/config"
 	"centaurusinfra.io/fornax-serverless/pkg/nodeagent/dependency"
 	"centaurusinfra.io/fornax-serverless/pkg/nodeagent/node"
-	fornaxtypes "centaurusinfra.io/fornax-serverless/pkg/nodeagent/types"
 	"github.com/coreos/go-systemd/v22/daemon"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
@@ -139,15 +138,13 @@ func Run(ctx context.Context, nodeConfig config.NodeConfiguration) error {
 func run(ctx context.Context, nodeConfig config.NodeConfiguration, dependencies *dependency.Dependencies) error {
 	go daemon.SdNotify(false, "READY=1")
 
-	fornaxNode := node.FornaxNode{
-		NodeConfig:   nodeConfig,
-		V1Node:       nil,
-		Pods:         map[string]*fornaxtypes.FornaxPod{},
-		Dependencies: dependencies,
-	}
-	nodeActor, err := node.NewNodeActor(&fornaxNode)
+	fornaxNode, err := node.NewFornaxNode(nodeConfig, dependencies)
 	if err != nil {
-		klog.Errorf("can not initialize node actor, error %v", err)
+		klog.ErrorS(err, "Can not initialize node")
+	}
+	nodeActor, err := node.NewNodeActor(fornaxNode)
+	if err != nil {
+		klog.ErrorS(err, "Can not initialize node actor")
 	}
 
 	klog.Info("Starting FornaxNode")

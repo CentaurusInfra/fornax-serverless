@@ -26,10 +26,10 @@ import (
 	kubeletcm "k8s.io/kubernetes/pkg/kubelet/cm"
 	"k8s.io/kubernetes/pkg/kubelet/cm/cpuset"
 
-	"centaurusinfra.io/fornax-serverless/pkg/event"
 	"centaurusinfra.io/fornax-serverless/pkg/nodeagent/cadvisor"
 	"centaurusinfra.io/fornax-serverless/pkg/nodeagent/config"
 	"centaurusinfra.io/fornax-serverless/pkg/nodeagent/resource"
+	"centaurusinfra.io/fornax-serverless/pkg/util"
 	kubeletconfig "k8s.io/kubernetes/pkg/kubelet/apis/config"
 )
 
@@ -121,7 +121,7 @@ func NewQoSManager(
 	for name, res := range resource.EphemeralResourceListFromFsInfo(rootFs) {
 		capacity[name] = res
 	}
-	cm, err := kubeletcm.NewContainerManager(mountUtil, node, capacity, kubletCMNodeConfig, nodeConfig.DisableSwap, false, event.NewNoopEventRecorder())
+	cm, err := kubeletcm.NewContainerManager(mountUtil, node, capacity, kubletCMNodeConfig, nodeConfig.DisableSwap, false, util.NewNoopEventRecorder())
 	if err != nil {
 		return nil, fmt.Errorf("Failed to new a kubelet container manager for qos management, %v", err)
 	}

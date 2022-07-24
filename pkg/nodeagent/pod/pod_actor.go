@@ -203,7 +203,7 @@ func (a *PodActor) terminate() error {
 			// pod is already in terminating state, idempotently retry
 		}
 
-		terminated, err := a.TerminatePod(time.Duration(*pod.PodSpec.DeletionGracePeriodSeconds))
+		terminated, err := a.TerminatePod(time.Duration(*pod.Pod.DeletionGracePeriodSeconds))
 		if err != nil {
 			klog.ErrorS(err, "Pod termination failed, state is left in terminating to retry later,", "pod", types.UniquePodName(pod))
 			return err

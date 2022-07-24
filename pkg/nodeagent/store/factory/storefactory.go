@@ -24,12 +24,49 @@ import (
 	"centaurusinfra.io/fornax-serverless/pkg/nodeagent/types"
 )
 
+type NodeStore struct {
+	store.Store
+}
+
 type PodStore struct {
 	store.Store
 }
 
 type SessionStore struct {
 	store.Store
+}
+
+func NewNodeSqliteStore(options *sqlite.SQLiteStoreOptions) (*NodeStore, error) {
+	if store, err := sqlite.NewSqliteStore("Pod", options,
+		func(text string) (interface{}, error) { return store.JsonToNode(text) },
+		func(obj interface{}) (string, error) { return store.JsonFromNode(obj.(*types.FornaxNodeWithRevision)) }); err != nil {
+		return nil, err
+	} else {
+		return &NodeStore{store}, nil
+	}
+}
+
+func (s *NodeStore) GetNode(identifier string) (*types.FornaxNodeWithRevision, error) {
+	obj, err := s.GetObject(identifier)
+	if err != nil {
+		return nil, err
+	}
+	if v, ok := obj.(*types.FornaxNodeWithRevision); !ok {
+		return nil, fmt.Errorf("%v not a Node object", obj)
+	} else {
+		return v, nil
+	}
+}
+
+func (s *PodStore) PutNode(node *types.FornaxNodeWithRevision) error {
+	if node == nil {
+		return fmt.Errorf("nil node is passed")
+	}
+	err := s.PutObject(string(node.Identifier), node)
+	if err != nil {
+		return err
+	}
+	return nil
 }
 
 func NewPodSqliteStore(options *sqlite.SQLiteStoreOptions) (*PodStore, error) {

@@ -17,5 +17,8 @@ limitations under the License.
 package v1
 
 const (
-	LabelFornaxCore = "core.fornax-serverless.centaurusinfra.io"
+	LabelFornaxCore            = "core.fornax-serverless.centaurusinfra.io"
+	LabelFornaxCoreNode        = "node.fornax-serverless.centaurusinfra.io"
+	LabelFornaxCoreNodeDaemon  = "daemon.fornax-serverless.centaurusinfra.io"
+	LabelFornaxCoreApplication = "application.core.fornax-serverless.centaurusinfra.io"
 )

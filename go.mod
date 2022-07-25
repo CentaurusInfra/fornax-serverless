@@ -9,6 +9,7 @@ require (
 	github.com/emicklei/go-restful/v3 v3.7.4
 	github.com/golang/protobuf v1.5.2
 	github.com/google/cadvisor v0.44.1
+	github.com/google/uuid v1.1.2
 	github.com/grpc-ecosystem/go-grpc-middleware v1.3.0
 	github.com/mattn/go-sqlite3 v1.14.13
 	github.com/opencontainers/runc v1.1.2
@@ -66,7 +67,6 @@ require (
 	github.com/google/gnostic v0.5.7-v3refs // indirect
 	github.com/google/go-cmp v0.5.8 // indirect
 	github.com/google/gofuzz v1.2.0 // indirect
-	github.com/google/uuid v1.1.2 // indirect
 	github.com/grpc-ecosystem/go-grpc-prometheus v1.2.0 // indirect
 	github.com/grpc-ecosystem/grpc-gateway v1.16.0 // indirect
 	github.com/imdario/mergo v0.3.12 // indirect

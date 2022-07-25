@@ -14,17 +14,14 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package app
+package store
 
-import (
-	"context"
+type Bucket struct {
+	Prev, Next *Bucket
+	Elements   map[string]interface{}
+}
 
-	"centaurusinfra.io/fornax-serverless/pkg/fornaxcore/grpc/server"
-	"centaurusinfra.io/fornax-serverless/pkg/fornaxcore/integtest"
-)
-
-func RunIntegTestGrpcServer(ctx context.Context, port int, certFile, keyFile string) error {
-	nodeMonitor := integtest.NewIntegNodeMonitor()
-	g := server.NewGrpcServer()
-	return g.RunGrpcServer(ctx, nodeMonitor, port, certFile, keyFile)
+type ArrayBucket struct {
+	Prev, Next *ArrayBucket
+	Elements   []interface{}
 }

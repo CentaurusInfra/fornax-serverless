@@ -1,5 +1,4 @@
 /*
-
 Copyright 2022.
 
 Licensed under the Apache License, Version 2.0 (the "License");
@@ -15,34 +14,19 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package server
+package nodeagent
 
 import (
-	"fmt"
-
 	"centaurusinfra.io/fornax-serverless/pkg/fornaxcore/grpc"
-	"k8s.io/klog/v2"
+	v1 "k8s.io/api/core/v1"
 )
 
-func (g *grpcServer) getNodeChan(node string) (chan<- *grpc.FornaxCoreMessage, error) {
-	g.RLock()
-	defer g.RUnlock()
-
-	ch, ok := g.nodeGetMessageChans[node]
-	if !ok {
-		return nil, fmt.Errorf("unknown destination")
-	}
-
-	return ch, nil
+type MessageDispatcher interface {
+	DispatchMessage(node string, message *grpc.FornaxCoreMessage) error
 }
-
-func (g *grpcServer) DispatchMessage(nodeIdentifier string, message *grpc.FornaxCoreMessage) error {
-	klog.InfoS("Send a message to node", "node", nodeIdentifier, "msgType", message.GetMessageType())
-	ch, err := g.getNodeChan(nodeIdentifier)
-	if err != nil {
-		return err
-	}
-
-	ch <- message
-	return nil
+type NodeAgentProxy interface {
+	MessageDispatcher
+	CreatePod(nodeIdentifier string, pod *v1.Pod) error
+	TerminatePod(nodeIdentifier string, pod *v1.Pod) error
+	SyncNode(node *v1.Node) error
 }

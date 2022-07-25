@@ -14,17 +14,24 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package app
+package node
 
-import (
-	"context"
+import v1 "k8s.io/api/core/v1"
 
-	"centaurusinfra.io/fornax-serverless/pkg/fornaxcore/grpc/server"
-	"centaurusinfra.io/fornax-serverless/pkg/fornaxcore/integtest"
-)
+type NodeDaemonManager interface {
+	GetDaemons(node *FornaxNodeWithState) map[string]*v1.Pod
+}
 
-func RunIntegTestGrpcServer(ctx context.Context, port int, certFile, keyFile string) error {
-	nodeMonitor := integtest.NewIntegNodeMonitor()
-	g := server.NewGrpcServer()
-	return g.RunGrpcServer(ctx, nodeMonitor, port, certFile, keyFile)
+var _ NodeDaemonManager = &nodeDaemonManager{}
+
+type nodeDaemonManager struct {
+}
+
+// GetDaemons implements NodeDaemonManager
+func (*nodeDaemonManager) GetDaemons(node *FornaxNodeWithState) map[string]*v1.Pod {
+	return map[string]*v1.Pod{}
+}
+
+func NewNodeDaemonManager() NodeDaemonManager {
+	return &nodeDaemonManager{}
 }

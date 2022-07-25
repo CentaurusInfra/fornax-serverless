@@ -14,17 +14,29 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package app
+package node
 
-import (
-	"context"
+import v1 "k8s.io/api/core/v1"
 
-	"centaurusinfra.io/fornax-serverless/pkg/fornaxcore/grpc/server"
-	"centaurusinfra.io/fornax-serverless/pkg/fornaxcore/integtest"
-)
+type PortMapping struct {
+	containerPort int32
+	hostPort      int32
+}
 
-func RunIntegTestGrpcServer(ctx context.Context, port int, certFile, keyFile string) error {
-	nodeMonitor := integtest.NewIntegNodeMonitor()
-	g := server.NewGrpcServer()
-	return g.RunGrpcServer(ctx, nodeMonitor, port, certFile, keyFile)
+type NodePortManager interface {
+	GetPorts(node *v1.Node, pod *v1.Pod) []PortMapping
+}
+
+var _ NodePortManager = &nodePortManager{}
+
+type nodePortManager struct {
+}
+
+// GetPorts implements NodePortManager
+func (*nodePortManager) GetPorts(node *v1.Node, pod *v1.Pod) []PortMapping {
+	panic("unimplemented")
+}
+
+func NewNodePortManager() NodePortManager {
+	return &nodePortManager{}
 }

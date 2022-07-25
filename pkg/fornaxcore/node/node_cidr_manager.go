@@ -14,17 +14,21 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package app
+package node
 
-import (
-	"context"
+type NodeCidrManager interface {
+	GetCidr(node *FornaxNodeWithState) []string
+}
 
-	"centaurusinfra.io/fornax-serverless/pkg/fornaxcore/grpc/server"
-	"centaurusinfra.io/fornax-serverless/pkg/fornaxcore/integtest"
-)
+var _ NodeCidrManager = &nodeCidrManager{}
 
-func RunIntegTestGrpcServer(ctx context.Context, port int, certFile, keyFile string) error {
-	nodeMonitor := integtest.NewIntegNodeMonitor()
-	g := server.NewGrpcServer()
-	return g.RunGrpcServer(ctx, nodeMonitor, port, certFile, keyFile)
+type nodeCidrManager struct {
+}
+
+func (*nodeCidrManager) GetCidr(node *FornaxNodeWithState) []string {
+	return []string{"192.168.0.1/24"}
+}
+
+func NewPodCidrManager() NodeCidrManager {
+	return &nodeCidrManager{}
 }

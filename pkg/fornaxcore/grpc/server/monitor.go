@@ -23,17 +23,18 @@ import (
 )
 
 type NodeMonitor interface {
-	OnRegistry(msgDispatcher MessageDispatcher, ctx context.Context, message *grpc.FornaxCoreMessage) error
-	OnReady(msgDispatcher MessageDispatcher, ctx context.Context, message *grpc.FornaxCoreMessage) error
-	OnUpdate(msgDispatcher MessageDispatcher, ctx context.Context, message *grpc.FornaxCoreMessage) error
+	OnRegistry(ctx context.Context, message *grpc.FornaxCoreMessage) (*grpc.FornaxCoreMessage, error)
+	OnReady(ctx context.Context, message *grpc.FornaxCoreMessage) (*grpc.FornaxCoreMessage, error)
+	OnNodeUpdate(ctx context.Context, message *grpc.FornaxCoreMessage) (*grpc.FornaxCoreMessage, error)
+	OnPodUpdate(ctx context.Context, message *grpc.FornaxCoreMessage) (*grpc.FornaxCoreMessage, error)
 }
 
 type PodMonitor interface {
-	OnUpdate(msgDispatcher MessageDispatcher, ctx context.Context, message *grpc.FornaxCoreMessage) error
+	OnPodUpdate(ctx context.Context, message *grpc.FornaxCoreMessage) (*grpc.FornaxCoreMessage, error)
 }
 
 type AppSessionMonitor interface {
-	OnStart(msgDispatcher MessageDispatcher, ctx context.Context, message *grpc.FornaxCoreMessage) error
-	OnClose(msgDispatcher MessageDispatcher, ctx context.Context, message *grpc.FornaxCoreMessage) error
-	OnUpdate(msgDispatcher MessageDispatcher, ctx context.Context, message *grpc.FornaxCoreMessage) error
+	OnSessionStart(ctx context.Context, message *grpc.FornaxCoreMessage) (*grpc.FornaxCoreMessage, error)
+	OnSessionClose(ctx context.Context, message *grpc.FornaxCoreMessage) (*grpc.FornaxCoreMessage, error)
+	OnSessionUpdate(ctx context.Context, message *grpc.FornaxCoreMessage) (*grpc.FornaxCoreMessage, error)
 }

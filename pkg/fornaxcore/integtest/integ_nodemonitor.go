@@ -14,18 +14,16 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package nodemonitor
+package integtest
 
 import (
 	"context"
-	"math"
 	"sync"
-	"time"
 
 	default_config "centaurusinfra.io/fornax-serverless/pkg/config"
 	"centaurusinfra.io/fornax-serverless/pkg/fornaxcore/grpc"
 	"centaurusinfra.io/fornax-serverless/pkg/fornaxcore/grpc/server"
-	podutil "centaurusinfra.io/fornax-serverless/pkg/fornaxcore/pod"
+	podutil "centaurusinfra.io/fornax-serverless/pkg/util"
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/klog/v2"
 )
@@ -36,29 +34,47 @@ type integtestNodeMonitor struct {
 	sync.RWMutex
 	nodes map[string]*v1.Node
 
-	// the nodes just been updated in the latest ticker period
-	// node should be added in on receipt of node status report
-	refreshedNodes map[string]interface{}
+	chQuit chan interface{}
+}
 
-	ticker      *time.Ticker
-	checkPeriod time.Duration
-	countFresh  int
-	chQuit      chan interface{}
+// OnPodUpdate implements server.NodeMonitor
+func (*integtestNodeMonitor) OnPodUpdate(ctx context.Context, message *grpc.FornaxCoreMessage) (*grpc.FornaxCoreMessage, error) {
+	podState := message.GetPodState()
+	klog.InfoS("Received a pod state", "pod", podutil.UniquePodName(podState.GetPod()), "state", podState.GetState())
+
+	if podState.GetState() == grpc.PodState_Running {
+		// terminate test pod
+		podId := string(podState.GetPod().GetUID())
+		body := grpc.FornaxCoreMessage_PodTerminate{
+			PodTerminate: &grpc.PodTerminate{
+				PodIdentifier: &podId,
+			},
+		}
+		messageType := grpc.MessageType_POD_TERMINATE
+		msg := &grpc.FornaxCoreMessage{
+			MessageType: &messageType,
+			MessageBody: &body,
+		}
+		return msg, nil
+	} else if podState.GetState() == grpc.PodState_Terminated {
+		msg := podutil.BuildATestPodCreate("test_app")
+		return msg, nil
+	}
+	return nil, nil
 }
 
 // OnReady implements server.NodeMonitor
-func (*integtestNodeMonitor) OnReady(msgDispatcher server.MessageDispatcher, ctx context.Context, message *grpc.FornaxCoreMessage) error {
+func (*integtestNodeMonitor) OnReady(ctx context.Context, message *grpc.FornaxCoreMessage) (*grpc.FornaxCoreMessage, error) {
 	// update node, scheduler begin to schedule pod in ready node
 
 	// for test, send node a test pod
 	msg := podutil.BuildATestPodCreate("test_app")
 	klog.InfoS("Send node a pod", "pod", msg)
-	msgDispatcher.DispatchMessage(*message.NodeIdentifier.Identifier, msg)
-	return nil
+	return msg, nil
 }
 
 // OnRegistry implements server.NodeMonitor
-func (*integtestNodeMonitor) OnRegistry(msgDispatcher server.MessageDispatcher, ctx context.Context, message *grpc.FornaxCoreMessage) error {
+func (*integtestNodeMonitor) OnRegistry(ctx context.Context, message *grpc.FornaxCoreMessage) (*grpc.FornaxCoreMessage, error) {
 	registry := message.GetNodeRegistry()
 
 	daemonPod := podutil.BuildATestDaemonPod()
@@ -81,21 +97,18 @@ func (*integtestNodeMonitor) OnRegistry(msgDispatcher server.MessageDispatcher, 
 	}
 
 	klog.InfoS("Initialize node", "node configuration", m)
-	msgDispatcher.DispatchMessage(*message.NodeIdentifier.Identifier, m)
-	return nil
+	return m, nil
 }
 
-// OnUpdate implements server.NodeMonitor
-func (*integtestNodeMonitor) OnUpdate(msgDispatcher server.MessageDispatcher, ctx context.Context, state *grpc.FornaxCoreMessage) error {
+// OnNodeUpdate implements server.NodeMonitor
+func (*integtestNodeMonitor) OnNodeUpdate(ctx context.Context, state *grpc.FornaxCoreMessage) (*grpc.FornaxCoreMessage, error) {
 	// update node resource info
-	return nil
+	return nil, nil
 }
 
-func NewIntegNodeMonitor(checkPeriod time.Duration) *integtestNodeMonitor {
+func NewIntegNodeMonitor() *integtestNodeMonitor {
 	return &integtestNodeMonitor{
-		checkPeriod: checkPeriod,
-		countFresh:  int(math.Ceil(StaleNodeTimeout.Seconds() / checkPeriod.Seconds())),
-		ticker:      time.NewTicker(checkPeriod),
-		chQuit:      make(chan interface{}),
+		nodes:  map[string]*v1.Node{},
+		chQuit: make(chan interface{}),
 	}
 }

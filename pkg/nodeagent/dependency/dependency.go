@@ -42,6 +42,7 @@ type Dependencies struct {
 	MemoryManager     resourcemanager.MemoryManager
 	CPUManager        resourcemanager.CPUManager
 	VolumeManager     resourcemanager.VolumeManager
+	NodeStore         *factory.NodeStore
 	PodStore          *factory.PodStore
 }
 
@@ -55,11 +56,17 @@ func InitBasicDependencies(nodeConfig config.NodeConfiguration) (*Dependencies, 
 		CPUManager:        resourcemanager.CPUManager{},
 		VolumeManager:     resourcemanager.VolumeManager{},
 		PodStore:          &factory.PodStore{},
+		NodeStore:         &factory.NodeStore{},
 	}
 
 	// SqliteStore
 	var err error
 	dependencies.PodStore, err = InitPodStore(nodeConfig.DatabaseURL)
+	if err != nil {
+		return nil, err
+	}
+
+	dependencies.NodeStore, err = InitNodeStore(nodeConfig.DatabaseURL)
 	if err != nil {
 		return nil, err
 	}
@@ -111,6 +118,12 @@ func InitPodStore(databaseURL string) (*factory.PodStore, error) {
 	})
 }
 
+func InitNodeStore(databaseURL string) (*factory.NodeStore, error) {
+	return factory.NewNodeSqliteStore(&sqlite.SQLiteStoreOptions{
+		ConnUrl: databaseURL,
+	})
+}
+
 func InitCAdvisor(cAdvisorConfig cadvisor.CAdvisorConfig, CRIRuntime runtime.RuntimeService) (cadvisor.CAdvisorInfoProvider, error) {
 	return cadvisor.NewCAdvisorInfoProvider(cAdvisorConfig, CRIRuntime)
 }
@@ -121,6 +134,15 @@ func (n *Dependencies) Complete(node *v1.Node, nodeConfig config.NodeConfigurati
 	var err error
 	if n.PodStore == nil {
 		n.PodStore, err = InitPodStore(nodeConfig.DatabaseURL)
+		if err != nil {
+			klog.ErrorS(err, "Failed to init node agent store")
+			return err
+		}
+	}
+
+	// SqliteStore
+	if n.NodeStore == nil {
+		n.NodeStore, err = InitNodeStore(nodeConfig.DatabaseURL)
 		if err != nil {
 			klog.ErrorS(err, "Failed to init node agent store")
 			return err

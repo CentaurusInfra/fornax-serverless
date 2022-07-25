@@ -114,7 +114,7 @@ func (a *PodContainerActor) startStartupProbers() {
 	klog.InfoS("Starting container startup probers", "pod", types.UniquePodName(a.pod), "container", a.container.ContainerSpec.Name)
 	if !a.container.InitContainer && a.container.ContainerSpec.StartupProbe != nil {
 		startupProber := NewContainerProber(a.onContainerProbeResult,
-			a.pod.PodSpec.DeepCopy(),
+			a.pod.Pod.DeepCopy(),
 			a.container.RuntimeContainer.Id,
 			a.container.ContainerSpec.StartupProbe.DeepCopy(),
 			StartupProbe,
@@ -129,7 +129,7 @@ func (a *PodContainerActor) startStartupProbers() {
 
 	// start runtime status prober
 	runtimeStatusProber := NewContainerProber(a.onContainerProbeResult,
-		a.pod.PodSpec.DeepCopy(),
+		a.pod.Pod.DeepCopy(),
 		a.container.RuntimeContainer.Id,
 		NewRuntimeStatusProbeSpec(),
 		RuntimeStatusProbe,
@@ -216,7 +216,7 @@ func (a *PodContainerActor) onContainerFailed() (interface{}, error) {
 
 	klog.InfoS("Container failed",
 		"pod", pod.Identifier,
-		"podName", pod.PodSpec.Name,
+		"podName", pod.Pod.Name,
 		"containerName", container.ContainerSpec.Name,
 	)
 
@@ -230,7 +230,7 @@ func (a *PodContainerActor) onContainerReady() (interface{}, error) {
 
 	klog.InfoS("Container ready",
 		"pod", pod.Identifier,
-		"podName", pod.PodSpec.Name,
+		"podName", pod.Pod.Name,
 		"containerName", container.ContainerSpec.Name,
 	)
 
@@ -249,7 +249,7 @@ func (a *PodContainerActor) onContainerStarted() (interface{}, error) {
 	if a.inStoppingProcess() {
 		klog.InfoS("container is being terminated, ignore startup probe message",
 			"pod", pod.Identifier,
-			"podName", pod.PodSpec.Name,
+			"podName", pod.Pod.Name,
 			"containerName", container.ContainerSpec.Name,
 		)
 		return nil, nil
@@ -260,12 +260,12 @@ func (a *PodContainerActor) onContainerStarted() (interface{}, error) {
 		// start pod liveness and readiness probe after startup
 		klog.InfoS("start pod liveness and readiness prober",
 			"pod", pod.Identifier,
-			"podName", pod.PodSpec.Name,
+			"podName", pod.Pod.Name,
 			"containerName", container.ContainerSpec.Name,
 		)
 		if a.container.ContainerSpec.LivenessProbe != nil {
 			prober := NewContainerProber(a.onContainerProbeResult,
-				a.pod.PodSpec.DeepCopy(),
+				a.pod.Pod.DeepCopy(),
 				a.container.RuntimeContainer.Id,
 				a.container.ContainerSpec.LivenessProbe.DeepCopy(),
 				LivenessProbe,
@@ -276,7 +276,7 @@ func (a *PodContainerActor) onContainerStarted() (interface{}, error) {
 		}
 		if a.container.ContainerSpec.ReadinessProbe != nil {
 			prober := NewContainerProber(a.onContainerProbeResult,
-				a.pod.PodSpec.DeepCopy(),
+				a.pod.Pod.DeepCopy(),
 				a.container.RuntimeContainer.Id,
 				a.container.ContainerSpec.ReadinessProbe.DeepCopy(),
 				ReadinessProbe,
@@ -288,7 +288,7 @@ func (a *PodContainerActor) onContainerStarted() (interface{}, error) {
 
 		klog.InfoS("run post start lifecycle handler",
 			"pod", pod.Identifier,
-			"podName", pod.PodSpec.Name,
+			"podName", pod.Pod.Name,
 			"containerName", container.ContainerSpec.Name,
 		)
 		if container.ContainerSpec.Lifecycle != nil && container.ContainerSpec.Lifecycle.PostStart != nil {
@@ -296,7 +296,7 @@ func (a *PodContainerActor) onContainerStarted() (interface{}, error) {
 			if err != nil {
 				klog.ErrorS(err, "post start lifecycle handler failed",
 					"pod", pod.Identifier,
-					"podName", pod.PodSpec.Name,
+					"podName", pod.Pod.Name,
 					"containerName", container.ContainerSpec.Name,
 					"errMsg", errMsg)
 				return nil, err
@@ -320,7 +320,7 @@ func (a *PodContainerActor) stopContainer(timeout time.Duration) (interface{}, e
 	if container != nil && container.RuntimeContainer != nil {
 		klog.InfoS("Running pre stop lifecycle handler",
 			"pod", pod.Identifier,
-			"podName", pod.PodSpec.Name,
+			"podName", pod.Pod.Name,
 			"containerName", container.ContainerSpec.Name)
 
 		var err error
@@ -333,7 +333,7 @@ func (a *PodContainerActor) stopContainer(timeout time.Duration) (interface{}, e
 				if errMsg, err = a.runLifecycleHandler(pod, container, container.ContainerSpec.Lifecycle.PreStop); err != nil {
 					klog.ErrorS(err, "pre stop lifecycle handler failed",
 						"pod", pod.Identifier,
-						"podName", pod.PodSpec.Name,
+						"podName", pod.Pod.Name,
 						"containerName", container.ContainerSpec.Name,
 						"errMsg", errMsg)
 				}
@@ -343,13 +343,13 @@ func (a *PodContainerActor) stopContainer(timeout time.Duration) (interface{}, e
 			case <-time.After(time.Duration(timeout) * time.Second):
 				klog.InfoS("pre stop lifecycle handler not completed in grace period",
 					"pod", pod.Identifier,
-					"podName", pod.PodSpec.Name,
+					"podName", pod.Pod.Name,
 					"containerName", container.ContainerSpec.Name,
 					"timeout", timeout)
 			case <-done:
 				klog.InfoS("pre stop lifecycle handler done",
 					"pod", pod.Identifier,
-					"podName", pod.PodSpec.Name,
+					"podName", pod.Pod.Name,
 					"containerName", container.ContainerSpec.Name)
 			}
 		}
@@ -359,7 +359,7 @@ func (a *PodContainerActor) stopContainer(timeout time.Duration) (interface{}, e
 		if err != nil {
 			klog.ErrorS(err, "stop pod container failed",
 				"pod", pod.Identifier,
-				"podName", pod.PodSpec.Name,
+				"podName", pod.Pod.Name,
 				"containerName", container.ContainerSpec.Name)
 			return nil, err
 		}
@@ -375,7 +375,7 @@ func (a *PodContainerActor) stopContainer(timeout time.Duration) (interface{}, e
 		if err != nil {
 			klog.ErrorS(err, "stop pod container failed",
 				"pod", pod.Identifier,
-				"podName", pod.PodSpec.Name,
+				"podName", pod.Pod.Name,
 				"containerName", container.ContainerSpec.Name)
 			return nil, err
 		} else {

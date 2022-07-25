@@ -32,7 +32,7 @@ import (
 
 // createPodSandbox creates a pod sandbox and returns (podSandBoxID, message, error).
 func (m *PodActor) createPodSandbox() (*runtime.Pod, error) {
-	pod := m.pod.PodSpec
+	pod := m.pod.Pod
 	klog.InfoS("Generate pod sandbox config", "pod", types.UniquePodName(m.pod))
 	podSandboxConfig, err := m.generatePodSandboxConfig()
 	if err != nil {
@@ -99,7 +99,7 @@ func (m *PodActor) removePodSandbox(podSandboxId string, podSandboxConfig *criv1
 func (m *PodActor) generatePodSandboxConfig() (*criv1.PodSandboxConfig, error) {
 	// fornax node will expect fornaxcore populate most of pod spec before send it
 	// it will not calulate hostname, all these staff
-	pod := m.pod.PodSpec
+	pod := m.pod.Pod
 	podUID := string(pod.UID)
 	podSandboxConfig := &criv1.PodSandboxConfig{
 		Metadata: &criv1.PodSandboxMetadata{
@@ -158,7 +158,7 @@ func (m *PodActor) generatePodSandboxConfig() (*criv1.PodSandboxConfig, error) {
 // podSandboxConfig. It is currently part of LinuxPodSandboxConfig. In future, if we have securityContext pulled out
 // in podSandboxConfig we should be able to use it.
 func (m *PodActor) generatePodSandboxLinuxConfig() (*criv1.LinuxPodSandboxConfig, error) {
-	pod := m.pod.PodSpec
+	pod := m.pod.Pod
 	cgroupParent := m.dependencies.QosManager.GetPodCgroupParent(pod)
 	lpsc := &criv1.LinuxPodSandboxConfig{
 		CgroupParent: cgroupParent,

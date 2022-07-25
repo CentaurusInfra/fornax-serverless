@@ -18,8 +18,13 @@ package store
 
 import (
 	"encoding/json"
+	"errors"
 
 	"centaurusinfra.io/fornax-serverless/pkg/nodeagent/types"
+)
+
+var (
+	StoreObjectNotFound = errors.New("no such object")
 )
 
 type Store interface {
@@ -47,15 +52,16 @@ func JsonFromPod(obj *types.FornaxPod) (string, error) {
 	return string(bytes), nil
 }
 
-func JsonToContainer(str string) (*types.Container, error) {
-	res := types.Container{}
+// use json to store node agent store object for now, consider using protobuf if meet performance issue
+func JsonToNode(str string) (*types.FornaxNodeWithRevision, error) {
+	res := types.FornaxNodeWithRevision{}
 	if err := json.Unmarshal([]byte(str), &res); err != nil {
 		return nil, err
 	}
 	return &res, nil
 }
 
-func JsonFromContainer(obj *types.Container) (string, error) {
+func JsonFromNode(obj *types.FornaxNodeWithRevision) (string, error) {
 	var bytes []byte
 	var err error
 	if bytes, err = json.Marshal(obj); err != nil {

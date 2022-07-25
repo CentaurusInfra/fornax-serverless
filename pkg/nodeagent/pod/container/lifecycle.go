@@ -43,7 +43,7 @@ func (pl *PodContainerActor) runLifecycleHandler(pod *types.FornaxPod, container
 			klog.ErrorS(err, "Exec lifecycle hook for Container in Pod failed",
 				"execCommand", handler.Exec.Command,
 				"containerName", container.ContainerSpec.Name,
-				"pod", pod.PodSpec.GetName(),
+				"pod", pod.Pod.GetName(),
 				"errMsg", string(stderr))
 			msg = string(stderr)
 		} else {
@@ -57,7 +57,7 @@ func (pl *PodContainerActor) runLifecycleHandler(pod *types.FornaxPod, container
 			klog.ErrorS(err, "HTTP lifecycle hook for Container in Pod failed",
 				"path", handler.HTTPGet.Path,
 				"containerName", container.ContainerSpec.Name,
-				"pod", pod.PodSpec.Name,
+				"pod", pod.Pod.Name,
 				"errMsg", msg)
 		}
 		return msg, err

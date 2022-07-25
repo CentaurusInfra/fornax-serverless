@@ -27,6 +27,7 @@ import (
 	"centaurusinfra.io/fornax-serverless/pkg/nodeagent/resource"
 	"centaurusinfra.io/fornax-serverless/pkg/nodeagent/runtime"
 	fornaxtypes "centaurusinfra.io/fornax-serverless/pkg/nodeagent/types"
+	"centaurusinfra.io/fornax-serverless/pkg/util"
 
 	v1 "k8s.io/api/core/v1"
 	k8sresource "k8s.io/apimachinery/pkg/api/resource"
@@ -242,11 +243,11 @@ func UpdateNodeCapacity(cc cadvisor.CAdvisorInfoProvider, nodeConfig config.Node
 
 		if nodeConfig.PodsPerCore > 0 {
 			node.Status.Capacity[v1.ResourcePods] =
-				resource.ResourceQuantity(
+				util.ResourceQuantity(
 					int64(math.Min(float64(info.MachineInfo.NumCores*nodeConfig.PodsPerCore), float64(nodeConfig.MaxPods))), v1.ResourcePods)
 		} else {
 			node.Status.Capacity[v1.ResourcePods] =
-				resource.ResourceQuantity(int64(nodeConfig.MaxPods), v1.ResourcePods)
+				util.ResourceQuantity(int64(nodeConfig.MaxPods), v1.ResourcePods)
 		}
 	}
 
@@ -255,7 +256,7 @@ func UpdateNodeCapacity(cc cadvisor.CAdvisorInfoProvider, nodeConfig config.Node
 }
 
 func UpdateAllocatableResourceQuantity(resourceName v1.ResourceName, node *v1.Node, reservedQuantity v1.ResourceList) {
-	zeroQuanity := resource.ResourceQuantity(0, resourceName)
+	zeroQuanity := util.ResourceQuantity(0, resourceName)
 	capacity, ok := node.Status.Capacity[resourceName]
 	if ok {
 		value := capacity.DeepCopy()

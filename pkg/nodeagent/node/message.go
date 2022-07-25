@@ -25,13 +25,13 @@ func BuildFornaxGrpcNodeState(node *FornaxNode) *grpc.FornaxCoreMessage {
 	podStates := []*grpc.PodState{}
 	// sessionStates := []*grpc.SessionState{}
 	for _, v := range node.Pods {
-		s := pod.BuildFornaxcoreGrpcPodState(v)
+		s := pod.BuildFornaxcoreGrpcPodState(node.Revision, v)
 		podStates = append(podStates, s.GetPodState())
 	}
 	ns := grpc.NodeState{
-		NodeIp:    &node.NodeConfig.NodeIP,
-		Node:      node.V1Node,
-		PodStates: podStates,
+		NodeRevision: &node.Revision,
+		Node:         node.V1Node,
+		PodStates:    podStates,
 		// TODO, add sessionStates
 		// SessionStates: sessionStates,
 	}

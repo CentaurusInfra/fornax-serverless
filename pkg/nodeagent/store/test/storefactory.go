@@ -30,7 +30,7 @@ func main() {
 	count := 100
 	for i := 0; i <= count; i++ {
 		id := fmt.Sprint(i)
-		podstore.PutPod(&fornaxtypes.FornaxPod{Identifier: id, PodSpec: &v1.Pod{}, ConfigMapSpec: &v1.ConfigMap{}})
+		podstore.PutPod(&fornaxtypes.FornaxPod{Identifier: id, Pod: &v1.Pod{}, ConfigMap: &v1.ConfigMap{}})
 		podstore.GetPod(id)
 
 		sessionstore.PutSession(&fornaxtypes.Session{Identifier: id})

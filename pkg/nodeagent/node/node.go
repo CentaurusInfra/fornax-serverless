@@ -26,7 +26,9 @@ import (
 	default_config "centaurusinfra.io/fornax-serverless/pkg/config"
 	"centaurusinfra.io/fornax-serverless/pkg/nodeagent/dependency"
 	"centaurusinfra.io/fornax-serverless/pkg/nodeagent/runtime"
+	"centaurusinfra.io/fornax-serverless/pkg/nodeagent/store"
 	"centaurusinfra.io/fornax-serverless/pkg/nodeagent/store/factory"
+	"centaurusinfra.io/fornax-serverless/pkg/util"
 
 	"centaurusinfra.io/fornax-serverless/pkg/nodeagent/config"
 	fornaxtypes "centaurusinfra.io/fornax-serverless/pkg/nodeagent/types"
@@ -42,6 +44,7 @@ import (
 type FornaxNode struct {
 	NodeConfig   config.NodeConfiguration
 	V1Node       *v1.Node
+	Revision     int64
 	Pods         map[string]*fornaxtypes.FornaxPod
 	Dependencies *dependency.Dependencies
 }
@@ -232,7 +235,41 @@ func (n *FornaxNode) Init() error {
 func (n *FornaxNode) activePods() []*v1.Pod {
 	v1Pods := []*v1.Pod{}
 	for _, v := range n.Pods {
-		v1Pods = append(v1Pods, v.PodSpec.DeepCopy())
+		v1Pods = append(v1Pods, v.Pod.DeepCopy())
 	}
 	return v1Pods
+}
+
+func NewFornaxNode(nodeConfig config.NodeConfiguration, dependencies *dependency.Dependencies) (*FornaxNode, error) {
+	fornaxNode := FornaxNode{
+		NodeConfig:   nodeConfig,
+		V1Node:       nil,
+		Revision:     0,
+		Pods:         map[string]*fornaxtypes.FornaxPod{},
+		Dependencies: dependencies,
+	}
+	v1node, err := fornaxNode.initV1Node()
+	if err != nil {
+		return nil, err
+	} else {
+		fornaxNode.V1Node = v1node
+	}
+	nodeWithRevision, err := dependencies.NodeStore.GetNode(util.UniqueNodeName(v1node))
+	if err != nil {
+		if err != store.StoreObjectNotFound {
+			return nil, err
+		}
+	} else {
+		if util.UniqueNodeName(nodeWithRevision.Node) != util.UniqueNodeName(v1node) {
+			// if node name changed, it's a new node
+			// TODO, check if spec changed, fornax core could send a completed spec back to node agent after it's registered
+			fornaxNode.Revision = 0
+		} else {
+			// increment node revision, although node agent restart does not mean node state changed, it ensure fornax core will update its node state
+			fornaxNode.Revision = nodeWithRevision.Revision + 1
+		}
+	}
+
+	SetNodeStatus(&fornaxNode)
+	return &fornaxNode, nil
 }

@@ -37,7 +37,7 @@ func (a *PodActor) createContainer(podSandboxConfig *criv1.PodSandboxConfig, con
 ) (*cruntime.Container, error) {
 
 	klog.InfoS("Pull image for container", "pod", types.UniquePodName(a.pod), "container", containerSpec.Name)
-	pod := a.pod.PodSpec
+	pod := a.pod.Pod
 	// pull the image.
 	imageRef, err := a.dependencies.ImageManager.PullImageForContainer(containerSpec, podSandboxConfig)
 	if err != nil {
@@ -78,7 +78,7 @@ func (a *PodActor) createContainer(podSandboxConfig *criv1.PodSandboxConfig, con
 }
 
 func (m *PodActor) generateContainerConfig(container *v1.Container, imageRef *criv1.Image) (*criv1.ContainerConfig, error) {
-	pod := m.pod.PodSpec
+	pod := m.pod.Pod
 	// TODO, comment it out until we have volume supported
 	// opts, cleanupAction, err := runtime.GenerateRunContainerOptions(pod, container, m.pod.RuntimePod.IPs[0], m.pod.RuntimePod.IPs)
 	// if err != nil {

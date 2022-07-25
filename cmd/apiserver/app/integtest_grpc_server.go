@@ -25,7 +25,6 @@ import (
 	fornaxcore_grpc "centaurusinfra.io/fornax-serverless/pkg/fornaxcore/grpc"
 	"centaurusinfra.io/fornax-serverless/pkg/fornaxcore/grpc/server"
 	"centaurusinfra.io/fornax-serverless/pkg/fornaxcore/nodemonitor"
-	"centaurusinfra.io/fornax-serverless/pkg/fornaxcore/podmonitor"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
 	"k8s.io/klog/v2"
@@ -51,8 +50,7 @@ func RunIntegTestGrpcServer(ctx context.Context, port int, certFile, keyFile str
 	}
 
 	nodeMonitor := nodemonitor.NewIntegNodeMonitor(10 * time.Second)
-	podMonitor := podmonitor.NewIntegPodMonitor(10 * time.Second)
-	server := server.New(nodeMonitor, podMonitor, nil)
+	server := server.New(nodeMonitor, nil, nil)
 	grpcServer := grpc.NewServer(opts...)
 	fornaxcore_grpc.RegisterFornaxCoreServiceServer(grpcServer, server)
 	go func() {

@@ -23,12 +23,13 @@ import (
 	criv1 "k8s.io/cri-api/pkg/apis/runtime/v1"
 )
 
-func BuildFornaxcoreGrpcPodStateForTerminatedPod(pod *fornaxtypes.FornaxPod) *grpc.FornaxCoreMessage {
+func BuildFornaxcoreGrpcPodStateForTerminatedPod(nodeRevision int64, pod *fornaxtypes.FornaxPod) *grpc.FornaxCoreMessage {
 	state := grpc.PodState_Terminated
 	s := grpc.PodState{
-		State:    &state,
-		Pod:      pod.Pod.DeepCopy(),
-		Resource: &grpc.PodResource{},
+		NodeRevision: &nodeRevision,
+		State:        &state,
+		Pod:          pod.Pod.DeepCopy(),
+		Resource:     &grpc.PodResource{},
 	}
 	messageType := grpc.MessageType_POD_STATE
 	return &grpc.FornaxCoreMessage{
@@ -39,10 +40,11 @@ func BuildFornaxcoreGrpcPodStateForTerminatedPod(pod *fornaxtypes.FornaxPod) *gr
 	}
 }
 
-func BuildFornaxcoreGrpcPodState(pod *fornaxtypes.FornaxPod) *grpc.FornaxCoreMessage {
+func BuildFornaxcoreGrpcPodState(nodeRevision int64, pod *fornaxtypes.FornaxPod) *grpc.FornaxCoreMessage {
 	s := grpc.PodState{
-		State: PodStateToFornaxState(pod),
-		Pod:   pod.Pod.DeepCopy(),
+		NodeRevision: &nodeRevision,
+		State:        PodStateToFornaxState(pod),
+		Pod:          pod.Pod.DeepCopy(),
 		// TODO
 		Resource: &grpc.PodResource{},
 	}

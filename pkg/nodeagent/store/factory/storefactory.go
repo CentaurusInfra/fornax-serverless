@@ -58,7 +58,7 @@ func (s *NodeStore) GetNode(identifier string) (*types.FornaxNodeWithRevision, e
 	}
 }
 
-func (s *PodStore) PutNode(node *types.FornaxNodeWithRevision) error {
+func (s *NodeStore) PutNode(node *types.FornaxNodeWithRevision) error {
 	if node == nil {
 		return fmt.Errorf("nil node is passed")
 	}

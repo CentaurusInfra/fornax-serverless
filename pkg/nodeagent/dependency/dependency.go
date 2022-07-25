@@ -66,6 +66,11 @@ func InitBasicDependencies(nodeConfig config.NodeConfiguration) (*Dependencies, 
 		return nil, err
 	}
 
+	dependencies.NodeStore, err = InitNodeStore(nodeConfig.DatabaseURL)
+	if err != nil {
+		return nil, err
+	}
+
 	// networkProvider
 	dependencies.NetworkProvider = InitNetworkProvider(nodeConfig.Hostname)
 
@@ -129,6 +134,15 @@ func (n *Dependencies) Complete(node *v1.Node, nodeConfig config.NodeConfigurati
 	var err error
 	if n.PodStore == nil {
 		n.PodStore, err = InitPodStore(nodeConfig.DatabaseURL)
+		if err != nil {
+			klog.ErrorS(err, "Failed to init node agent store")
+			return err
+		}
+	}
+
+	// SqliteStore
+	if n.NodeStore == nil {
+		n.NodeStore, err = InitNodeStore(nodeConfig.DatabaseURL)
 		if err != nil {
 			klog.ErrorS(err, "Failed to init node agent store")
 			return err

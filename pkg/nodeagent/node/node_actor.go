@@ -101,7 +101,8 @@ func (n *FornaxNodeActor) Start() error {
 				MessageType: &messageType,
 				MessageBody: &fornaxgrpc.FornaxCoreMessage_NodeRegistry{
 					NodeRegistry: &fornaxgrpc.NodeRegistry{
-						Node: n.node.V1Node,
+						NodeRevision: &n.node.Revision,
+						Node:         n.node.V1Node,
 					},
 				},
 			},
@@ -119,7 +120,7 @@ func (n *FornaxNodeActor) recreatePodStateFromRuntimeSummary(runtimeSummary Cont
 		klog.InfoS("Recover pod actor for a terminated pod", "pod", fornaxtypes.UniquePodName(fpod), "state", fpod.PodState)
 		n.recoverPodActor(fpod)
 		// report back to fornax core, this pod is stopped
-		n.notify(n.fornoxCoreRef, pod.BuildFornaxcoreGrpcPodStateForTerminatedPod(fpod))
+		n.notify(n.fornoxCoreRef, pod.BuildFornaxcoreGrpcPodStateForTerminatedPod(n.node.Revision, fpod))
 	}
 
 	for _, fpod := range runtimeSummary.runningPods {
@@ -127,7 +128,7 @@ func (n *FornaxNodeActor) recreatePodStateFromRuntimeSummary(runtimeSummary Cont
 
 		n.recoverPodActor(fpod)
 		// report pod back to fornax core, and recreate pod and actors if it does not exist
-		n.notify(n.fornoxCoreRef, pod.BuildFornaxcoreGrpcPodState(fpod))
+		n.notify(n.fornoxCoreRef, pod.BuildFornaxcoreGrpcPodState(n.node.Revision, fpod))
 	}
 }
 
@@ -139,7 +140,7 @@ func (n *FornaxNodeActor) actorMessageProcess(msg message.ActorMessage) (interfa
 		// increment node revision since one pod status changed
 		n.node.Revision += 1
 		fppod := msg.Body.(internal.PodStatusChange).Pod
-		n.notify(n.fornoxCoreRef, pod.BuildFornaxcoreGrpcPodState(fppod))
+		n.notify(n.fornoxCoreRef, pod.BuildFornaxcoreGrpcPodState(n.node.Revision, fppod))
 	case internal.PodCleanup:
 		fppod := msg.Body.(internal.PodCleanup).Pod
 		klog.InfoS("Cleanup pod actor and store", "pod", fornaxtypes.UniquePodName(fppod), "state", fppod.PodState)
@@ -247,7 +248,8 @@ func (n *FornaxNodeActor) onNodeConfigurationCommand(msg *fornaxgrpc.NodeConfigu
 						MessageType: &messageType,
 						MessageBody: &fornaxgrpc.FornaxCoreMessage_NodeReady{
 							NodeReady: &fornaxgrpc.NodeReady{
-								Node: n.node.V1Node,
+								NodeRevision: &n.node.Revision,
+								Node:         n.node.V1Node,
 							},
 						},
 					},

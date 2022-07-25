@@ -42,6 +42,13 @@ func SetPodStatus(fppod *types.FornaxPod) {
 	podStatus := &fppod.Pod.Status
 	podStatus.Phase = ToV1PodPhase(fppod)
 
+	// DeletionTimestamp
+	if podStatus.Phase == v1.PodSucceeded || podStatus.Phase == v1.PodFailed && fppod.Pod.DeletionTimestamp != nil {
+		fppod.Pod.DeletionTimestamp = &metav1.Time{
+			Time: time.Now(),
+		}
+	}
+
 	// pod condition
 	if podStatus.Conditions == nil {
 		podStatus.Conditions = []v1.PodCondition{}
@@ -49,16 +56,16 @@ func SetPodStatus(fppod *types.FornaxPod) {
 	SetPodConditions(fppod)
 
 	// pod ip
-	if len(fppod.RuntimePod.IPs) > 0 {
+	if fppod.RuntimePod != nil && len(fppod.RuntimePod.IPs) > 0 {
 		podStatus.PodIP = fppod.RuntimePod.IPs[0]
+		podIps := []v1.PodIP{}
+		for _, v := range fppod.RuntimePod.IPs {
+			podIps = append(podIps, v1.PodIP{
+				IP: v,
+			})
+		}
+		podStatus.PodIPs = podIps
 	}
-	podIps := []v1.PodIP{}
-	for _, v := range fppod.RuntimePod.IPs {
-		podIps = append(podIps, v1.PodIP{
-			IP: v,
-		})
-	}
-	podStatus.PodIPs = podIps
 	if podStatus.StartTime == nil {
 		podStatus.StartTime = &metav1.Time{
 			Time: time.Now(),
@@ -166,7 +173,7 @@ func SetPodConditions(fppod *types.FornaxPod) {
 	// check container ready status
 	allContainerNormal := true
 	allContainerReady := true
-	if len(fppod.Pod.Spec.Containers)+len(fppod.Pod.Spec.InitContainers) != len(fppod.RuntimePod.Containers) {
+	if fppod.RuntimePod == nil || (len(fppod.Pod.Spec.Containers)+len(fppod.Pod.Spec.InitContainers) != len(fppod.RuntimePod.Containers)) {
 		containerReadyCondition.Status = v1.ConditionFalse
 		containerReadyCondition.Message = "missing some containers"
 		containerReadyCondition.Reason = "missing some containers"

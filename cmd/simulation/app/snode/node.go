@@ -117,21 +117,16 @@ func (n *FornaxNode) initV1Node() (*v1.Node, error) {
 		LastTransitionTime: metav1.NewTime(time.Now()),
 	})
 
-	// if n.Dependencies.NetworkProvider != nil {
-	// 	node.Status.Addresses, err = n.Dependencies.NetworkProvider.GetNetAddress()
-	// 	if err != nil {
-	// 		return nil, err
-	// 	}
-	// } else {
-	// 	node.Status.Addresses = []v1.NodeAddress{
-	// 		{Type: v1.NodeInternalIP, Address: n.NodeConfig.NodeIP},
-	// 		{Type: v1.NodeHostName, Address: hostname},
-	// 	}
-	// }
-
-	node.Status.Addresses = []v1.NodeAddress{
-		{Type: v1.NodeInternalIP, Address: n.NodeConfig.NodeIP},
-		{Type: v1.NodeHostName, Address: hostname},
+	if n.Dependencies.NetworkProvider != nil {
+		node.Status.Addresses, err = n.Dependencies.NetworkProvider.GetNetAddress()
+		if err != nil {
+			return nil, err
+		}
+	} else {
+		node.Status.Addresses = []v1.NodeAddress{
+			{Type: v1.NodeInternalIP, Address: n.NodeConfig.NodeIP},
+			{Type: v1.NodeHostName, Address: hostname},
+		}
 	}
 
 	return node, nil

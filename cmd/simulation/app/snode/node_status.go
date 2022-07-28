@@ -30,7 +30,6 @@ import (
 	//"google.golang.org/genproto/googleapis/type/decimal"
 
 	//fornaxtypes "centaurusinfra.io/fornax-serverless/pkg/nodeagent/types"
-
 	v1 "k8s.io/api/core/v1"
 	k8sresource "k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -313,11 +312,6 @@ func IsNodeStatusReady(myNode *FornaxNode) bool {
 
 	// check daemon pod status
 	daemonReady := true
-	//test purpose and set true
-	// cpuReady = true
-	// memReady = true
-	// nodeConditionReady = true
-	//end test
 
 	// for _, v := range myNode.Pods {
 	// 	if v.Daemon {

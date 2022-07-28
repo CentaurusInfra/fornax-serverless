@@ -351,7 +351,6 @@ func (n *FornaxNodeActor) onPodCreateCommand(msg *fornaxgrpc.PodCreate) error {
 			return err
 		}
 
-		//klog.Info("actor is: ", *actor)
 		klog.Info("Pod have been created, ", "Pod Identifier ID: ", fpod.Identifier)
 		time.Sleep(15 * time.Second)
 		n.notify(n.fornoxCoreRef, pod.BuildFornaxcoreGrpcPodState(fpod))

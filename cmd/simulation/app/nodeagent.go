@@ -21,11 +21,13 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"strconv"
+	"strings"
 
 	"centaurusinfra.io/fornax-serverless/cmd/simulation/app/sdependency"
 	"centaurusinfra.io/fornax-serverless/cmd/simulation/app/snode"
 	"centaurusinfra.io/fornax-serverless/pkg/nodeagent/config"
-	//"centaurusinfra.io/fornax-serverless/pkg/nodeagent/node"
+
 	fornaxtypes "centaurusinfra.io/fornax-serverless/pkg/nodeagent/types"
 	"github.com/coreos/go-systemd/v22/daemon"
 	"github.com/spf13/cobra"
@@ -46,6 +48,10 @@ func init() {
 
 const (
 	NodeAgent = "nodeagent"
+)
+
+var (
+	numofnode int64 = 1
 )
 
 // func checkPermissions() error {
@@ -85,7 +91,18 @@ func NewCommand() *cobra.Command {
 
 			cmds := flagSet.Args()
 			if len(cmds) > 0 {
-				return fmt.Errorf("unknown command %+s", cmds[0])
+				if strings.Contains(cmds[0], "num-of-node") {
+					sr := strings.Split(cmds[0], "=")
+					numofnode, err = strconv.ParseInt(sr[1], 0, 64)
+					klog.InfoS("number of node", "numofnode", numofnode)
+					if err != nil {
+						klog.Info("Can not convert value for cmds[0]: ", cmds[0])
+						return fmt.Errorf("not right input command %+s", cmds[0])
+					}
+				} else {
+					klog.Info("cmds[0]: ", cmds[0])
+					return fmt.Errorf("unknown command %+s", cmds[0])
+				}
 			}
 
 			help, err := flagSet.GetBool("help")
@@ -106,6 +123,7 @@ func NewCommand() *cobra.Command {
 	// ugly, but necessary, because Cobra's default UsageFunc and HelpFunc pollute the flagset with global flags
 	const usageFmt = "Usage:\n  %s\n\nFlags:\n%s"
 	cmd.SetUsageFunc(func(cmd *cobra.Command) error {
+
 		fmt.Fprintf(cmd.OutOrStderr(), usageFmt, cmd.UseLine(), flagSet.FlagUsagesWrapped(2))
 		return nil
 	})
@@ -119,16 +137,15 @@ func NewCommand() *cobra.Command {
 func Run(ctx context.Context, nodeConfig config.NodeConfiguration) error {
 	klog.InfoS("Golang settings", "GOGC", os.Getenv("GOGC"), "GOMAXPROCS", os.Getenv("GOMAXPROCS"), "GOTRACEBACK", os.Getenv("GOTRACEBACK"))
 
-	// if err := config.ValidateNodeConfiguration(nodeConfig); len(err) != 0 {
-	// 	return fmt.Errorf("invalidate nodeagent configuration, errors: %v, configuration: %v", err, nodeConfig)
-	// }
+	if err := config.ValidateNodeConfiguration(nodeConfig); len(err) != 0 {
+		return fmt.Errorf("invalidate nodeagent configuration, errors: %v, configuration: %v", err, nodeConfig)
+	}
 	klog.InfoS("NodeConfiguration", "configuration", nodeConfig)
 
 	logs.InitLogs()
 
-	// RunNodeAndNodeActor(ctx, nodeConfig)
-	numofnode := 2
-	for i := 0; i < numofnode; i++ {
+	//numofnode := 1
+	for i := 0; i < int(numofnode); i++ {
 		go RunNodeAndNodeActor(ctx, nodeConfig)
 		klog.Infof("%d th node and node actor created \n", i)
 	}
@@ -177,14 +194,6 @@ func RunNodeAndNodeActor(ctx context.Context, nodeConfig config.NodeConfiguratio
 		klog.Errorf("Can not start node, error %v", err)
 	}
 	klog.Info("FornaxNode started")
-
-	// //wait until shutdown signal is received
-	// select {
-	// case <-ctx.Done():
-	// 	break
-	// }
-
-	//<-ctx.Done()
 
 	return nil
 }

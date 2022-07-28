@@ -20,7 +20,6 @@ import (
 	"fmt"
 	"time"
 
-	//"centaurusinfra.io/fornax-serverless/cmd/simulation/app/sdependency"
 	fornaxgrpc "centaurusinfra.io/fornax-serverless/pkg/fornaxcore/grpc"
 	"centaurusinfra.io/fornax-serverless/pkg/message"
 
@@ -66,25 +65,6 @@ func (n *FornaxNodeActor) Stop() error {
 
 func (n *FornaxNodeActor) Start() error {
 	n.innerActor.Start()
-	// complete node dependencies
-	// for {
-	// 	klog.InfoS("Init node spec for node registry")
-	// 	err := n.node.Init()
-	// 	if err == nil {
-	// 		klog.InfoS("Load pod state from runtime service and nodeagent store")
-	// 		runtimeSummary, err := LoadPodsFromContainerRuntime(n.node.Dependencies.CRIRuntimeService, n.node.Dependencies.PodStore)
-	// 		if err != nil {
-	// 			klog.ErrorS(err, "Failed to load container from runtime, wait for next 5 second")
-	// 			time.Sleep(5 * time.Second)
-	// 		} else {
-	// 			n.recreatePodStateFromRuntimeSummary(runtimeSummary)
-	// 			break
-	// 		}
-	// 	} else {
-	// 		klog.ErrorS(err, "Failed to complete node initialization, retry in next 5 seconds")
-	// 		time.Sleep(5 * time.Second)
-	// 	}
-	// }
 
 	n.state = NodeStateRegistering
 	var count int32
@@ -270,15 +250,15 @@ func (n *FornaxNodeActor) initializeNodeDaemons(pods []*v1.Pod) error {
 			return errors.Errorf("Daemon pod must use host network")
 		}
 
-		// _, found := n.node.Pods[string(p.UID)]
-		// if !found {
-		// 	_, actor, err := n.createPodAndActor(fornaxtypes.PodStateCreating, p.UID, p.DeepCopy(), nil, true)
-		// 	if err != nil {
-		// 		return err
-		// 	} else {
-		// 		n.notify(actor.Reference(), internal.PodCreate{})
-		// 	}
-		// }
+		_, found := n.node.Pods[string(p.UID)]
+		if !found {
+			_, actor, err := n.createPodAndActor(fornaxtypes.PodStateCreating, p.UID, p.DeepCopy(), nil, true)
+			if err != nil {
+				return err
+			} else {
+				n.notify(actor.Reference(), internal.PodCreate{})
+			}
+		}
 	}
 	return nil
 }
@@ -329,7 +309,7 @@ func (n *FornaxNodeActor) createPodAndActor(state fornaxtypes.PodState, applicat
 
 	// fpActor := pod.NewPodActor(n.innerActor.Reference(), fpod, &n.node.NodeConfig, n.node.Dependencies, nil)
 	fpActor := pod.NewPodActor(n.innerActor.Reference(), fpod, &n.node.NodeConfig, nil, nil)
-	//fpActor.Start()
+
 	fpod.PodState = fornaxtypes.PodStateRunning //we need this line and change fpod to runing status
 	n.node.Pods[fpod.Identifier] = fpod
 	n.podActors[fpod.Identifier] = fpActor

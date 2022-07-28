@@ -43,59 +43,6 @@ type Dependencies struct {
 	CPUManager        resourcemanager.CPUManager
 	VolumeManager     resourcemanager.VolumeManager
 	PodStore          *factory.PodStore
-
-	// mounter := mount.New(s.ExperimentalMounterPath)
-	// subpather := subpath.New(mounter)
-	// hu := hostutil.NewHostUtil()
-	// var pluginRunner = exec.New()
-	//
-	// plugins, err := ProbeVolumePlugins(featureGate)
-	// if err != nil {
-	//  return nil, err
-	// }
-	// return &dependency.Dependencies{
-	// Auth:                nil, // default does not enforce auth[nz]
-	// CAdvisorInterface:   nil, // cadvisor.New launches background processes (bg http.ListenAndServe, and some bg cleaners), not set here
-	// Cloud:               nil, // cloud provider might start background processes
-	// ContainerManager:    nil,
-	// KubeClient:          nil,
-	// HeartbeatClient:     nil,
-	// EventClient:         nil,
-	// HostUtil:            hu,
-	// Mounter:             mounter,
-	// Subpather:           subpather,
-	// OOMAdjuster:         oom.NewOOMAdjuster(),
-	// OSInterface:         kubecontainer.RealOS{},
-	// VolumePlugins:       plugins,
-	// DynamicPluginProber: GetDynamicPluginProber(s.VolumePluginDir, pluginRunner),
-	// TLSOptions:          tlsOptions}, nil
-
-	// Options []Option
-	//
-	// // Injected Dependencies
-	// Auth                 server.AuthInterface
-	// CAdvisorInterface    cadvisor.Interface
-	// Cloud                cloudprovider.Interface
-	// ContainerManager     cm.ContainerManager
-	// EventClient          v1core.EventsGetter
-	// HeartbeatClient      clientset.Interface
-	// OnHeartbeatFailure   func()
-	// KubeClient           clientset.Interface
-	// Mounter              mount.Interface
-	// HostUtil             hostutil.HostUtils
-	// OOMAdjuster          *oom.OOMAdjuster
-	// OSInterface          kubecontainer.OSInterface
-	// PodConfig            *config.PodConfig
-	// ProbeManager         prober.Manager
-	// Recorder             record.EventRecorder
-	// Subpather            subpath.Interface
-	// VolumePlugins        []volume.VolumePlugin
-	// DynamicPluginProber  volume.DynamicPluginProber
-	// TLSOptions           *server.TLSOptions
-	// RemoteRuntimeService internalapi.RuntimeService
-	// RemoteImageService   internalapi.ImageManagerService
-	// // remove it after cadvisor.UsingLegacyCadvisorStats dropped.
-	// useLegacyCadvisorStats bool
 }
 
 func InitBasicDependencies(nodeConfig config.NodeConfiguration) (*Dependencies, error) {
@@ -119,20 +66,6 @@ func InitBasicDependencies(nodeConfig config.NodeConfiguration) (*Dependencies, 
 
 	// networkProvider
 	dependencies.NetworkProvider = InitNetworkProvider(nodeConfig.Hostname)
-
-	// // CRIRuntime
-	// dependencies.CRIRuntimeService, err = InitRuntimeService(nodeConfig.ContainerRuntimeEndpoint)
-	// if err != nil {
-	// 	klog.ErrorS(err, "failed to init container runtime client")
-	// 	return nil, err
-	// }
-
-	// // cAdvisor
-	// dependencies.CAdvisor, err = InitCAdvisor(cadvisor.DefaultCAdvisorConfig(nodeConfig), dependencies.CRIRuntimeService)
-	// if err != nil {
-	// 	klog.ErrorS(err, "failed to init cadvisor")
-	// 	return nil, err
-	// }
 
 	return &dependencies, nil
 }

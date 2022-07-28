@@ -24,10 +24,8 @@ import (
 	"strconv"
 	"time"
 
-	default_config "centaurusinfra.io/fornax-serverless/pkg/config"
-	//"centaurusinfra.io/fornax-serverless/pkg/nodeagent/dependency"
 	"centaurusinfra.io/fornax-serverless/cmd/simulation/app/sdependency"
-	//"centaurusinfra.io/fornax-serverless/pkg/nodeagent/dependency"
+	default_config "centaurusinfra.io/fornax-serverless/pkg/config"
 	"centaurusinfra.io/fornax-serverless/pkg/nodeagent/runtime"
 	"centaurusinfra.io/fornax-serverless/pkg/nodeagent/store/factory"
 
@@ -247,14 +245,14 @@ func ValidateNodeSpec(apiNode *v1.Node) []error {
 	return errors
 }
 
-// func (n *FornaxNode) Init() error {
-// 	return n.Dependencies.Complete(n.V1Node, n.NodeConfig, n.activePods)
-// }
+func (n *FornaxNode) Init() error {
+	return n.Dependencies.Complete(n.V1Node, n.NodeConfig, n.activePods)
+}
 
-// func (n *FornaxNode) activePods() []*v1.Pod {
-// 	v1Pods := []*v1.Pod{}
-// 	for _, v := range n.Pods {
-// 		v1Pods = append(v1Pods, v.PodSpec.DeepCopy())
-// 	}
-// 	return v1Pods
-// }
+func (n *FornaxNode) activePods() []*v1.Pod {
+	v1Pods := []*v1.Pod{}
+	for _, v := range n.Pods {
+		v1Pods = append(v1Pods, v.PodSpec.DeepCopy())
+	}
+	return v1Pods
+}

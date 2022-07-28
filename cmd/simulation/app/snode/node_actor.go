@@ -20,10 +20,10 @@ import (
 	"fmt"
 	"time"
 
+	//"centaurusinfra.io/fornax-serverless/cmd/simulation/app/sdependency"
 	fornaxgrpc "centaurusinfra.io/fornax-serverless/pkg/fornaxcore/grpc"
 	"centaurusinfra.io/fornax-serverless/pkg/message"
 
-	//"centaurusinfra.io/fornax-serverless/pkg/nodeagent/fornaxcore"
 	"centaurusinfra.io/fornax-serverless/pkg/nodeagent/fornaxcore"
 	internal "centaurusinfra.io/fornax-serverless/pkg/nodeagent/message"
 	"centaurusinfra.io/fornax-serverless/pkg/nodeagent/pod"
@@ -217,7 +217,7 @@ func (n *FornaxNodeActor) onNodeConfigurationCommand(msg *fornaxgrpc.NodeConfigu
 	n.state = NodeStateRegistered
 	// start go routine to report node status forever
 	go wait.Until(func() {
-		//SetNodeStatus(n.node)
+		SetNodeStatus(n.node)
 		n.notify(n.fornoxCoreRef, BuildFornaxGrpcNodeState(n.node))
 	}, 1*time.Minute, n.stopCh)
 
@@ -312,7 +312,7 @@ func buildAFornaxPod(state fornaxtypes.PodState, applicationId types.UID, v1pod 
 func (n *FornaxNodeActor) recoverPodActor(fpod *fornaxtypes.FornaxPod) (*fornaxtypes.FornaxPod, *pod.PodActor, error) {
 	klog.InfoS("Recover pod actor for a running pod", "pod", fornaxtypes.UniquePodName(fpod))
 
-	// fpActor := pod.NewPodActor(n.innerActor.Reference(), fpod, &n.node.NodeConfig, n.node.Dependencies, pod.ErrRecoverPod)
+	//fpActor := pod.NewPodActor(n.innerActor.Reference(), fpod, &n.node.NodeConfig, n.node.Dependencies, pod.ErrRecoverPod)
 	fpActor := pod.NewPodActor(n.innerActor.Reference(), fpod, &n.node.NodeConfig, nil, pod.ErrRecoverPod)
 	fpActor.Start()
 	//n.node.Pods[fpod.Identifier] = fpod
@@ -329,9 +329,11 @@ func (n *FornaxNodeActor) createPodAndActor(state fornaxtypes.PodState, applicat
 
 	// fpActor := pod.NewPodActor(n.innerActor.Reference(), fpod, &n.node.NodeConfig, n.node.Dependencies, nil)
 	fpActor := pod.NewPodActor(n.innerActor.Reference(), fpod, &n.node.NodeConfig, nil, nil)
-	fpActor.Start()
-	//n.node.Pods[fpod.Identifier] = fpod
+	//fpActor.Start()
+	fpod.PodState = fornaxtypes.PodStateRunning //we need this line and change fpod to runing status
+	n.node.Pods[fpod.Identifier] = fpod
 	n.podActors[fpod.Identifier] = fpActor
+	//fpActor.Start()
 	return fpod, fpActor, nil
 }
 
@@ -341,31 +343,45 @@ func (n *FornaxNodeActor) onPodCreateCommand(msg *fornaxgrpc.PodCreate) error {
 	if n.state != NodeStateReady {
 		return fmt.Errorf("Node is not in ready state to create a new pod")
 	}
-	// _, found := n.node.Pods[*msg.PodIdentifier]
-	// if !found {
-	// 	pod, actor, err := n.createPodAndActor(fornaxtypes.PodStateCreating, types.UID(*msg.AppIdentifier), msg.GetPod().DeepCopy(), msg.GetConfigMap().DeepCopy(), false)
-	// 	if err != nil {
-	// 		return err
-	// 	}
-	// 	n.notify(actor.Reference(), internal.PodCreate{Pod: pod})
-	// } else {
-	// 	// not supposed to receive create command for a existing pod, ignore it and send back pod status
-	// 	return fmt.Errorf("Pod: %s already exist", *msg.PodIdentifier)
-	// }
+	klog.Info("We are in onPodCreateCommand method ")
+	_, found := n.node.Pods[*msg.PodIdentifier]
+	if !found {
+		fpod, _, err := n.createPodAndActor(fornaxtypes.PodStateCreating, types.UID(*msg.AppIdentifier), msg.GetPod().DeepCopy(), msg.GetConfigMap().DeepCopy(), false)
+		if err != nil {
+			return err
+		}
+
+		//klog.Info("actor is: ", *actor)
+		klog.Info("Pod have been created, ", "Pod Identifier ID: ", fpod.Identifier)
+		time.Sleep(15 * time.Second)
+		n.notify(n.fornoxCoreRef, pod.BuildFornaxcoreGrpcPodState(fpod))
+
+	} else {
+		// not supposed to receive create command for a existing pod, ignore it and send back pod status
+		return fmt.Errorf("Pod: %s already exist", *msg.PodIdentifier)
+	}
 	return nil
 }
 
 // find pod actor and send a message to it
 // if pod actor does not exist, create one
 func (n *FornaxNodeActor) onPodTerminateCommand(msg *fornaxgrpc.PodTerminate) error {
-	podActor, found := n.podActors[*msg.PodIdentifier]
+	_, found := n.podActors[*msg.PodIdentifier]
 	if !found {
 		return fmt.Errorf("Pod: %s does not exist, probably fornax core is not in sync", *msg.PodIdentifier)
 	} else {
-		n.notify(podActor.Reference(), internal.PodTerminate{})
+		klog.Info("We are in onPodTerminatCommand method.")
+		fpod := n.node.Pods[*msg.PodIdentifier]
+		fpod.PodState = fornaxtypes.PodStateTerminated
+		//n.notify(podActor.Reference(), internal.PodTerminate{})
+		klog.Info("Pod will be   terminated and Pod ID: ", fpod.Identifier)
+		time.Sleep(10 * time.Second)
+		n.notify(n.fornoxCoreRef, pod.BuildFornaxcoreGrpcPodState(fpod))
+		delete(n.node.Pods, *msg.PodIdentifier)
+		klog.Info("Pod have been terminated and Pod ID: ", fpod.Identifier)
+		time.Sleep(15 * time.Second)
 	}
 	return nil
-
 }
 
 // find pod actor and send a message to it
@@ -381,7 +397,6 @@ func (n *FornaxNodeActor) onPodActiveCommand(msg *fornaxgrpc.PodActive) error {
 		n.notify(podActor.Reference(), internal.PodActive{})
 	}
 	return nil
-
 }
 
 // find pod actor to let it start a session, if pod actor does not exist, return failure
@@ -429,7 +444,7 @@ func NewNodeActor(node *FornaxNode) (*FornaxNodeActor, error) {
 		node:       node,
 		state:      NodeStateInitializing,
 		innerActor: nil,
-		//podActors:  map[string]*pod.PodActor{},
+		podActors:  map[string]*pod.PodActor{},
 	}
 	actor.innerActor = message.NewLocalChannelActor(node.V1Node.GetName(), actor.MessageProcessor)
 

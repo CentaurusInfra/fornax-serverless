@@ -262,9 +262,9 @@ func UpdateAllocatableResourceQuantity(resourceName v1.ResourceName, node *v1.No
 	var size int64
 
 	if resourceName == "cpu" {
-		size = 500 // 1core = 1000m if you put 1000m, it mean it reserve 1000m = 1 core.
+		size = 8000 // 1core = 1000m if you put 1000m, it mean it reserve 1000m = 1 core.
 	} else if resourceName == "memory" {
-		size = 4 * 1024 * 1024 * 1024 // 1G = 1024 * 1024 * 1024. if you put 1G, it mean preserve 1G memory
+		size = 64 * 1024 * 1024 * 1024 // 1G = 1024 * 1024 * 1024. if you put 1G, it mean preserve 1G memory
 	} else if resourceName == "storage" {
 		size = 99
 	} else {

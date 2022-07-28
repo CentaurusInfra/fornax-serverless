@@ -26,18 +26,15 @@ import (
 
 	default_config "centaurusinfra.io/fornax-serverless/pkg/config"
 	//"centaurusinfra.io/fornax-serverless/pkg/nodeagent/dependency"
-	//"centaurusinfra.io/fornax-serverless/pkg/nodeagent/dependency"
 	"centaurusinfra.io/fornax-serverless/cmd/simulation/app/sdependency"
 	"centaurusinfra.io/fornax-serverless/pkg/nodeagent/runtime"
 	"centaurusinfra.io/fornax-serverless/pkg/nodeagent/store/factory"
 
 	//"centaurusinfra.io/fornax-serverless/pkg/nodeagent/resource"
-
 	"centaurusinfra.io/fornax-serverless/pkg/nodeagent/config"
 	fornaxtypes "centaurusinfra.io/fornax-serverless/pkg/nodeagent/types"
 	v1 "k8s.io/api/core/v1"
 
-	//"k8s.io/apimachinery/pkg/api/resource"
 	"k8s.io/apimachinery/pkg/api/resource"
 	k8sresource "k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -50,9 +47,9 @@ import (
 var nodenumber int32
 
 type FornaxNode struct {
-	NodeConfig config.NodeConfiguration
-	V1Node     *v1.Node
-	//Pods       map[string]*fornaxtypes.FornaxPod
+	NodeConfig   config.NodeConfiguration
+	V1Node       *v1.Node
+	Pods         map[string]*fornaxtypes.FornaxPod
 	Dependencies *sdependency.Dependencies
 }
 

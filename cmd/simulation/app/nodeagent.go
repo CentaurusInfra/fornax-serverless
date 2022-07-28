@@ -26,8 +26,7 @@ import (
 	"centaurusinfra.io/fornax-serverless/cmd/simulation/app/snode"
 	"centaurusinfra.io/fornax-serverless/pkg/nodeagent/config"
 	//"centaurusinfra.io/fornax-serverless/pkg/nodeagent/node"
-	//"centaurusinfra.io/fornax-serverless/cmd/silmulation/app/snode"
-	//fornaxtypes "centaurusinfra.io/fornax-serverless/pkg/nodeagent/types"
+	fornaxtypes "centaurusinfra.io/fornax-serverless/pkg/nodeagent/types"
 	"github.com/coreos/go-systemd/v22/daemon"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
@@ -128,7 +127,7 @@ func Run(ctx context.Context, nodeConfig config.NodeConfiguration) error {
 	logs.InitLogs()
 
 	// RunNodeAndNodeActor(ctx, nodeConfig)
-	numofnode := 10
+	numofnode := 2
 	for i := 0; i < numofnode; i++ {
 		go RunNodeAndNodeActor(ctx, nodeConfig)
 		klog.Infof("%d th node and node actor created \n", i)
@@ -162,9 +161,9 @@ func RunNodeAndNodeActor(ctx context.Context, nodeConfig config.NodeConfiguratio
 	}
 
 	fornaxNode := snode.FornaxNode{
-		NodeConfig: nodeConfig,
-		V1Node:     nil,
-		//Pods:       map[string]*fornaxtypes.FornaxPod{},
+		NodeConfig:   nodeConfig,
+		V1Node:       nil,
+		Pods:         map[string]*fornaxtypes.FornaxPod{},
 		Dependencies: dependencies,
 	}
 	nodeActor, err := snode.NewNodeActor(&fornaxNode)

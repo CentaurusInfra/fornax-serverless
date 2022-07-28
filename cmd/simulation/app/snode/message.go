@@ -18,16 +18,16 @@ package snode
 
 import (
 	"centaurusinfra.io/fornax-serverless/pkg/fornaxcore/grpc"
-	//"centaurusinfra.io/fornax-serverless/pkg/nodeagent/pod"
+	"centaurusinfra.io/fornax-serverless/pkg/nodeagent/pod"
 )
 
 func BuildFornaxGrpcNodeState(node *FornaxNode) *grpc.FornaxCoreMessage {
 	podStates := []*grpc.PodState{}
 	// sessionStates := []*grpc.SessionState{}
-	// for _, v := range node.Pods {
-	// 	s := pod.BuildFornaxcoreGrpcPodState(v)
-	// 	podStates = append(podStates, s.GetPodState())
-	// }
+	for _, v := range node.Pods {
+		s := pod.BuildFornaxcoreGrpcPodState(v)
+		podStates = append(podStates, s.GetPodState())
+	}
 	ns := grpc.NodeState{
 		NodeIp:    &node.NodeConfig.NodeIP,
 		Node:      node.V1Node,

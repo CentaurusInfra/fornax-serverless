@@ -64,17 +64,17 @@ func (pq *priorityQueue) Swap(i, j int) {
 	pq.queue[j].index = j
 }
 
-func (pq *priorityQueue) Push(pod any) {
+func (pq *priorityQueue) Push(obj interface{}) {
 	n := len(pq.queue)
 	item := &QueueItem{
-		elem:  pod,
+		elem:  obj,
 		index: n,
 	}
 	pq.queue = append(pq.queue, item)
-	pq.indexes[pq.keyFunc(pod)] = item
+	pq.indexes[pq.keyFunc(obj)] = item
 }
 
-func (pq *priorityQueue) Peak() any {
+func (pq *priorityQueue) Peak() interface{} {
 	n := len(pq.queue)
 	if n > 0 {
 		return pq.queue[n-1].elem
@@ -83,7 +83,7 @@ func (pq *priorityQueue) Peak() any {
 	}
 }
 
-func (pq *priorityQueue) Pop() any {
+func (pq *priorityQueue) Pop() interface{} {
 	old := pq.queue
 	n := len(old)
 	item := old[n-1]

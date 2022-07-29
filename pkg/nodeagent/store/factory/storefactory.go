@@ -37,7 +37,7 @@ type SessionStore struct {
 }
 
 func NewNodeSqliteStore(options *sqlite.SQLiteStoreOptions) (*NodeStore, error) {
-	if store, err := sqlite.NewSqliteStore("Pod", options,
+	if store, err := sqlite.NewSqliteStore("Node", options,
 		func(text string) (interface{}, error) { return store.JsonToNode(text) },
 		func(obj interface{}) (string, error) { return store.JsonFromNode(obj.(*types.FornaxNodeWithRevision)) }); err != nil {
 		return nil, err

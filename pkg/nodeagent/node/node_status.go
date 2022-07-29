@@ -56,7 +56,7 @@ func SetNodeStatus(node *FornaxNode) error {
 		errs = append(errs, errors.New("can not find cadvisor"))
 	}
 
-	condition, err = UpdateNodeRuntimeStatus(node.Dependencies.CRIRuntimeService, node.V1Node)
+	condition, err = UpdateNodeReadyStatus(node.Dependencies.CRIRuntimeService, node.V1Node)
 	if err != nil {
 		errs = append(errs, errors.New("cand not find cri runtime"))
 	}
@@ -136,7 +136,7 @@ func UpdateNodeAddress(networkProvider network.NetworkAddressProvider, node *v1.
 	return condition, nil
 }
 
-func UpdateNodeRuntimeStatus(criRuntime runtime.RuntimeService, node *v1.Node) (*v1.NodeCondition, error) {
+func UpdateNodeReadyStatus(criRuntime runtime.RuntimeService, node *v1.Node) (*v1.NodeCondition, error) {
 	status, err := criRuntime.GetRuntimeStatus()
 	if err != nil {
 		return nil, err
@@ -289,18 +289,13 @@ func IsNodeStatusReady(myNode *FornaxNode) bool {
 	}
 
 	// check node condition
-	nodeConditionReady := false
-	for _, v := range myNode.V1Node.Status.Conditions {
-		if v.Status == v1.ConditionTrue && v.Type == v1.NodeReady {
-			nodeConditionReady = true
-		}
-	}
+	nodeConditionReady := util.IsNodeCondtionReady(myNode.V1Node)
 
 	// check daemon pod status
 	daemonReady := true
 	for _, v := range myNode.Pods {
 		if v.Daemon {
-			daemonReady = daemonReady && v.PodState == fornaxtypes.PodStateRunning
+			daemonReady = daemonReady && v.FornaxPodState == fornaxtypes.PodStateRunning
 		}
 	}
 

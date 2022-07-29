@@ -76,7 +76,7 @@ type FornaxNodeWithRevision struct {
 type FornaxPod struct {
 	Identifier              string                `json:"identifier,omitempty"`
 	ApplicationId           types.UID             `json:"applicationId,omitempty"`
-	PodState                PodState              `json:"podState,omitempty"`
+	FornaxPodState          PodState              `json:"podState,omitempty"`
 	Daemon                  bool                  `json:"daemon,omitempty"`
 	Pod                     *v1.Pod               `json:"pod,omitempty"`
 	ConfigMap               *v1.ConfigMap         `json:"configMap,omitempty"`

@@ -42,9 +42,9 @@ func NewATestSession(id string) *fornaxtypes.Session {
 
 func NewATestPod(id string) *fornaxtypes.FornaxPod {
 	testPod := fornaxtypes.FornaxPod{
-		Identifier:    id,
-		ApplicationId: "applicationId",
-		PodState:      "PodStateCreated",
+		Identifier:     id,
+		ApplicationId:  "applicationId",
+		FornaxPodState: "PodStateCreated",
 		Pod: &v1.Pod{
 			TypeMeta: metav1.TypeMeta{
 				Kind:       "Pod",
@@ -143,7 +143,7 @@ func TestPodStore_PutPod(t *testing.T) {
 	defer os.Remove("./test.db")
 	testPod := NewATestPod("testPod1")
 	testPod2 := NewATestPod("testPod1")
-	testPod2.PodState = "PodStateTerminated"
+	testPod2.FornaxPodState = "PodStateTerminated"
 	tests := []struct {
 		name    string
 		args    *fornaxtypes.FornaxPod

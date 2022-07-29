@@ -20,6 +20,7 @@ import (
 	"context"
 	"errors"
 	"io"
+	"sync"
 	"time"
 
 	fornax "centaurusinfra.io/fornax-serverless/pkg/fornaxcore/grpc"
@@ -60,6 +61,7 @@ type FornaxCoreClient interface {
 }
 
 type fornaxCoreClient struct {
+	mu               sync.Mutex
 	identifier       *fornax.NodeIdentifier
 	done             bool
 	config           *FornaxCoreConfiguration
@@ -77,6 +79,8 @@ func (f *fornaxCoreClient) GetMessage(receiver string, channel chan *fornax.Forn
 
 // PutMessage implements FornaxCore
 func (f *fornaxCoreClient) PutMessage(message *fornax.FornaxCoreMessage) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
 	klog.InfoS("Send a message to FornaxCore", "endpoint", f.config.endpoint, "msgType", message.GetMessageType())
 	if f.service == nil {
 		return errors.New("FornaxCore connection is not initialized yet")
@@ -181,21 +185,21 @@ func (f *fornaxCoreClient) recvMessage() {
 		}
 
 		klog.InfoS("Received a message from FornaxCore", "fornax", f.config.endpoint, "msgType", msg.GetMessageType())
-		panicReceivers := make(map[string]bool)
+		panicReceivers := []string{}
 		for n, v := range f.receivers {
 			func() {
 				defer func() {
 					if err := recover(); err != nil {
 						klog.Errorf("Send message panic occurred: %v", err)
 						// remember it and remove closed channel after loop
-						panicReceivers[n] = true
+						panicReceivers = append(panicReceivers, n)
 					}
 				}()
 				v <- msg
 			}()
 		}
 
-		for n := range panicReceivers {
+		for _, n := range panicReceivers {
 			delete(f.receivers, n)
 		}
 	}
@@ -216,13 +220,14 @@ var _ FornaxCoreClient = &fornaxCoreClient{}
 
 func NewFornaxCoreClient(identifier *fornax.NodeIdentifier, config *FornaxCoreConfiguration) *fornaxCoreClient {
 	f := &fornaxCoreClient{
+		mu:               sync.Mutex{},
 		identifier:       identifier,
-		config:           config,
 		done:             false,
-		receivers:        map[string]chan *fornax.FornaxCoreMessage{},
+		config:           config,
 		conn:             nil,
 		service:          nil,
 		getMessageClient: nil,
+		receivers:        map[string]chan *fornax.FornaxCoreMessage{},
 	}
 	return f
 }

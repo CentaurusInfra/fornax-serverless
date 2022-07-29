@@ -24,14 +24,14 @@ import (
 	"time"
 
 	default_config "centaurusinfra.io/fornax-serverless/pkg/config"
+	"centaurusinfra.io/fornax-serverless/pkg/nodeagent/config"
 	"centaurusinfra.io/fornax-serverless/pkg/nodeagent/dependency"
 	"centaurusinfra.io/fornax-serverless/pkg/nodeagent/runtime"
 	"centaurusinfra.io/fornax-serverless/pkg/nodeagent/store"
 	"centaurusinfra.io/fornax-serverless/pkg/nodeagent/store/factory"
+	fornaxtypes "centaurusinfra.io/fornax-serverless/pkg/nodeagent/types"
 	"centaurusinfra.io/fornax-serverless/pkg/util"
 
-	"centaurusinfra.io/fornax-serverless/pkg/nodeagent/config"
-	fornaxtypes "centaurusinfra.io/fornax-serverless/pkg/nodeagent/types"
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -66,8 +66,10 @@ func (n *FornaxNode) initV1Node() (*v1.Node, error) {
 			UID:             uuid.NewUUID(),
 			ResourceVersion: "1",
 			Generation:      0,
-			// CreationTimestamp:          metav1.Time{},
-			// DeletionTimestamp:          &metav1.Time{},
+			CreationTimestamp: metav1.Time{
+				Time: time.Now(),
+			},
+			DeletionTimestamp:          nil,
 			DeletionGracePeriodSeconds: new(int64),
 			Labels:                     map[string]string{v1.LabelHostname: hostname, v1.LabelOSStable: goruntime.GOOS, v1.LabelArchStable: goruntime.GOARCH},
 			Annotations:                map[string]string{},
@@ -159,14 +161,14 @@ func LoadPodsFromContainerRuntime(runtimeService runtime.RuntimeService, db *fac
 							v.ContainerStatus.RuntimeStatus = runtimeStatus
 						} else {
 							// this container does not have runtime status, so, mark it as already terminated
-							podObj.PodState = fornaxtypes.PodStateFailed
+							podObj.FornaxPodState = fornaxtypes.PodStateFailed
 							v.State = fornaxtypes.ContainerStateTerminated
 						}
 					}
 					world.runningPods = append(world.runningPods, podObj)
 				} else {
 					// store pod does not exist in container runtime, mark all containers as terminated
-					podObj.PodState = fornaxtypes.PodStateTerminated
+					podObj.FornaxPodState = fornaxtypes.PodStateTerminated
 					for _, v := range podObj.Containers {
 						v.State = fornaxtypes.ContainerStateTerminated
 					}
@@ -265,8 +267,11 @@ func NewFornaxNode(nodeConfig config.NodeConfiguration, dependencies *dependency
 			// TODO, check if spec changed, fornax core could send a completed spec back to node agent after it's registered
 			fornaxNode.Revision = 0
 		} else {
-			// increment node revision, although node agent restart does not mean node state changed, it ensure fornax core will update its node state
-			fornaxNode.Revision = nodeWithRevision.Revision + 1
+			fornaxNode.V1Node.UID = nodeWithRevision.Node.UID
+			fornaxNode.V1Node.Generation = nodeWithRevision.Node.Generation
+			fornaxNode.V1Node.ResourceVersion = nodeWithRevision.Node.ResourceVersion
+			fornaxNode.V1Node.CreationTimestamp = nodeWithRevision.Node.CreationTimestamp
+			fornaxNode.Revision = nodeWithRevision.Revision
 		}
 	}
 

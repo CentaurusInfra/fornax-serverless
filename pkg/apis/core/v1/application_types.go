@@ -108,6 +108,12 @@ type SessionConfig struct {
 
 	// how many sessions can a application instance hold
 	NumOfSessionOfInstance int `json:"numOfSessionOfInstance,omitempty"`
+
+	ScalingPolicyType ScalingPolicyType `json:"scalingPolicyType,omitempty"`
+
+	IdleSessionNumThreshold uint16 `json:"idleSessionNumThreshold,omitempty"`
+
+	IdleSessionPercentThreshold uint16 `json:"idleSessionPercentThreshold,omitempty"`
 }
 
 type DeploymentAction string
@@ -115,24 +121,24 @@ type DeploymentAction string
 // These are valid conditions of a deployment.
 const (
 	// create instance
-	CreateInstance DeploymentAction = "CreateInstance"
+	DeploymentActionCreateInstance DeploymentAction = "CreateInstance"
 
 	// delete instance
-	DeleteInstance DeploymentAction = "DeleteInstance"
+	DeploymentActionDeleteInstance DeploymentAction = "DeleteInstance"
 )
 
 type DeploymentStatus string
 
 // These are valid conditions of a deployment.
 const (
-	// Success means the deployment finished, ie. at least the minimum available
-	// replicas required are up and running
-	Success DeploymentStatus = "Success"
-	// Progressing means the deployment is progressing. Progress for a deployment is
-	// considered when when new instances scale up or old instances scale down.
-	Progressing DeploymentStatus = "Progressing"
-	// Failure is added in a deployment when one of its instances fails to be created or deleted.
-	Failure DeploymentStatus = "Failure"
+	// Success means the deployment finished, desired num of pods are scheduled
+	DeploymentStatusSuccess DeploymentStatus = "Success"
+
+	// part of desired num of pods scheduled, have not reach target
+	DeploymentStatusPartialSuccess DeploymentStatus = "PartialSuccess"
+
+	// Failure is scaling failed
+	DeploymentStatusFailure DeploymentStatus = "Failure"
 )
 
 type DeploymentHistory struct {
@@ -147,24 +153,28 @@ type DeploymentHistory struct {
 
 	// A human readable message indicating details about the transition.
 	Message string `json:"message,omitempty"`
-
-	// which instance this history is about
-	InstanceReference corev1.LocalObjectReference `json:"instanceReference,omitempty"`
 }
 
 // ApplicationStatus defines the observed state of Application
 type ApplicationStatus struct {
 	// lifecycle state of application
 	// +optional
-	State ApplicationState `json:"applicationState,omitempty"`
+	State ApplicationState `json:"state,omitempty"`
 
-	// Total number of non-terminated pods targeted by this deployment (their labels match the selector).
-	// +optional
+	// Total number of non-terminated pods targeted
 	DesiredInstances int32 `json:"desiredInstances,omitempty"`
 
-	// Total number of available instances (ready for at least minReadySeconds) targeted by this deployment.
+	// Total number of available instances, including pod not scheduled yet
 	// +optional
 	AvailableInstances int32 `json:"availableInstances,omitempty"`
+
+	// Total number of instances which have been started by node
+	// +optional
+	ReadyInstances int32 `json:"readyInstances,omitempty"`
+
+	// Total number of pods which do not have session on it
+	// +optional
+	IdleInstances int32 `json:"idleInstances,omitempty"`
 
 	// DeploymentStatus of Last History
 	// +optional
@@ -187,16 +197,18 @@ const (
 	AppTerminating ApplicationState = "terminating"
 )
 
-type ScalingPolicy struct {
-	Metric ScalingMetric `json:"metric,omitempty"`
-	Target int32         `json:"target,omitempty"`
-}
-
-type ScalingMetric string
+type ScalingPolicyType string
 
 const (
-	PERCENT_AVAILABLE_APP_SESSIONS ScalingMetric = "percentAvailableAppSessions"
+	ScalingPolicyTypeIdleSessionPercent ScalingPolicyType = "idle_session_percent"
+	ScalingPolicyTypeIdleSessionNum     ScalingPolicyType = "idle_session_number"
 )
+
+type ScalingPolicy struct {
+	MinimumTarget uint32 `json:"minimumTarget,omitempty"`
+	MaximumTarget uint32 `json:"maximumTarget,omitempty"`
+	Burst         uint16 `json:"burst,omitempty"`
+}
 
 var _ resource.Object = &Application{}
 var _ resourcestrategy.Validater = &Application{}

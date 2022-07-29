@@ -1,0 +1,24 @@
+apiVersion: core.fornax-serverless.centaurusinfra.io/v1
+kind: Application
+metadata:
+  name: nginx
+  labels:
+    name: nginx
+spec:
+  sessionConfig:
+    numOfSessionOfInstance: 1
+    minSessions: 1
+    maxSessions: 10
+    maxSurge: 1
+    minOfIdleSessions: 0
+  scalingPolicy:
+    minimumTarget: 0
+    maximumTarget: 3
+    burst: 1
+  container:
+    image: nginx:latest
+    name: nginx
+  workingMode: Standlone
+  configData:
+    config1: data1
+    config2: data2

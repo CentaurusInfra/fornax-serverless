@@ -108,21 +108,19 @@ func (n *FornaxCoreActor) Stop() error {
 // when fornaxcore actor received another actor's message, it meant to send to fornaxcore a grpc message
 // do not return error as it works as proxy, node/pod/session actors are supposed to resend new state
 func (n *FornaxCoreActor) actorMessageProcess(msg message.ActorMessage) (interface{}, error) {
-	go func() {
-		for _, v := range n.fornaxcores {
-			msgBody := msg.Body.(*fornax.FornaxCoreMessage)
-			messageSeq := fmt.Sprintf("%d", n.messageSeq)
-			msgBody.MessageIdentifier = &messageSeq
-			n.messageSeq += 1
-			msgBody.NodeIdentifier = &fornax.NodeIdentifier{
-				Ip:         &n.nodeIP,
-				Identifier: &n.identifier,
-			}
-			if err := v.PutMessage(msgBody); err != nil {
-				klog.ErrorS(err, "failed to send message to fornax core")
-			}
+	n.messageSeq += 1
+	messageSeq := fmt.Sprintf("%d", n.messageSeq)
+	for _, v := range n.fornaxcores {
+		msgBody := msg.Body.(*fornax.FornaxCoreMessage)
+		msgBody.MessageIdentifier = &messageSeq
+		msgBody.NodeIdentifier = &fornax.NodeIdentifier{
+			Ip:         &n.nodeIP,
+			Identifier: &n.identifier,
 		}
-	}()
+		if err := v.PutMessage(msgBody); err != nil {
+			klog.ErrorS(err, "failed to send message to fornax core")
+		}
+	}
 	return nil, nil
 }
 

@@ -97,6 +97,8 @@ message NodeConfiguration {
 message NodeReady {
   required int64 nodeRevision = 1;
   required k8s.io.api.core.v1.Node node = 2;
+  repeated PodState podStates = 3;
+  repeated SessionState sessionStates = 4;
 }
 
 /* node report back full state to fornax core*/
@@ -133,24 +135,21 @@ message PodResource {
 
 message PodCreate {
   required string podIdentifier = 1;
-  required string appIdentifier = 2;
   enum CreateMode {
     Active = 0;
     Standby = 10;
   }
-  required CreateMode mode = 3;
-  required k8s.io.api.core.v1.Pod pod = 4;
-  optional k8s.io.api.core.v1.ConfigMap configMap = 5;
+  required CreateMode mode = 2;
+  required k8s.io.api.core.v1.Pod pod = 3;
+  optional k8s.io.api.core.v1.ConfigMap configMap = 4;
 }
 
 message  PodTerminate {
   required string podIdentifier = 1;
-  required string appIdentifier = 2;
 }
 
 message  PodActive {
   required string podIdentifier = 1;
-  required string appIdentifier = 2;
 }
 
 message SessionState {

@@ -1,4 +1,5 @@
 /*
+
 Copyright 2022.
 
 Licensed under the Apache License, Version 2.0 (the "License");
@@ -22,10 +23,6 @@ import (
 	"centaurusinfra.io/fornax-serverless/pkg/fornaxcore/grpc"
 	"k8s.io/klog/v2"
 )
-
-type MessageDispatcher interface {
-	DispatchMessage(node string, message *grpc.FornaxCoreMessage) error
-}
 
 func (g *grpcServer) getNodeChan(node string) (chan<- *grpc.FornaxCoreMessage, error) {
 	g.RLock()

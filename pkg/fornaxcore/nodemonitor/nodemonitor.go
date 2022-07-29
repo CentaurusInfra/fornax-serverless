@@ -18,68 +18,51 @@ package nodemonitor
 
 import (
 	"context"
-	"math"
-	"sync"
-	"time"
 
 	default_config "centaurusinfra.io/fornax-serverless/pkg/config"
 	"centaurusinfra.io/fornax-serverless/pkg/fornaxcore/grpc"
+	"centaurusinfra.io/fornax-serverless/pkg/fornaxcore/grpc/nodeagent"
 	"centaurusinfra.io/fornax-serverless/pkg/fornaxcore/grpc/server"
-	podutil "centaurusinfra.io/fornax-serverless/pkg/fornaxcore/pod"
+	"centaurusinfra.io/fornax-serverless/pkg/fornaxcore/node"
+	"centaurusinfra.io/fornax-serverless/pkg/util"
+	podutil "centaurusinfra.io/fornax-serverless/pkg/util"
+	k8spodutil "k8s.io/kubernetes/pkg/api/v1/pod"
+
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/klog/v2"
 )
 
-// todo: determine more proper timeout
-const StaleNodeTimeout = 10 * time.Second
-
 var _ server.NodeMonitor = &nodeMonitor{}
 
 type nodeMonitor struct {
-	sync.RWMutex
-	nodes map[string]*v1.Node
-
-	// buckets based on refresh-ness; the last one contains the most recently refreshed nodes
-	bucketHead  *bucket
-	bucketTail  *bucket
-	nodeLocator map[string]*bucket
-
-	// the nodes just been updated in the latest ticker period
-	// node should be added in on receipt of node status report
-	refreshedNodes map[string]interface{}
-
-	ticker      *time.Ticker
-	checkPeriod time.Duration
-	countFresh  int
 	chQuit      chan interface{}
+	nodeManager node.NodeManager
 }
 
-// OnReady implements server.NodeMonitor
-func (*nodeMonitor) OnReady(msgDispatcher server.MessageDispatcher, ctx context.Context, message *grpc.FornaxCoreMessage) error {
-	// update node, scheduler begin to schedule pod in ready node
+// OnRegistry setup a new node, send a a node configruation back to node for initialization,
+// node will send back node ready message after node configruation finished
+func (nm *nodeMonitor) OnRegistry(ctx context.Context, message *grpc.FornaxCoreMessage) (*grpc.FornaxCoreMessage, error) {
+	v1node := message.GetNodeRegistry().GetNode().DeepCopy()
+	revision := message.GetNodeRegistry().GetNodeRevision()
+	klog.InfoS("A node is registering", "node", util.UniqueNodeName(v1node), "revision", message.GetNodeRegistry().NodeRevision)
 
-	// for test, send node a test pod
-	msg := podutil.BuildATestPodCreate("test_app")
-	klog.InfoS("Send node a pod", "pod", msg)
-	msgDispatcher.DispatchMessage(*message.NodeIdentifier.Identifier, msg)
-	return nil
-}
+	fornaxnode, err := nm.nodeManager.SetupNode(v1node, revision)
+	if err != nil {
+		klog.ErrorS(err, "Failed to setup node", "node", v1node)
+		return nil, err
+	}
 
-// OnRegistry implements server.NodeMonitor
-func (*nodeMonitor) OnRegistry(msgDispatcher server.MessageDispatcher, ctx context.Context, message *grpc.FornaxCoreMessage) error {
-	registry := message.GetNodeRegistry()
-
-	daemonPod := podutil.BuildATestDaemonPod()
-
+	daemons := []*v1.Pod{}
+	for _, v := range fornaxnode.DaemonPods {
+		daemons = append(daemons, v.DeepCopy())
+	}
 	// update node, send node configuration
 	domain := default_config.DefaultDomainName
-	node := registry.Node.DeepCopy()
-	node.Spec.PodCIDR = "192.168.68.1/24"
 	nodeConig := grpc.FornaxCoreMessage_NodeConfiguration{
 		NodeConfiguration: &grpc.NodeConfiguration{
 			ClusterDomain: &domain,
-			Node:          node,
-			DaemonPods:    []*v1.Pod{daemonPod.DeepCopy()},
+			Node:          fornaxnode.Node.DeepCopy(),
+			DaemonPods:    daemons,
 		},
 	}
 	messageType := grpc.MessageType_NODE_CONFIGURATION
@@ -88,128 +71,101 @@ func (*nodeMonitor) OnRegistry(msgDispatcher server.MessageDispatcher, ctx conte
 		MessageBody: &nodeConig,
 	}
 
-	klog.InfoS("Initialize node", "node configuration", m)
-	msgDispatcher.DispatchMessage(*message.NodeIdentifier.Identifier, m)
-	return nil
+	klog.InfoS("Setup node", "node", util.UniqueNodeName(fornaxnode.Node), "configuration", m)
+	return m, nil
 }
 
-// OnUpdate implements server.NodeMonitor
-func (*nodeMonitor) OnUpdate(msgDispatcher server.MessageDispatcher, ctx context.Context, state *grpc.FornaxCoreMessage) error {
-	// update node resource info
-	return nil
-}
+// OnNodeReady update node state, make node ready for schedule pod
+func (nm *nodeMonitor) OnNodeReady(ctx context.Context, message *grpc.FornaxCoreMessage) (*grpc.FornaxCoreMessage, error) {
+	klog.InfoS("A node is ready",
+		"node", util.UniqueNodeName(message.GetNodeReady().Node),
+		"revision", message.GetNodeReady().NodeRevision,
+		"pods", len(message.GetNodeReady().PodStates))
 
-type bucket struct {
-	prev, next *bucket
-	elements   map[string]interface{}
-}
-
-func (n *nodeMonitor) StartDetectStaleNode() {
-	go func() {
-		for {
-			select {
-			case <-n.chQuit:
-				// todo: log termination
-				return
-			case <-n.ticker.C:
-				n.appendRefreshBucket()
-				// todo: process the stale nodes properly
-				_ = n.getStaleNodes()
-			}
+	_, err := nm.updateOrCreateNode(
+		message.GetNodeReady().GetNode(),
+		message.GetNodeReady().GetNodeRevision(),
+		message.GetNodeReady().GetPodStates())
+	if err != nil {
+		klog.ErrorS(err, "Failed to sync a node", "node", util.UniqueNodeName(message.GetNodeReady().Node))
+		if err == nodeagent.NodeRevisionOutOfOrderError {
+			return server.NewFullSyncRequest(), nil
 		}
-	}()
+		return nil, err
+	}
+	return nil, nil
 }
 
-func (n *nodeMonitor) StopDetectStaleNode() {
-	close(n.chQuit)
-}
-
-func (n *nodeMonitor) replenishUpdatedNodes() map[string]interface{} {
-	n.Lock()
-	defer n.Unlock()
-
-	oldCopy := n.refreshedNodes
-	n.refreshedNodes = make(map[string]interface{})
-	return oldCopy
-}
-
-func (n *nodeMonitor) appendRefreshBucket() {
-	updatedNodes := n.replenishUpdatedNodes()
-
-	n.RLock()
-	defer n.RUnlock()
-	newBucket := &bucket{
-		prev:     n.bucketTail,
-		next:     nil,
-		elements: make(map[string]interface{}),
+// OnNodeStateUpdate sync node pods state
+func (nm *nodeMonitor) OnNodeStateUpdate(ctx context.Context, message *grpc.FornaxCoreMessage) (*grpc.FornaxCoreMessage, error) {
+	klog.InfoS("Received a node state",
+		"node", util.UniqueNodeName(message.GetNodeState().Node),
+		"revision", message.GetNodeState().GetNodeRevision(),
+		"pods", len(message.GetNodeState().PodStates))
+	_, err := nm.updateOrCreateNode(
+		message.GetNodeState().GetNode(),
+		message.GetNodeState().GetNodeRevision(),
+		message.GetNodeState().GetPodStates())
+	if err != nil {
+		klog.ErrorS(err, "Failed to sync a node", "node", util.UniqueNodeName(message.GetNodeState().Node))
+		return nil, err
 	}
 
-	if n.bucketHead == nil {
-		n.bucketHead = newBucket
+	return nil, nil
+}
+
+// OnPodStateUpdate update single pod state
+func (nm *nodeMonitor) OnPodStateUpdate(ctx context.Context, message *grpc.FornaxCoreMessage) (*grpc.FornaxCoreMessage, error) {
+	podState := message.GetPodState()
+	klog.InfoS("Received a pod state",
+		"pod", podutil.UniquePodName(podState.GetPod()),
+		"state", podState.GetState(),
+		"condition", k8spodutil.IsPodReady(podState.GetPod()),
+		"node revision", podState.GetNodeRevision())
+
+	err := nm.nodeManager.UpdatePodState(podState)
+	if err != nil {
+		klog.ErrorS(err, "Failed to update pod state", "pod", podState)
+		return nil, err
 	}
-	if n.bucketTail == nil {
-		n.bucketTail = newBucket
+	return nil, nil
+}
+
+func (nm *nodeMonitor) updateOrCreateNode(v1node *v1.Node, revision int64, podStates []*grpc.PodState) (newNode *node.FornaxNodeWithState, err error) {
+	if existingNode := nm.nodeManager.FindNode(v1node.GetName()); existingNode == nil {
+		// somehow node already register with other fornax cores
+		newNode, err = nm.nodeManager.CreateNode(v1node, revision)
+		if err != nil {
+			klog.ErrorS(err, "Failed to create a node", "node", v1node)
+			return nil, err
+		}
+		nm.nodeManager.SyncNodePodStates(newNode.Node, podStates)
 	} else {
-		n.bucketTail.next = newBucket
-		n.bucketTail = newBucket
-	}
-
-	for nodeName := range updatedNodes {
-		if _, ok := n.nodeLocator[nodeName]; ok {
-			delete(n.nodeLocator[nodeName].elements, nodeName)
+		if existingNode.Revision > revision {
+			klog.Warningf("Received a older revision of node, fornaxcore revision: %d, nodeagent revision: %d", existingNode.Revision, revision)
+			return nil, nodeagent.NodeRevisionOutOfOrderError
+		} else if existingNode.Revision == revision {
+			// klog.Infof("Received a same revision from node agent, revision: %d, skip", revision)
+			return existingNode, nil
 		}
-		newBucket.elements[nodeName] = struct{}{}
-		n.nodeLocator[nodeName] = newBucket
+
+		newNode, err = nm.nodeManager.UpdateNode(v1node, revision)
+		if err != nil {
+			klog.ErrorS(err, "Failed to update a node", "node", v1node)
+			return nil, err
+		}
+		nm.nodeManager.SyncNodePodStates(newNode.Node, podStates)
 	}
+	klog.InfoS("Node state and its pod states synced", "node", util.UniqueNodeName(newNode.Node))
+
+	return newNode, nil
 }
 
-func (n *nodeMonitor) getStaleNodes() []string {
-	n.Lock()
-	defer n.Unlock()
-
-	var stales []string
-
-	currBucket := n.bucketTail
-	count := n.countFresh
-	var newHead *bucket
-	for {
-		if currBucket == nil {
-			break
-		}
-
-		if count > 0 {
-			if count == 1 {
-				newHead = currBucket
-			}
-			currBucket = currBucket.prev
-			count--
-			continue
-		}
-
-		for name := range currBucket.elements {
-			stales = append(stales, name)
-		}
-
-		processedBucket := currBucket
-		currBucket = currBucket.prev
-		processedBucket.next = nil
-		processedBucket.prev = nil
-	}
-
-	if newHead != nil && newHead != n.bucketHead {
-		n.bucketHead = newHead
-		newHead.prev = nil
-	}
-
-	return stales
-}
-
-func New(checkPeriod time.Duration) *nodeMonitor {
-	return &nodeMonitor{
-		nodeLocator: map[string]*bucket{},
-		checkPeriod: checkPeriod,
-		countFresh:  int(math.Ceil(StaleNodeTimeout.Seconds() / checkPeriod.Seconds())),
-		ticker:      time.NewTicker(checkPeriod),
+func NewNodeMonitor(nodeManager node.NodeManager) *nodeMonitor {
+	nm := &nodeMonitor{
 		chQuit:      make(chan interface{}),
+		nodeManager: nodeManager,
 	}
+
+	return nm
 }

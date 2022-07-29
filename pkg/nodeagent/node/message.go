@@ -23,17 +23,15 @@ import (
 
 func BuildFornaxGrpcNodeState(node *FornaxNode) *grpc.FornaxCoreMessage {
 	podStates := []*grpc.PodState{}
-	// sessionStates := []*grpc.SessionState{}
 	for _, v := range node.Pods {
 		s := pod.BuildFornaxcoreGrpcPodState(node.Revision, v)
 		podStates = append(podStates, s.GetPodState())
 	}
 	ns := grpc.NodeState{
-		NodeRevision: &node.Revision,
-		Node:         node.V1Node,
-		PodStates:    podStates,
-		// TODO, add sessionStates
-		// SessionStates: sessionStates,
+		NodeRevision:  &node.Revision,
+		Node:          node.V1Node,
+		PodStates:     podStates,
+		SessionStates: []*grpc.SessionState{},
 	}
 
 	messageType := grpc.MessageType_NODE_STATE
@@ -41,6 +39,28 @@ func BuildFornaxGrpcNodeState(node *FornaxNode) *grpc.FornaxCoreMessage {
 		MessageType: &messageType,
 		MessageBody: &grpc.FornaxCoreMessage_NodeState{
 			NodeState: &ns,
+		},
+	}
+}
+
+func BuildFornaxGrpcNodeReady(node *FornaxNode) *grpc.FornaxCoreMessage {
+	podStates := []*grpc.PodState{}
+	for _, v := range node.Pods {
+		s := pod.BuildFornaxcoreGrpcPodState(node.Revision, v)
+		podStates = append(podStates, s.GetPodState())
+	}
+	ns := grpc.NodeReady{
+		NodeRevision:  &node.Revision,
+		Node:          node.V1Node,
+		PodStates:     podStates,
+		SessionStates: []*grpc.SessionState{},
+	}
+
+	messageType := grpc.MessageType_NODE_READY
+	return &grpc.FornaxCoreMessage{
+		MessageType: &messageType,
+		MessageBody: &grpc.FornaxCoreMessage_NodeReady{
+			NodeReady: &ns,
 		},
 	}
 }

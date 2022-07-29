@@ -17,8 +17,16 @@ limitations under the License.
 package nodeagent
 
 import (
+	"errors"
+
 	"centaurusinfra.io/fornax-serverless/pkg/fornaxcore/grpc"
 	v1 "k8s.io/api/core/v1"
+)
+
+var (
+	NodeRevisionOutOfOrderError = errors.New("revision out of order between fornaxcore and node")
+	NodeNotFoundError           = errors.New("node not found")
+	NodeAlreadyExistError       = errors.New("node already exist")
 )
 
 type MessageDispatcher interface {
@@ -28,5 +36,5 @@ type NodeAgentProxy interface {
 	MessageDispatcher
 	CreatePod(nodeIdentifier string, pod *v1.Pod) error
 	TerminatePod(nodeIdentifier string, pod *v1.Pod) error
-	SyncNode(node *v1.Node) error
+	FullSyncNode(nodeIdentifier string) error
 }

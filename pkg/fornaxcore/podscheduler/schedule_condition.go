@@ -16,9 +16,16 @@ limitations under the License.
 package podscheduler
 
 import (
+	"fmt"
+
 	podutil "centaurusinfra.io/fornax-serverless/pkg/util"
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
+)
+
+var (
+	MinimumCpuRequestQuantity    = podutil.ResourceQuantity(10000, v1.ResourceCPU)
+	MinimumMemoryRequestQuantity = podutil.ResourceQuantity(50000, v1.ResourceMemory)
 )
 
 type ScheduleCondition interface {
@@ -29,7 +36,7 @@ type ScheduleCondition interface {
 
 type ConditionBuildFunc func(*v1.Pod) ScheduleCondition
 
-func CalculateScheduleConditions(condBuildFuncs map[string]ConditionBuildFunc, pod *v1.Pod) []ScheduleCondition {
+func CalculateScheduleConditions(condBuildFuncs []ConditionBuildFunc, pod *v1.Pod) []ScheduleCondition {
 	conditions := []ScheduleCondition{}
 	for _, v := range condBuildFuncs {
 		condition := v(pod)
@@ -53,6 +60,8 @@ func (*CPUCondition) Mandatory() bool {
 // check if node stastify cpu requirement
 func (cond *CPUCondition) Apply(node *SchedulableNode, allocatableResourceList *v1.ResourceList) bool {
 	cpu := allocatableResourceList.Cpu()
+	fmt.Println(*cpu)
+	fmt.Println(cond.ResourceQuantity)
 	return cpu.Sign() > 0 && cpu.Cmp(cond.ResourceQuantity) > 0
 }
 
@@ -63,15 +72,18 @@ func (cond *CPUCondition) Score(node *SchedulableNode, allocatableResourceList *
 	return cpu.ScaledValue(100)
 }
 
-func NewCPUCondition(pod *v1.Pod) *CPUCondition {
-	resource := podutil.GetPodResource(pod).Cpu()
+func NewPodCPUCondition(pod *v1.Pod) ScheduleCondition {
+	resource := podutil.GetPodResourceList(pod).Cpu()
 	if resource.Sign() > 0 {
 		return &CPUCondition{
 			Name:             "CPU",
 			ResourceQuantity: *resource,
 		}
 	} else {
-		return nil
+		return &CPUCondition{
+			Name:             "CPU",
+			ResourceQuantity: MinimumCpuRequestQuantity,
+		}
 	}
 }
 
@@ -88,6 +100,8 @@ func (*MemoryCondition) Mandatory() bool {
 // check if node stastify memory requirement
 func (cond *MemoryCondition) Apply(node *SchedulableNode, allocatableResourceList *v1.ResourceList) bool {
 	memory := allocatableResourceList.Memory()
+	fmt.Println(*memory)
+	fmt.Println(cond.ResourceQuantity)
 	return memory.Sign() > 0 && memory.Cmp(cond.ResourceQuantity) > 0
 }
 
@@ -97,15 +111,19 @@ func (cond *MemoryCondition) Score(node *SchedulableNode, allocatableResourceLis
 	memory.Sub(cond.ResourceQuantity)
 	return memory.ScaledValue(100)
 }
-func NewMemoryCondition(pod *v1.Pod) *MemoryCondition {
-	resource := podutil.GetPodResource(pod).Memory()
+
+func NewPodMemoryCondition(pod *v1.Pod) ScheduleCondition {
+	resource := podutil.GetPodResourceList(pod).Memory()
 	if resource.Sign() > 0 {
 		return &MemoryCondition{
 			Name:             "Memory",
 			ResourceQuantity: *resource,
 		}
 	} else {
-		return nil
+		return &MemoryCondition{
+			Name:             "Memory",
+			ResourceQuantity: MinimumMemoryRequestQuantity,
+		}
 	}
 }
 
@@ -132,8 +150,8 @@ func (cond *StorageCondition) Score(node *SchedulableNode, allocatableResourceLi
 	return storage.ScaledValue(100)
 }
 
-func NewStorageCondition(pod *v1.Pod) *StorageCondition {
-	resource := podutil.GetPodResource(pod).Storage()
+func NewStorageCondition(pod *v1.Pod) ScheduleCondition {
+	resource := podutil.GetPodResourceList(pod).Storage()
 	if resource.Sign() > 0 {
 		return &StorageCondition{
 			Name:             "Storage",
@@ -150,8 +168,20 @@ type NodeNameCondition struct {
 	ResourceQuantity resource.Quantity
 }
 
-func NewNodeNameCondition(pod *v1.Pod) *NodeNameCondition {
-	resource := podutil.GetPodResource(pod).Cpu()
+func (*NodeNameCondition) Apply(node *SchedulableNode, allocatableResourceList *v1.ResourceList) bool {
+	panic("unimplemented")
+}
+
+func (*NodeNameCondition) Mandatory() bool {
+	panic("unimplemented")
+}
+
+func (*NodeNameCondition) Score(node *SchedulableNode, allocatableResourceList *v1.ResourceList) int64 {
+	panic("unimplemented")
+}
+
+func NewNodeNameCondition(pod *v1.Pod) ScheduleCondition {
+	resource := podutil.GetPodResourceList(pod).Cpu()
 	if resource.Sign() > 0 {
 		return &NodeNameCondition{
 			Name:             "NodeName",

@@ -63,7 +63,7 @@ func (appc *ApplicationManager) updateApplicationStatus(client fornaxclient.Appl
 
 	// if we get here, it means update failed, but get application in case update actually succeeded
 	if application, getErr = client.Get(context.TODO(), application.Name, metav1.GetOptions{}); getErr != nil {
-		return nil, getErr
+		return application, getErr
 	} else {
 		return application, getErr
 	}
@@ -71,6 +71,7 @@ func (appc *ApplicationManager) updateApplicationStatus(client fornaxclient.Appl
 
 func (appc *ApplicationManager) calculateStatus(application *fornaxv1.Application, desiredNumber int, deploymentErr error) *fornaxv1.ApplicationStatus {
 	newStatus := application.Status.DeepCopy()
+	newStatus.DesiredInstances = int32(desiredNumber)
 
 	availableCount := 0
 	idleCount := 0
@@ -80,11 +81,12 @@ func (appc *ApplicationManager) calculateStatus(application *fornaxv1.Applicatio
 		return nil
 	}
 
-	if pods, found := appc.applicationPods[applicationKey]; found {
-		for _, v := range pods {
-			if v.DeletionTimestamp == nil {
+	if pool, found := appc.applicationPods[applicationKey]; found {
+		for k := range pool.pods {
+			pod := appc.podManager.FindPod(k)
+			if pod != nil && pod.DeletionTimestamp == nil {
 				availableCount += 1
-				if k8spodutil.IsPodReady(v) {
+				if k8spodutil.IsPodReady(pod) {
 					readyCount += 1
 				}
 				// TODO, change this logic after session management is added
@@ -95,6 +97,7 @@ func (appc *ApplicationManager) calculateStatus(application *fornaxv1.Applicatio
 
 	newStatus.AvailableInstances = int32(availableCount)
 	newStatus.IdleInstances = int32(idleCount)
+	newStatus.ReadyInstances = int32(readyCount)
 	if deploymentErr != nil {
 		newStatus.DeploymentStatus = fornaxv1.DeploymentStatusPartialSuccess
 	} else {

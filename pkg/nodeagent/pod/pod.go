@@ -187,8 +187,8 @@ func (a *PodActor) CreatePod() (err error) {
 
 func (a *PodActor) TerminatePod(gracefulPeriod time.Duration) (bool, error) {
 	pod := a.pod
-	if pod.PodState != types.PodStateTerminating && pod.PodState != types.PodStateFailed {
-		return false, fmt.Errorf("Pod %s is not terminatable since it's still in state %s", types.UniquePodName(a.pod), a.pod.PodState)
+	if pod.FornaxPodState != types.PodStateTerminating && pod.FornaxPodState != types.PodStateFailed {
+		return false, fmt.Errorf("Pod %s is not terminatable since it's still in state %s", types.UniquePodName(a.pod), a.pod.FornaxPodState)
 	}
 
 	terminatedContainers := []string{}

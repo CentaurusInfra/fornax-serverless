@@ -52,8 +52,3 @@ type NodeInfoProvider interface {
 	ListNodes() []*v1.Node
 	WatchNode(watcher chan<- interface{}) error
 }
-
-type PodInfoProvider interface {
-	ListPods() []*v1.Pod
-	WatchPod(watcher chan<- interface{}) error
-}

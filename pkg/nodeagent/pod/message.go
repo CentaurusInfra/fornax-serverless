@@ -59,7 +59,7 @@ func BuildFornaxcoreGrpcPodState(nodeRevision int64, pod *fornaxtypes.FornaxPod)
 
 func PodStateToFornaxState(pod *fornaxtypes.FornaxPod) *grpc.PodState_State {
 	var grpcState grpc.PodState_State
-	switch pod.PodState {
+	switch pod.FornaxPodState {
 	case types.PodStateCreating:
 		grpcState = grpc.PodState_Creating
 	case types.PodStateCreated:

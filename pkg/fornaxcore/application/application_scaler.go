@@ -18,13 +18,10 @@ package application
 
 import (
 	fornaxv1 "centaurusinfra.io/fornax-serverless/pkg/apis/core/v1"
-	v1 "k8s.io/api/core/v1"
 )
 
 type ApplicationAutoScaler interface {
-	CalcDesiredPods(application *fornaxv1.Application, activePods []*v1.Pod) int
-	DeletePod(application *fornaxv1.Application, pod *v1.Pod) int
-	DeterminePodsToDelete(application *fornaxv1.Application, pods []*v1.Pod) []*v1.Pod
+	CalcDesiredPods(application *fornaxv1.Application, activePodNum int) int
 }
 
 var _ ApplicationAutoScaler = &applicationAutoScaler{}
@@ -33,18 +30,8 @@ type applicationAutoScaler struct {
 }
 
 // CalcDesiredPods implements ApplicationAutoScaler
-func (*applicationAutoScaler) CalcDesiredPods(application *fornaxv1.Application, activePods []*v1.Pod) int {
-	panic("unimplemented")
-}
-
-// DeletePod implements ApplicationAutoScaler
-func (*applicationAutoScaler) DeletePod(application *fornaxv1.Application, pod *v1.Pod) int {
-	panic("unimplemented")
-}
-
-// DeterminePodsToDelete implements ApplicationAutoScaler
-func (*applicationAutoScaler) DeterminePodsToDelete(application *fornaxv1.Application, pods []*v1.Pod) []*v1.Pod {
-	panic("unimplemented")
+func (*applicationAutoScaler) CalcDesiredPods(application *fornaxv1.Application, activePodNum int) int {
+	return int(application.Spec.ScalingPolicy.MaximumTarget)
 }
 
 func NewApplicationAutoScaler() *applicationAutoScaler {

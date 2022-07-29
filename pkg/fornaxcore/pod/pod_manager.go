@@ -17,14 +17,16 @@ limitations under the License.
 package pod
 
 import (
+	"context"
 	"errors"
+	"sync"
 	"time"
 
 	"centaurusinfra.io/fornax-serverless/pkg/fornaxcore/grpc/nodeagent"
 	"centaurusinfra.io/fornax-serverless/pkg/fornaxcore/podscheduler"
 	"centaurusinfra.io/fornax-serverless/pkg/util"
 	v1 "k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/klog/v2"
 	k8spodutil "k8s.io/kubernetes/pkg/api/v1/pod"
 )
 
@@ -32,7 +34,7 @@ type PodManager interface {
 	CreatePod(*v1.Pod, string) (*v1.Pod, error)
 	TerminatePod(*v1.Pod) (*v1.Pod, error)
 	DeletePod(*v1.Pod) (*v1.Pod, error)
-	FindPod(namespace, name string) *PodWithFornaxState
+	FindPod(identifier string) *v1.Pod
 }
 
 var _ PodManager = &podManager{}
@@ -41,15 +43,17 @@ type FornaxPodState string
 
 var (
 	PodNotFoundError           = errors.New("Pod does not exist")
-	PodIsNotTerminatedError    = errors.New("Pod is still running, can not delete")
+	PodAlreadyTerminatedError  = errors.New("Pod alredy terminated")
 	PodIsAlreadyScheduledError = errors.New("Pod is scheduled, reject double schedule")
 )
 
 const (
-	PodStatePendingSchedule FornaxPodState = "PendingSchedule"
-	PodStatePendingImpl     FornaxPodState = "PendingImpl"
-	PodStateRunning         FornaxPodState = "Running"
-	PodStateTerminating     FornaxPodState = "Terminating"
+	DefaultPodManagerHouseKeepingDuration                = 30 * time.Second
+	DefaultDeletionGracefulSeconds                       = int64(30)
+	PodStatePendingSchedule               FornaxPodState = "PendingSchedule"
+	PodStatePendingImpl                   FornaxPodState = "PendingImpl"
+	PodStateRunning                       FornaxPodState = "Running"
+	PodStateTerminating                   FornaxPodState = "Terminating"
 )
 
 type PodWithFornaxState struct {
@@ -58,30 +62,81 @@ type PodWithFornaxState struct {
 	nodeName string
 }
 
-type PodPool map[string]*PodWithFornaxState
+type PodPool struct {
+	mu   sync.RWMutex
+	pool map[string]*PodWithFornaxState
+}
+
+func (pool *PodPool) addItem(identifier string, item *PodWithFornaxState) {
+	pool.mu.Lock()
+	defer pool.mu.Unlock()
+	pool.pool[identifier] = item
+}
+
+func (pool *PodPool) deleteItem(identifier string) {
+	pool.mu.Lock()
+	defer pool.mu.Unlock()
+	delete(pool.pool, identifier)
+}
 
 type podManager struct {
-	podsPerState   map[FornaxPodState]PodPool
-	podsPerNode    map[string]PodPool
-	podScheduler   podscheduler.PodScheduler
-	nodeAgentProxy nodeagent.NodeAgentProxy
+	ctx                context.Context
+	houseKeepingTicker *time.Ticker
+	podUpdates         chan interface{}
+	watchers           []chan<- interface{}
+	podsPerState       map[FornaxPodState]*PodPool
+	podScheduler       podscheduler.PodScheduler
+	nodeAgentProxy     nodeagent.NodeAgentProxy
 }
 
 // FindPod implements PodManager
-func (pm *podManager) FindPod(namespace string, name string) *PodWithFornaxState {
-	p := &v1.Pod{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:         name,
-			GenerateName: name,
-			Namespace:    namespace,
-		},
+func (pm *podManager) FindPod(identifier string) *v1.Pod {
+	p := pm.findPod(identifier)
+	if p != nil {
+		return p.v1pod
 	}
-	return pm.findPod(p)
+
+	return nil
 }
 
-func (pm *podManager) findPod(pod *v1.Pod) *PodWithFornaxState {
+func (pm *podManager) Run() error {
+	go func() {
+		for {
+			select {
+			case <-pm.ctx.Done():
+				// TODO, shutdown more gracefully, handoff fornaxcore primary ownership
+				break
+			case update := <-pm.podUpdates:
+				for _, watcher := range pm.watchers {
+					watcher <- update
+				}
+			case <-pm.houseKeepingTicker.C:
+				pm.PrintPodSummary()
+				podsToDelete := []string{}
+				terminatingPods := pm.podsPerState[PodStateTerminating].pool
+				for k, pod := range terminatingPods {
+					if util.IsPodTerminated(pod.v1pod) && !util.IsInGracePeriod(pod.v1pod) {
+						podsToDelete = append(podsToDelete, k)
+					}
+
+					if len(pod.v1pod.Status.HostIP) == 0 && len(pod.nodeName) == 0 && !util.IsInGracePeriod(pod.v1pod) {
+						podsToDelete = append(podsToDelete, k)
+					}
+				}
+
+				for _, v := range podsToDelete {
+					pm.podsPerState[PodStateTerminating].deleteItem(v)
+				}
+			}
+		}
+	}()
+
+	return nil
+}
+
+func (pm *podManager) findPod(identifier string) *PodWithFornaxState {
 	for _, v := range pm.podsPerState {
-		if p, found := v[util.UniquePodName(pod)]; found {
+		if p, found := v.pool[identifier]; found {
 			return p
 		}
 	}
@@ -91,120 +146,162 @@ func (pm *podManager) findPod(pod *v1.Pod) *PodWithFornaxState {
 
 // DeletePod is called to delete pod when node agent does not report a pod again
 func (pm *podManager) DeletePod(pod *v1.Pod) (*v1.Pod, error) {
-	p := pm.findPod(pod)
+	// remove pod from schedule queue, if it does not exit, it's no op
+	pm.podScheduler.RemovePod(pod)
+
+	p := pm.findPod(util.UniquePodName(pod))
 	if p == nil {
-		// pod does not exist in pod manager, ignore it
-		return nil, nil
+		return nil, PodNotFoundError
 	}
 
-	existpod := p.v1pod
-
-	// remove pod from schedule queue, if it does not exit, it's no op
-	pm.podScheduler.RemovePod(existpod)
-
 	// if pod exist, and pod does not have deletion timestamp, set it
-	if p.v1pod.GetDeletionTimestamp() == nil {
+	existpod := p.v1pod
+	if existpod.GetDeletionTimestamp() == nil {
 		if pod.DeletionTimestamp != nil {
 			existpod.DeletionTimestamp = pod.GetDeletionTimestamp()
 		} else {
-			existpod.DeletionTimestamp = &metav1.Time{
-				Time: time.Now(),
-			}
+			existpod.DeletionTimestamp = util.NewCurrentMetaTime()
+		}
+	}
+	gracePeriod := DefaultDeletionGracefulSeconds
+	if existpod.DeletionGracePeriodSeconds == nil {
+		existpod.DeletionGracePeriodSeconds = &gracePeriod
+	}
+
+	// there could be a race condition with scheduler when scheduler send to node, but node did not report back,
+	// when node report it back and podmanager will terminate it again since pod has deletion timestamp
+	if len(p.nodeName) > 0 && util.IsPodNotTerminated(existpod) {
+		// not terminated yet, let node agent terminate and report back
+		_, err := pm.TerminatePod(existpod)
+		if err != nil && err != PodAlreadyTerminatedError {
+			return nil, err
 		}
 	}
 
-	if !util.IsInGracePeriod(existpod) {
-		delete(pm.podsPerState[p.podState], util.UniquePodName(existpod))
+	if !util.IsInGracePeriod(existpod) && util.IsPodTerminated(existpod) {
+		pm.podsPerState[p.podState].deleteItem(util.UniquePodName(existpod))
 	} else {
-		delete(pm.podsPerState[p.podState], util.UniquePodName(existpod))
-		pm.podsPerState[PodStateTerminating][util.UniquePodName(existpod)] = p
-		// pod will be pruned by house keeping
+		// remove pod from previous state into terminating queue, pod will be pruned by house keeping
+		pm.podsPerState[p.podState].deleteItem(util.UniquePodName(existpod))
+		pm.podsPerState[PodStateTerminating].addItem(util.UniquePodName(existpod), &PodWithFornaxState{
+			v1pod:    existpod,
+			podState: PodStateTerminating,
+			nodeName: p.nodeName,
+		})
 	}
+
 	return existpod, nil
 }
 
 // CreatePod create a new pod if it does not exist or update existing pod, it is called when node agent report a newly implemented pod or application try to create a new pending pod
 func (pm *podManager) CreatePod(pod *v1.Pod, nodeName string) (*v1.Pod, error) {
-	p := pm.findPod(pod)
+	p := pm.findPod(util.UniquePodName(pod))
 	if p == nil {
 		newPod := pod.DeepCopy()
 		// pod does not exist in pod manager, add it into map and delete it
-		// event it's terminating, still add it, and will delete next time when node do not report again
-		if newPod.DeletionTimestamp != nil || newPod.Status.Phase == v1.PodFailed || newPod.Status.Phase == v1.PodSucceeded {
-			pm.podsPerState[PodStateTerminating][util.UniquePodName(newPod)] = &PodWithFornaxState{
+		// even it's terminating, still add it, and will delete next time when node does not report again
+		if util.IsPodTerminated(newPod) {
+			// pod is reported back by node agent as a terminated or failed pod
+			if newPod.DeletionTimestamp == nil {
+				newPod.DeletionTimestamp = util.NewCurrentMetaTime()
+			}
+			pm.podsPerState[PodStateTerminating].addItem(util.UniquePodName(newPod), &PodWithFornaxState{
 				v1pod:    newPod,
 				podState: PodStateTerminating,
 				nodeName: nodeName,
-			}
+			})
 		} else if len(newPod.Status.HostIP) > 0 {
 			if k8spodutil.IsPodReady(newPod) {
-				pm.podsPerState[PodStateRunning][util.UniquePodName(newPod)] = &PodWithFornaxState{
+				pm.podsPerState[PodStateRunning].addItem(util.UniquePodName(newPod), &PodWithFornaxState{
 					v1pod:    newPod,
 					podState: PodStateRunning,
 					nodeName: nodeName,
-				}
+				})
 			} else {
-				pm.podsPerState[PodStatePendingImpl][util.UniquePodName(newPod)] = &PodWithFornaxState{
+				pm.podsPerState[PodStatePendingImpl].addItem(util.UniquePodName(newPod), &PodWithFornaxState{
 					v1pod:    newPod,
 					podState: PodStatePendingImpl,
 					nodeName: nodeName,
-				}
+				})
 			}
 		} else {
-			pm.podsPerState[PodStatePendingSchedule][util.UniquePodName(newPod)] = &PodWithFornaxState{
+			pm.podsPerState[PodStatePendingSchedule].addItem(util.UniquePodName(newPod), &PodWithFornaxState{
 				v1pod:    newPod,
 				podState: PodStatePendingSchedule,
 				nodeName: "",
-			}
+			})
 			pm.podScheduler.AddPod(newPod, 0*time.Second)
 		}
-
 		return newPod, nil
 	} else {
 		existPod := p.v1pod
-		// pod already exist in pod manager, move it between different buckets, this is especially the case a scheduled pod is reported back by node agent
-		if pod.DeletionTimestamp != nil || pod.Status.Phase == v1.PodFailed || pod.Status.Phase == v1.PodSucceeded {
-			// pod is reported back by node agent, pod is terminated or failed in node agent side
-			existPod.DeletionTimestamp = pod.DeletionTimestamp
-			util.MergePodStatus(existPod, pod)
-			delete(pm.podsPerState[p.podState], util.UniquePodName(pod))
-			pm.podsPerState[PodStateTerminating][util.UniquePodName(pod)] = &PodWithFornaxState{
-				v1pod:    existPod,
-				podState: PodStateTerminating,
-				nodeName: nodeName,
+		existPodState := p.podState
+		util.MergePodStatus(existPod, pod)
+		p.nodeName = nodeName
+		if util.IsPodTerminated(pod) {
+			// pod is reported back by node agent as a terminated or failed pod
+			if pod.DeletionTimestamp == nil {
+				existPod.DeletionTimestamp = util.NewCurrentMetaTime()
+			} else {
+				existPod.DeletionTimestamp = pod.DeletionTimestamp
 			}
-		} else if len(pod.Status.HostIP) > 0 {
-			// pod is reported back by node agent
-			util.MergePodStatus(existPod, pod)
-			if k8spodutil.IsPodReady(pod) {
-				delete(pm.podsPerState[p.podState], util.UniquePodName(pod))
-				pm.podsPerState[PodStateRunning][util.UniquePodName(pod)] = &PodWithFornaxState{
+			if existPodState != PodStateTerminating {
+				pm.podsPerState[existPodState].deleteItem(util.UniquePodName(pod))
+				pm.podsPerState[PodStateTerminating].addItem(util.UniquePodName(pod), &PodWithFornaxState{
 					v1pod:    existPod,
-					podState: PodStateRunning,
+					podState: PodStateTerminating,
 					nodeName: nodeName,
+				})
+			}
+		} else if len(nodeName) > 0 {
+			if existPod.DeletionTimestamp != nil {
+				// pod is reported back by node agent while pod owner determinted pod should be deleted, send node terminate message
+				klog.InfoS("Terminate a running pod which has delete timestamp", "pod", util.UniquePodName(pod))
+				err := pm.nodeAgentProxy.TerminatePod(nodeName, pod)
+				if err != nil {
+					return nil, err
+				}
+				if existPodState != PodStateTerminating {
+					pm.podsPerState[existPodState].deleteItem(util.UniquePodName(pod))
+					pm.podsPerState[PodStateTerminating].addItem(util.UniquePodName(pod), &PodWithFornaxState{
+						v1pod:    existPod,
+						podState: PodStateTerminating,
+						nodeName: nodeName,
+					})
+				}
+			} else if k8spodutil.IsPodReady(existPod) {
+				if existPodState != PodStateRunning {
+					pm.podsPerState[existPodState].deleteItem(util.UniquePodName(pod))
+					pm.podsPerState[PodStateRunning].addItem(util.UniquePodName(pod), &PodWithFornaxState{
+						v1pod:    existPod,
+						podState: PodStateRunning,
+						nodeName: nodeName,
+					})
 				}
 			} else {
-				delete(pm.podsPerState[p.podState], util.UniquePodName(pod))
-				pm.podsPerState[PodStatePendingImpl][util.UniquePodName(pod)] = &PodWithFornaxState{
-					v1pod:    existPod,
-					podState: PodStatePendingImpl,
-					nodeName: nodeName,
+				if existPodState != PodStatePendingImpl {
+					pm.podsPerState[existPodState].deleteItem(util.UniquePodName(pod))
+					pm.podsPerState[PodStatePendingImpl].addItem(util.UniquePodName(pod), &PodWithFornaxState{
+						v1pod:    existPod,
+						podState: PodStatePendingImpl,
+						nodeName: nodeName,
+					})
 				}
 			}
 		} else {
 			// pod does not have host ip in status should be in pending schedule state,
 			// this case is more likely pod scheduler call pod manager again to create a pending schedule pod twice
-			if p.podState != PodStatePendingSchedule {
+			if existPodState != PodStatePendingSchedule {
 				return nil, PodIsAlreadyScheduledError
 			}
 			// keep new spec and ask scheduler to use new pod spec if pod is changed
+			existPod = pod.DeepCopy()
 			newPodWS := &PodWithFornaxState{
-				v1pod:    pod.DeepCopy(),
+				v1pod:    existPod,
 				podState: PodStatePendingSchedule,
 				nodeName: "",
 			}
-			pm.podsPerState[PodStatePendingSchedule][util.UniquePodName(pod)] = newPodWS
-			pm.podScheduler.RemovePod(existPod)
+			pm.podsPerState[PodStatePendingSchedule].addItem(util.UniquePodName(pod), newPodWS)
 			pm.podScheduler.AddPod(newPodWS.v1pod, 0)
 		}
 		return existPod, nil
@@ -213,31 +310,72 @@ func (pm *podManager) CreatePod(pod *v1.Pod, nodeName string) (*v1.Pod, error) {
 
 // TerminatePod notify node agent to terminate a pod
 func (pm *podManager) TerminatePod(pod *v1.Pod) (*v1.Pod, error) {
-	p := pm.findPod(pod)
+	// be cautious, let pod scheduler remove it from its queue anyway, if not in queue, its no-op
+	pm.podScheduler.RemovePod(pod)
+
+	p := pm.findPod(util.UniquePodName(pod))
 	if p == nil {
 		return nil, PodNotFoundError
 	} else {
-		// a not scheduled pod can be deleted
-		if p.podState == PodStatePendingSchedule && len(p.v1pod.Status.HostIP) == 0 {
-			delete(pm.podsPerState[PodStatePendingSchedule], util.UniquePodName(pod))
-		}
-
-		existPod := p.v1pod
-		if existPod.DeletionTimestamp != nil {
-			// pod is already terminated
+		if util.IsPodTerminated(p.v1pod) {
+			// pod is already terminated, delete it
+			return nil, PodAlreadyTerminatedError
 		} else {
-			pm.nodeAgentProxy.TerminatePod(p.nodeName, p.v1pod)
+			if len(p.nodeName) > 0 {
+				// pod is bound with node, let node agent terminate it before deletion
+				pm.nodeAgentProxy.TerminatePod(p.nodeName, p.v1pod)
+			} else {
+				// pod is not bound with node, set deletion timestamp, and cleanup by house keeping when it exceed deletion gracePeriod, can be recreated if node report it later
+				if p.v1pod.DeletionTimestamp == nil {
+					p.v1pod.DeletionTimestamp = util.NewCurrentMetaTime()
+				}
+
+				gracePeriod := DefaultDeletionGracefulSeconds
+				if p.v1pod.DeletionGracePeriodSeconds == nil {
+					p.v1pod.DeletionGracePeriodSeconds = &gracePeriod
+				}
+				return p.v1pod, nil
+			}
 		}
 
-		delete(pm.podsPerState[p.podState], util.UniquePodName(pod))
-		pm.podsPerState[PodStateTerminating][util.UniquePodName(pod)] = p
+		pm.podsPerState[p.podState].deleteItem(util.UniquePodName(pod))
+		pm.podsPerState[PodStateTerminating].addItem(util.UniquePodName(pod),
+			&PodWithFornaxState{
+				v1pod:    p.v1pod,
+				podState: PodStateTerminating,
+				nodeName: p.nodeName,
+			})
 		return p.v1pod, nil
 	}
 }
 
-func NewPodManager(podScheduler podscheduler.PodScheduler, nodeAgentProxy nodeagent.NodeAgentProxy) *podManager {
+func (pm *podManager) PrintPodSummary() {
+	klog.InfoS("pod summary:",
+		"running", len(pm.podsPerState[PodStateRunning].pool),
+		"pendingimpl", len(pm.podsPerState[PodStatePendingImpl].pool),
+		"pendingschedule", len(pm.podsPerState[PodStatePendingSchedule].pool),
+		"terminating", len(pm.podsPerState[PodStateTerminating].pool),
+	)
+}
+
+func NewPodManager(ctx context.Context, podScheduler podscheduler.PodScheduler, nodeAgentProxy nodeagent.NodeAgentProxy) *podManager {
 	return &podManager{
-		podsPerState:   map[FornaxPodState]PodPool{},
+		ctx:                ctx,
+		houseKeepingTicker: time.NewTicker(DefaultPodManagerHouseKeepingDuration),
+		podsPerState: map[FornaxPodState]*PodPool{
+			PodStatePendingImpl: {
+				pool: map[string]*PodWithFornaxState{},
+			},
+			PodStatePendingSchedule: {
+				pool: map[string]*PodWithFornaxState{},
+			},
+			PodStateRunning: {
+				pool: map[string]*PodWithFornaxState{},
+			},
+			PodStateTerminating: {
+				pool: map[string]*PodWithFornaxState{},
+			},
+		},
 		nodeAgentProxy: nodeAgentProxy,
 		podScheduler:   podScheduler,
 	}

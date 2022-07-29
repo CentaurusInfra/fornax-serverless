@@ -20,77 +20,73 @@ import (
 	"fmt"
 	"time"
 
-	fornaxv1 "centaurusinfra.io/fornax-serverless/pkg/apis/core/v1"
-	default_config "centaurusinfra.io/fornax-serverless/pkg/config"
-	"centaurusinfra.io/fornax-serverless/pkg/fornaxcore/grpc"
-
-	"github.com/google/uuid"
 	v1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/client-go/tools/cache"
 )
 
-func BuildATestDaemonPod() *v1.Pod {
-	uid := uuid.New()
-	daemonPod := BuildV1Pod(types.UID(uid.String()),
-		default_config.DefaultFornaxCoreNodeNameSpace,
-		"quark_daemon",
-		true,
-		[]v1.Container{
-			{
-				Name:      "busybox",
-				Image:     "busybox:latest",
-				Command:   []string{},
-				Args:      []string{},
-				Stdin:     false,
-				StdinOnce: false,
-				TTY:       false,
+func BuildADummyTerminatedPod(metaNamespaceName string) *v1.Pod {
+	namespace, name, err := cache.SplitMetaNamespaceKey(metaNamespaceName)
+	if err != nil {
+		return nil
+	}
+
+	pod := &v1.Pod{
+		TypeMeta: metav1.TypeMeta{
+			Kind:       "Pod",
+			APIVersion: "v1",
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			Name:            name,
+			GenerateName:    metaNamespaceName,
+			Namespace:       namespace,
+			SelfLink:        "",
+			UID:             "",
+			ResourceVersion: "1",
+			Generation:      0,
+			CreationTimestamp: metav1.Time{
+				Time: time.Now(),
 			},
+			DeletionTimestamp: &metav1.Time{
+				Time: time.Now(),
+			},
+			DeletionGracePeriodSeconds: new(int64),
+			Labels:                     map[string]string{},
+			Annotations:                map[string]string{},
+			OwnerReferences:            []metav1.OwnerReference{},
+			Finalizers:                 []string{},
+			ZZZ_DeprecatedClusterName:  "",
+			ManagedFields:              []metav1.ManagedFieldsEntry{},
 		},
-		[]v1.Container{BuildContainer("webserver", "nginx:latest", 0, 0, []v1.EnvVar{{
-			Name:  "NGINX_PORT",
-			Value: "8081",
-			// ValueFrom: &v1.EnvVarSource{
-			//  FieldRef:         &v1.ObjectFieldSelector{},
-			//  ResourceFieldRef: &v1.ResourceFieldSelector{},
-			//  ConfigMapKeyRef:  &v1.ConfigMapKeySelector{},
-			//  SecretKeyRef:     &v1.SecretKeySelector{},
-			// },
-		}})},
-	)
-
-	return daemonPod
-}
-
-func BuildATestPodCreate(appId string) *grpc.FornaxCoreMessage {
-	uid := uuid.New()
-	testPod := BuildV1Pod(types.UID(uid.String()),
-		"test_namespace",
-		"test_nginx",
-		false,
-		[]v1.Container{},
-		[]v1.Container{BuildContainer("webserver", "nginx:latest", 8082, 80, []v1.EnvVar{})},
-	)
-
-	// update node, send node configuration
-	podId := uuid.New().String()
-	mode := grpc.PodCreate_Active
-	body := grpc.FornaxCoreMessage_PodCreate{
-		PodCreate: &grpc.PodCreate{
-			PodIdentifier: &podId,
-			AppIdentifier: &appId,
-			Mode:          &mode,
-			Pod:           testPod,
-			ConfigMap:     &v1.ConfigMap{},
+		Spec: v1.PodSpec{},
+		Status: v1.PodStatus{
+			Phase: v1.PodFailed,
+			Conditions: []v1.PodCondition{{
+				Type:   v1.PodReady,
+				Status: v1.ConditionFalse,
+				LastProbeTime: metav1.Time{
+					Time: time.Now(),
+				},
+				LastTransitionTime: metav1.Time{
+					Time: time.Now(),
+				},
+				Reason:  "unknown pod",
+				Message: "unknown pod",
+			}},
+			Message:                    "unknown pod",
+			Reason:                     "unknown pod",
+			NominatedNodeName:          "",
+			HostIP:                     "",
+			PodIP:                      "",
+			PodIPs:                     []v1.PodIP{},
+			StartTime:                  &metav1.Time{},
+			InitContainerStatuses:      []v1.ContainerStatus{},
+			ContainerStatuses:          []v1.ContainerStatus{},
+			QOSClass:                   "",
+			EphemeralContainerStatuses: []v1.ContainerStatus{},
 		},
 	}
-	messageType := grpc.MessageType_POD_CREATE
-	msg := &grpc.FornaxCoreMessage{
-		MessageType: &messageType,
-		MessageBody: &body,
-	}
-	return msg
+	return pod
 }
 
 func BuildContainer(name, image string, hostPort int32, containerPort int32, envs []v1.EnvVar) v1.Container {
@@ -133,100 +129,12 @@ func BuildContainer(name, image string, hostPort int32, containerPort int32, env
 	return container
 }
 
-func BuildV1Pod(uid types.UID, namespace, name string, hostnetwork bool, initContainers []v1.Container, containers []v1.Container) *v1.Pod {
-	enableServiceLinks := false
-	setHostnameAsFQDN := false
-	mountServiceAccount := false
-	shareProcessNamespace := false
-	deletionGracePeriod := int64(120)
-	activeGracePeriod := int64(120)
-	daemonPod := &v1.Pod{
-		TypeMeta: metav1.TypeMeta{
-			Kind:       "Pod",
-			APIVersion: "v1",
-		},
-		ObjectMeta: metav1.ObjectMeta{
-			Name:            name,
-			Namespace:       namespace,
-			UID:             uid,
-			ResourceVersion: "1",
-			CreationTimestamp: metav1.Time{
-				Time: time.Now(),
-			},
-			DeletionGracePeriodSeconds: &deletionGracePeriod,
-			Labels:                     map[string]string{fornaxv1.LabelFornaxCoreApplication: namespace},
-			Annotations:                map[string]string{},
-			OwnerReferences:            []metav1.OwnerReference{},
-			Finalizers:                 []string{},
-			ManagedFields:              []metav1.ManagedFieldsEntry{},
-		},
-		Spec: v1.PodSpec{
-			Volumes:                       []v1.Volume{},
-			InitContainers:                initContainers,
-			Containers:                    containers,
-			EphemeralContainers:           []v1.EphemeralContainer{},
-			RestartPolicy:                 v1.RestartPolicyAlways,
-			TerminationGracePeriodSeconds: &deletionGracePeriod,
-			ActiveDeadlineSeconds:         &activeGracePeriod,
-			DNSPolicy:                     v1.DNSNone,
-			NodeSelector:                  map[string]string{},
-			AutomountServiceAccountToken:  &mountServiceAccount,
-			// ServiceAccountName:            "",
-			// DeprecatedServiceAccount:      "",
-			// NodeName:                     "",
-			HostNetwork:           hostnetwork,
-			HostPID:               false,
-			HostIPC:               false,
-			ShareProcessNamespace: &shareProcessNamespace,
-			SecurityContext:       &v1.PodSecurityContext{
-				// SELinuxOptions: &v1.SELinuxOptions{
-				//  User:  "",
-				//  Role:  "",
-				//  Type:  "",
-				//  Level: "",
-				// },
-				// WindowsOptions:      &v1.WindowsSecurityContextOptions{},
-				// RunAsUser:           new(int64),
-				// RunAsGroup:          new(int64),
-				// RunAsNonRoot:        new(bool),
-				// SupplementalGroups:  []int64{},
-				// FSGroup:             new(int64),
-				// Sysctls:             []v1.Sysctl{},
-				// FSGroupChangePolicy: &"",
-				// SeccompProfile:      &v1.SeccompProfile{},
-			},
-			ImagePullSecrets: []v1.LocalObjectReference{},
-			Hostname:         "",
-			Subdomain:        default_config.DefaultDomainName,
-			Affinity:         &v1.Affinity{},
-			// SchedulerName:             "",
-			Tolerations: []v1.Toleration{},
-			HostAliases: []v1.HostAlias{},
-			// PriorityClassName:         "",
-			// Priority:       new(int32),
-			// DNSConfig:      &v1.PodDNSConfig{},
-			ReadinessGates: []v1.PodReadinessGate{
-				{
-					ConditionType: v1.ContainersReady,
-				},
-			},
-			// RuntimeClassName:          new(string),
-			EnableServiceLinks:        &enableServiceLinks,
-			Overhead:                  map[v1.ResourceName]resource.Quantity{},
-			TopologySpreadConstraints: []v1.TopologySpreadConstraint{},
-			SetHostnameAsFQDN:         &setHostnameAsFQDN,
-			OS:                        &v1.PodOS{},
-		},
-		Status: v1.PodStatus{},
-	}
-	return daemonPod
-}
-
 func UniquePodName(pod *v1.Pod) string {
-	return fmt.Sprintf("Namespace:%s,Name:%s", pod.Namespace, pod.Name)
+	name, _ := cache.MetaNamespaceKeyFunc(pod)
+	return name
 }
 
-func GetPodResource(v1pod *v1.Pod) *v1.ResourceList {
+func GetPodResourceList(v1pod *v1.Pod) *v1.ResourceList {
 	resourceList := v1.ResourceList{}
 	for _, v := range v1pod.Spec.Containers {
 		if v.Resources.Requests.Cpu().Sign() > 0 {
@@ -265,6 +173,33 @@ func GetPodResource(v1pod *v1.Pod) *v1.ResourceList {
 
 func MergePodStatus(oldPod, newPod *v1.Pod) {
 	oldPod.Status = *newPod.Status.DeepCopy()
+	for k, v := range newPod.GetLabels() {
+		oldPod.Labels[k] = v
+	}
+
+	for k, v := range newPod.GetAnnotations() {
+		oldPod.Annotations[k] = v
+	}
+
+	if newPod.DeletionTimestamp != nil && oldPod.DeletionTimestamp == nil {
+		oldPod.DeletionTimestamp = newPod.DeletionTimestamp
+	}
+
+	if newPod.DeletionGracePeriodSeconds != nil && oldPod.DeletionGracePeriodSeconds == nil {
+		oldPod.DeletionGracePeriodSeconds = newPod.DeletionGracePeriodSeconds
+	}
+}
+
+func IsPodNotTerminated(pod *v1.Pod) bool {
+	return !IsPodTerminated(pod)
+}
+
+func IsPodTerminated(pod *v1.Pod) bool {
+	return (pod.Status.Phase == v1.PodSucceeded || pod.Status.Phase == v1.PodFailed)
+}
+
+func IsNotInGracePeriod(pod *v1.Pod) bool {
+	return !IsInGracePeriod(pod)
 }
 
 func IsInGracePeriod(pod *v1.Pod) bool {

@@ -36,14 +36,17 @@ var (
 	ErrRecoverPod            = errors.New("RecoverPodError")
 )
 
-func SetPodStatus(fppod *types.FornaxPod) {
+func SetPodStatus(fppod *types.FornaxPod, node *v1.Node) {
 
 	// pod phase
-	podStatus := &fppod.Pod.Status
+	podStatus := fppod.Pod.Status.DeepCopy()
 	podStatus.Phase = ToV1PodPhase(fppod)
+	if node != nil {
+		podStatus.HostIP = node.Status.Addresses[0].Address
+	}
 
 	// DeletionTimestamp
-	if podStatus.Phase == v1.PodSucceeded || podStatus.Phase == v1.PodFailed && fppod.Pod.DeletionTimestamp != nil {
+	if (podStatus.Phase == v1.PodSucceeded || podStatus.Phase == v1.PodFailed) && fppod.Pod.DeletionTimestamp == nil {
 		fppod.Pod.DeletionTimestamp = &metav1.Time{
 			Time: time.Now(),
 		}
@@ -53,7 +56,7 @@ func SetPodStatus(fppod *types.FornaxPod) {
 	if podStatus.Conditions == nil {
 		podStatus.Conditions = []v1.PodCondition{}
 	}
-	SetPodConditions(fppod)
+	podStatus.Conditions = GetPodConditions(fppod)
 
 	// pod ip
 	if fppod.RuntimePod != nil && len(fppod.RuntimePod.IPs) > 0 {
@@ -74,12 +77,14 @@ func SetPodStatus(fppod *types.FornaxPod) {
 
 	//TODO
 	// add resource status
+
+	fppod.Pod.Status = *podStatus
 }
 
 func ToV1PodPhase(fppod *types.FornaxPod) v1.PodPhase {
 	var podPhase v1.PodPhase
 
-	switch fppod.PodState {
+	switch fppod.FornaxPodState {
 	case types.PodStateCreating:
 		podPhase = v1.PodPending
 	case types.PodStateCreated:
@@ -105,7 +110,7 @@ func ToV1PodPhase(fppod *types.FornaxPod) v1.PodPhase {
 	return podPhase
 }
 
-func SetPodConditions(fppod *types.FornaxPod) {
+func GetPodConditions(fppod *types.FornaxPod) []v1.PodCondition {
 	conditions := map[v1.PodConditionType]*v1.PodCondition{}
 
 	initReadyCondition := v1.PodCondition{
@@ -137,11 +142,11 @@ func SetPodConditions(fppod *types.FornaxPod) {
 	conditions[v1.PodScheduled] = &podScheduledCondition
 
 	// check init ready status
-	if fppod.PodState == types.PodStateCreating || fppod.PodState == types.PodStateCreated {
+	if fppod.FornaxPodState == types.PodStateCreating || fppod.FornaxPodState == types.PodStateCreated {
 		initReadyCondition.Status = v1.ConditionUnknown
 		initReadyCondition.Message = "container created, waiting for it finish"
 		initReadyCondition.Reason = "container created, waiting for it finish"
-
+	} else {
 		// check runtime status
 		allInitContainerNormal := true
 		for _, v := range fppod.Containers {
@@ -203,7 +208,7 @@ func SetPodConditions(fppod *types.FornaxPod) {
 
 	// check pod ready status
 	if containerReadyCondition.Status == v1.ConditionTrue && initReadyCondition.Status == v1.ConditionTrue {
-		if fppod.PodState == types.PodStateRunning {
+		if fppod.FornaxPodState == types.PodStateRunning {
 			podReadyCondition.Status = v1.ConditionTrue
 			podReadyCondition.Message = "all pod containers are ready"
 			podReadyCondition.Reason = "all pod containers are ready"
@@ -218,7 +223,6 @@ func SetPodConditions(fppod *types.FornaxPod) {
 	for _, oldCondition := range fppod.Pod.Status.Conditions {
 		newCondtion, found := conditions[oldCondition.Type]
 		if found {
-
 			if oldCondition.Status != newCondtion.Status {
 				newCondtion.LastTransitionTime = oldCondition.LastProbeTime
 			}
@@ -233,13 +237,13 @@ func SetPodConditions(fppod *types.FornaxPod) {
 		newConditions = append(newConditions, *v)
 	}
 
-	fppod.Pod.Status.Conditions = newConditions
+	return newConditions
 }
 
 func PodInTerminating(fppod *types.FornaxPod) bool {
-	return len(fppod.PodState) != 0 && (fppod.PodState == types.PodStateTerminating || fppod.PodState == types.PodStateTerminated)
+	return len(fppod.FornaxPodState) != 0 && (fppod.FornaxPodState == types.PodStateTerminating || fppod.FornaxPodState == types.PodStateTerminated)
 }
 
 func PodCreated(fppod *types.FornaxPod) bool {
-	return (len(fppod.PodState) != 0 && fppod.PodState != types.PodStateCreating) || fppod.RuntimePod != nil
+	return (len(fppod.FornaxPodState) != 0 && fppod.FornaxPodState != types.PodStateCreating) || fppod.RuntimePod != nil
 }

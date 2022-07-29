@@ -29,3 +29,16 @@ func MergeNodeStatus(oldcopy *v1.Node, newnode *v1.Node) {
 	// set node in unschedulable state since node start registration, wait for node
 	oldcopy.Status = *newnode.Status.DeepCopy()
 }
+
+func IsNodeCondtionReady(v1node *v1.Node) bool {
+	for _, v := range v1node.Status.Conditions {
+		if v.Type == v1.NodeReady && v.Status == v1.ConditionTrue {
+			return true
+		}
+	}
+	return false
+}
+
+func IsNodeRunning(v1node *v1.Node) bool {
+	return v1node.Status.Phase == v1.NodeRunning
+}

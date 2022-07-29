@@ -108,6 +108,12 @@ type SessionConfig struct {
 
 	// how many sessions can a application instance hold
 	NumOfSessionOfInstance int `json:"numOfSessionOfInstance,omitempty"`
+
+	ScalingPolicyType ScalingPolicyType `json:"scalingPolicyType,omitempty"`
+
+	IdleSessionNumThreshold uint16 `json:"idleSessionNumThreshold,omitempty"`
+
+	IdleSessionPercentThreshold uint16 `json:"idleSessionPercentThreshold,omitempty"`
 }
 
 type DeploymentAction string
@@ -199,12 +205,9 @@ const (
 )
 
 type ScalingPolicy struct {
-	MinimumTarget               uint32            `json:"minimumTarget,omitempty"`
-	MaximumTarget               uint32            `json:"maximumTarget,omitempty"`
-	Burst                       uint16            `json:"burst,omitempty"`
-	ScalingPolicyType           ScalingPolicyType `json:"scalingPolicyType,omitempty"`
-	IdleSessionNumThreshold     uint16            `json:"idleSessionNumThreshold,omitempty"`
-	IdleSessionPercentThreshold uint16            `json:"idleSessionPercentThreshold,omitempty"`
+	MinimumTarget uint32 `json:"minimumTarget,omitempty"`
+	MaximumTarget uint32 `json:"maximumTarget,omitempty"`
+	Burst         uint16 `json:"burst,omitempty"`
 }
 
 var _ resource.Object = &Application{}

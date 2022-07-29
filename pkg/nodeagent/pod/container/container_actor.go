@@ -141,7 +141,7 @@ func (a *PodContainerActor) startStartupProbers() {
 
 // handle probe result, notify pod container status change
 func (a *PodContainerActor) onContainerProbeResult(result PodContainerProbeResult, probeStatus interface{}) {
-	klog.InfoS("Received container prober result", "pod", types.UniquePodName(a.pod), "container", a.container.ContainerSpec.Name, "result", result)
+	// klog.InfoS("Received container prober result", "pod", types.UniquePodName(a.pod), "container", a.container.ContainerSpec.Name, "result", result)
 	// notify pod container status
 	switch result.ProbeType {
 	case StartupProbe:
@@ -187,7 +187,7 @@ func (a *PodContainerActor) onContainerProbeResult(result PodContainerProbeResul
 				Container: a.container,
 			})
 		} else {
-			klog.InfoS("Container Runtime Status", "status", containerStatus.RuntimeStatus)
+			// klog.InfoS("Container Runtime Status", "status", containerStatus.RuntimeStatus)
 			if a.container.ContainerStatus == nil {
 				a.container.ContainerStatus = containerStatus
 			} else {

@@ -65,7 +65,7 @@ func (n *PodActor) Start() {
 	klog.InfoS("Pod actor started", "pod", types.UniquePodName(n.pod))
 	n.innerActor.Start()
 	// pod actor could be restored from nodeagent db, need to recreate container actors from stored state
-	if n.pod.PodState != types.PodStateTerminated {
+	if n.pod.FornaxPodState != types.PodStateTerminated {
 		for k, v := range n.pod.Containers {
 			if v.State != types.ContainerStateTerminated {
 				// recreate container actors if it does not have
@@ -90,8 +90,6 @@ func (n *PodActor) Start() {
 
 			select {
 			case _ = <-ticker.C:
-				// ticking, state if it has failed last time
-				klog.InfoS("Pod actor ticking", "pod", types.UniquePodName(n.pod))
 				if n.lastError != nil {
 					n.notify(n.Reference(), HouseKeeping{})
 				}
@@ -127,7 +125,7 @@ func (n *PodActor) notifyContainer(containerName string, msg interface{}) error 
 }
 
 func (a *PodActor) actorMessageProcess(msg message.ActorMessage) (interface{}, error) {
-	oldPodState := a.pod.PodState
+	oldPodState := a.pod.FornaxPodState
 	var err error
 	switch msg.Body.(type) {
 	case internal.PodCreate:
@@ -151,14 +149,15 @@ func (a *PodActor) actorMessageProcess(msg message.ActorMessage) (interface{}, e
 	default:
 	}
 
-	SetPodStatus(a.pod)
+	SetPodStatus(a.pod, nil)
 	a.dependencies.PodStore.PutPod(a.pod)
 	if err != nil {
 		a.lastError = err
 		return nil, err
 	} else {
-		if oldPodState != a.pod.PodState {
-			klog.InfoS("PodState changed", "pod", types.UniquePodName(a.pod), "old state", oldPodState, "new state", a.pod.PodState)
+		a.lastError = nil
+		if oldPodState != a.pod.FornaxPodState {
+			klog.InfoS("PodState changed", "pod", types.UniquePodName(a.pod), "old state", oldPodState, "new state", a.pod.FornaxPodState)
 			a.notify(a.supervisor, internal.PodStatusChange{Pod: a.pod})
 		}
 	}
@@ -177,14 +176,14 @@ func (a *PodActor) create() error {
 		return fmt.Errorf("Pod %s is already created, fornaxcore may not in sync,", types.UniquePodName(pod))
 	}
 
-	a.pod.PodState = types.PodStateCreating
+	a.pod.FornaxPodState = types.PodStateCreating
 	err := a.CreatePod()
 	if err != nil {
 		return err
 	}
 
 	// set pod state created when all containers are started
-	a.pod.PodState = types.PodStateCreated
+	a.pod.FornaxPodState = types.PodStateCreated
 
 	return nil
 }
@@ -194,23 +193,27 @@ func (a *PodActor) terminate() error {
 	klog.InfoS("Stop container and termiate pod", "pod", types.UniquePodName(pod))
 
 	if len(a.SessionActors) != 0 {
-		pod.PodState = types.PodStateEvacuating
+		pod.FornaxPodState = types.PodStateEvacuating
 		// TODO evacuate session
 	} else {
-		if pod.PodState != types.PodStateTerminated {
-			pod.PodState = types.PodStateTerminating
+		if pod.FornaxPodState != types.PodStateTerminated {
+			pod.FornaxPodState = types.PodStateTerminating
 		} else {
 			// pod is already in terminating state, idempotently retry
 		}
 
-		terminated, err := a.TerminatePod(time.Duration(*pod.Pod.DeletionGracePeriodSeconds))
+		gracefulPeriodSeconds := int64(0)
+		if pod.Pod.DeletionGracePeriodSeconds != nil {
+			gracefulPeriodSeconds = *pod.Pod.DeletionGracePeriodSeconds
+		}
+		terminated, err := a.TerminatePod(time.Duration(gracefulPeriodSeconds))
 		if err != nil {
 			klog.ErrorS(err, "Pod termination failed, state is left in terminating to retry later,", "pod", types.UniquePodName(pod))
 			return err
 		}
 
 		if terminated {
-			pod.PodState = types.PodStateTerminated
+			pod.FornaxPodState = types.PodStateTerminated
 			err = a.cleanup()
 			if err != nil {
 				return err
@@ -239,43 +242,43 @@ func (a *PodActor) active() error {
 
 func (n *PodActor) housekeeping() error {
 	pod := n.pod
-	klog.InfoS("Pod housekeeping", "pod", types.UniquePodName(pod))
+	klog.InfoS("Problem Pod housekeeping", "pod", types.UniquePodName(pod))
 	var err error
 	switch {
-	case pod.PodState == types.PodStateTerminating:
+	case pod.FornaxPodState == types.PodStateTerminating:
 		err = n.terminate()
-	case pod.PodState == types.PodStateTerminated:
+	case pod.FornaxPodState == types.PodStateTerminated:
 		err = n.cleanup()
-	case pod.PodState == types.PodStateCreating && pod.RuntimePod == nil:
+	case pod.FornaxPodState == types.PodStateCreating && pod.RuntimePod == nil:
 		// pod create completely failed, send pod failed message and stop actor
-		pod.PodState = types.PodStateFailed
+		pod.FornaxPodState = types.PodStateFailed
 		err = n.cleanup()
-	case pod.PodState == types.PodStateCreating && pod.RuntimePod != nil && pod.RuntimePod.Sandbox == nil:
+	case pod.FornaxPodState == types.PodStateCreating && pod.RuntimePod != nil && pod.RuntimePod.Sandbox == nil:
 		// pod create can not got sandbox details, recheck
 		var sandboxStatus *criv1.PodSandbox
 		sandboxStatus, err = n.dependencies.CRIRuntimeService.GetPodSandbox(pod.RuntimePod.Id)
 		// no sandbox found yet, cleanup
 		if err == nil && sandboxStatus == nil {
-			pod.PodState = types.PodStateFailed
+			pod.FornaxPodState = types.PodStateFailed
 			err = n.cleanup()
 		}
 
 		// sandbox found, cleanup
 		if err == nil && sandboxStatus != nil {
 			if sandboxStatus.State == criv1.PodSandboxState_SANDBOX_NOTREADY {
-				pod.PodState = types.PodStateFailed
+				pod.FornaxPodState = types.PodStateFailed
 				err = n.cleanup()
 			} else if sandboxStatus.State == criv1.PodSandboxState_SANDBOX_READY {
-				pod.PodState = types.PodStateFailed
+				pod.FornaxPodState = types.PodStateFailed
 				err = n.cleanup()
 				// TODO, handle sandbox creation failure,
 				// n.startContainer(podSandboxConfig *criv1.PodSandboxConfig, v1Container *v1.Container, pullSecrets []v1.Secret, initContainer bool)
 			}
 		}
-	case pod.PodState == types.PodStateCreating && pod.RuntimePod != nil && pod.RuntimePod.Sandbox != nil:
+	case pod.FornaxPodState == types.PodStateCreating && pod.RuntimePod != nil && pod.RuntimePod.Sandbox != nil:
 		// could be init container failed or part of container failed
 		err = n.terminate()
-	case pod.PodState == types.PodStateFailed:
+	case pod.FornaxPodState == types.PodStateFailed:
 		err = n.terminate()
 	}
 
@@ -289,7 +292,7 @@ func (n *PodActor) onPodContainerCreated(msg internal.PodContainerCreated) error
 		"Pod", types.UniquePodName(pod),
 		"ContainerName", container.ContainerSpec.Name,
 	)
-	if n.pod.PodState == types.PodStateTerminating || n.pod.PodState == types.PodStateTerminated {
+	if n.pod.FornaxPodState == types.PodStateTerminating || n.pod.FornaxPodState == types.PodStateTerminated {
 		klog.InfoS("Pod Container created after when pod is in terminating state",
 			"Pod", types.UniquePodName(pod),
 			"ContainerName", container.ContainerSpec.Name,
@@ -337,7 +340,7 @@ func (a *PodActor) onPodContainerFailed(msg internal.PodContainerFailed) error {
 }
 
 func (a *PodActor) handlePodContainerFailure(pod *types.FornaxPod, container *types.Container) {
-	if pod.PodState == types.PodStateTerminating || pod.PodState == types.PodStateFailed {
+	if pod.FornaxPodState == types.PodStateTerminating || pod.FornaxPodState == types.PodStateFailed {
 		// Pod is being termianted, expected message
 		a.terminate()
 	} else if container.InitContainer {
@@ -345,12 +348,12 @@ func (a *PodActor) handlePodContainerFailure(pod *types.FornaxPod, container *ty
 			// init container is expected to run to end
 		} else if podcontainer.ContainerExitAbnormal(container.ContainerStatus) {
 			// init container failed, terminate pod
-			pod.PodState = types.PodStateFailed
+			pod.FornaxPodState = types.PodStateFailed
 			a.terminate()
 		}
 	} else {
 		klog.InfoS("handle a stopped container failure")
-		pod.PodState = types.PodStateFailed
+		pod.FornaxPodState = types.PodStateFailed
 		a.terminate()
 	}
 }
@@ -373,7 +376,7 @@ func (a *PodActor) onPodContainerReady(msg internal.PodContainerReady) error {
 	}
 
 	if allContainerReady {
-		pod.PodState = types.PodStateRunning
+		pod.FornaxPodState = types.PodStateRunning
 	}
 	return nil
 }

@@ -37,6 +37,10 @@ import (
 	fornaxclient "centaurusinfra.io/fornax-serverless/pkg/client/clientset/versioned"
 	"centaurusinfra.io/fornax-serverless/pkg/fornaxcore/application"
 	grpc_server "centaurusinfra.io/fornax-serverless/pkg/fornaxcore/grpc/server"
+	"centaurusinfra.io/fornax-serverless/pkg/fornaxcore/node"
+	"centaurusinfra.io/fornax-serverless/pkg/fornaxcore/nodemonitor"
+	"centaurusinfra.io/fornax-serverless/pkg/fornaxcore/pod"
+	"centaurusinfra.io/fornax-serverless/pkg/fornaxcore/podscheduler"
 )
 
 var (
@@ -64,33 +68,52 @@ func main() {
 	grpcServer := grpc_server.NewGrpcServer()
 
 	// start node manager
-	// nodeManager := node.NewNodeManager(node.DefaultStaleNodeTimeout)
+	nodeManager := node.NewNodeManager(context.Background(), node.DefaultStaleNodeTimeout, grpcServer)
 
 	// start pod scheduler
-	// klog.Info("starting pod scheduler")
-	// scheduler := podscheduler.NewPodScheduler(grpcServer, nodeManager)
-	// scheduler.Run()
+	klog.Info("starting pod scheduler")
+	scheduler := podscheduler.NewPodScheduler(context.Background(), grpcServer, nodeManager)
+	scheduler.Run()
 
 	// start pod manager and node manager
-	// klog.Info("starting node manager")
-	// podManager := pod.NewPodManager(scheduler, grpcServer)
-	// nodeManager.SetPodManager(podManager)
-	// nodeManager.Run()
+	klog.Info("starting node and pod manager")
+	podManager := pod.NewPodManager(context.Background(), scheduler, grpcServer)
+	podManager.Run()
+
+	nodeManager.SetPodManager(podManager)
+	nodeManager.Run()
 
 	// start fornaxcore grpc server to listen to nodeagent
 	klog.Info("starting fornaxcore grpc server")
 	port := 18001
 	certFile := ""
 	keyFile := ""
-	err := grpcServer.RunGrpcServer(context.Background(), nil, port, certFile, keyFile)
+	err := grpcServer.RunGrpcServer(context.Background(), nodemonitor.NewNodeMonitor(nodeManager), port, certFile, keyFile)
 	// err := app.RunIntegTestGrpcServer(context.Background(), port, certFile, keyFile)
 	if err != nil {
 		klog.Fatal(err)
 	}
 	klog.Info("Fornaxcore grpc server started")
 
+	// clientcmd.BuildConfigFromFlags(masterUrl string, kubeconfigPath string)
+	// start application manager at last as it require api server
+	var kubeconfig *rest.Config
+	if root, err := os.Getwd(); err == nil {
+		kubeconfigPath := root + "/kubeconfig"
+		if kubeconfig, err = clientcmd.BuildConfigFromFlags("", kubeconfigPath); err != nil {
+			klog.ErrorS(err, "Failed to construct kube rest config")
+			os.Exit(-1)
+		}
+	} else {
+		klog.ErrorS(err, "Failed to get working dir")
+		os.Exit(-1)
+	}
+	apiserverClient := fornaxclient.NewForConfigOrDie(kubeconfig)
+	appManager := application.NewApplicationManager(context.Background(), podManager, nodeManager, apiserverClient)
+	appManager.Run(context.Background())
+
 	// start api server
-	fmt.Println("starting fornaxcore k8s.io rest api server")
+	klog.Info("starting fornaxcore k8s.io rest api server")
 	// +kubebuilder:scaffold:resource-register
 	apiserver := builder.APIServer.
 		WithLocalDebugExtension().
@@ -110,22 +133,4 @@ func main() {
 		klog.Fatal(err)
 		os.Exit(-1)
 	}
-
-	fmt.Println("started fornaxcore k8s.io rest api server")
-	// clientcmd.BuildConfigFromFlags(masterUrl string, kubeconfigPath string)
-	// start application manager at last as it require api server
-	var kubeconfig *rest.Config
-	if root, err := os.Getwd(); err == nil {
-		kubeconfigPath := root + "/kubeconfig"
-		if kubeconfig, err = clientcmd.BuildConfigFromFlags("", kubeconfigPath); err != nil {
-			klog.ErrorS(err, "Failed to construct kube rest config")
-			os.Exit(-1)
-		}
-	} else {
-		klog.ErrorS(err, "Failed to get working dir")
-		os.Exit(-1)
-	}
-	apiserverClient := fornaxclient.NewForConfigOrDie(kubeconfig)
-	appManager := application.NewApplicationManager(nil, nil, apiserverClient)
-	appManager.Run(context.Background())
 }

@@ -14,17 +14,16 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package app
+package util
 
 import (
-	"context"
+	"time"
 
-	"centaurusinfra.io/fornax-serverless/pkg/fornaxcore/grpc/server"
-	"centaurusinfra.io/fornax-serverless/pkg/fornaxcore/integtest"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-func RunIntegTestGrpcServer(ctx context.Context, port int, certFile, keyFile string) error {
-	nodeMonitor := integtest.NewIntegNodeMonitor()
-	g := server.NewGrpcServer()
-	return g.RunGrpcServer(ctx, nodeMonitor, port, certFile, keyFile)
+func NewCurrentMetaTime() *metav1.Time {
+	return &metav1.Time{
+		Time: time.Now(),
+	}
 }

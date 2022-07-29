@@ -18,6 +18,7 @@ package node
 
 import (
 	"sync"
+	"time"
 
 	"centaurusinfra.io/fornax-serverless/pkg/fornaxcore/store"
 	fornaxutil "centaurusinfra.io/fornax-serverless/pkg/util"
@@ -28,18 +29,19 @@ import (
 type NodeWorkingState string
 
 const (
-	NodeWorkingStateActiving    NodeWorkingState = "activating"
 	NodeWorkingStateRegistering NodeWorkingState = "registering"
 	NodeWorkingStateTerminating NodeWorkingState = "terminating"
 	NodeWorkingStateInActive    NodeWorkingState = "inactive"
+	NodeWorkingStateRunning     NodeWorkingState = "running"
 )
 
 type FornaxNodeWithState struct {
 	Node       *v1.Node
 	Revision   int64
 	State      NodeWorkingState
-	Pods       map[string]*v1.Pod
+	Pods       map[string]bool
 	DaemonPods map[string]*v1.Pod
+	LastSeen   time.Time
 }
 
 type NodeUpdateBucket struct {
@@ -75,25 +77,25 @@ func (nub *NodeUpdateBucket) appendUpdate(update interface{}) {
 
 type StaleNodeBucket struct {
 	sync.RWMutex
-	bucketStale   map[string]*v1.Node
-	bucketRefresh map[string]*v1.Node
+	bucketStale   map[string]*FornaxNodeWithState
+	bucketRefresh map[string]*FornaxNodeWithState
 }
 
-func (snb *StaleNodeBucket) refreshNode(node *v1.Node) {
-	snb.bucketRefresh[fornaxutil.UniqueNodeName(node)] = node
-	delete(snb.bucketStale, fornaxutil.UniqueNodeName(node))
+func (snb *StaleNodeBucket) refreshNode(node *FornaxNodeWithState) {
+	snb.bucketRefresh[fornaxutil.UniqueNodeName(node.Node)] = node
+	delete(snb.bucketStale, fornaxutil.UniqueNodeName(node.Node))
 }
 
-func (snb *StaleNodeBucket) getStaleNodes() []*v1.Node {
+func (snb *StaleNodeBucket) getStaleNodes() []*FornaxNodeWithState {
 	snb.Lock()
 	defer snb.Unlock()
 
-	var stales []*v1.Node
+	var stales []*FornaxNodeWithState
 	for _, v := range snb.bucketStale {
 		stales = append(stales, v)
 	}
 
-	newBucket := map[string]*v1.Node{}
+	newBucket := map[string]*FornaxNodeWithState{}
 	snb.bucketStale = snb.bucketRefresh
 	snb.bucketRefresh = newBucket
 	return stales

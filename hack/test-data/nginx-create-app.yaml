@@ -18,6 +18,13 @@ spec:
   container:
     image: nginx:latest
     name: nginx
+    resources:
+      requests:
+        memory: "2G"
+        cpu: "0.5"
+      limits:
+        memory: "2G"
+        cpu: "1"
   workingMode: Standlone
   configData:
     config1: data1

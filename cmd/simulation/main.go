@@ -22,7 +22,6 @@ import (
 	"os"
 	"time"
 
-	//"centaurusinfra.io/fornax-serverless/cmd/nodeagent/app"
 	"github.com/spf13/cobra"
 
 	"centaurusinfra.io/fornax-serverless/cmd/simulation/app"
@@ -32,7 +31,7 @@ import (
 )
 
 func main() {
-	command := app1.NewCommand()
+	command := app.NewCommand()
 
 	code := run(command)
 	os.Exit(code)

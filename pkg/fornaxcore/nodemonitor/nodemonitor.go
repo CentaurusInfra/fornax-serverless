@@ -44,7 +44,7 @@ type nodeMonitor struct {
 func (nm *nodeMonitor) OnRegistry(ctx context.Context, message *grpc.FornaxCoreMessage) (*grpc.FornaxCoreMessage, error) {
 	v1node := message.GetNodeRegistry().GetNode().DeepCopy()
 	revision := message.GetNodeRegistry().GetNodeRevision()
-	klog.InfoS("A node is registering", "node", util.UniqueNodeName(v1node), "revision", message.GetNodeRegistry().NodeRevision)
+	klog.InfoS("A node is registering", "node", util.UniqueNodeName(v1node), "revision", message.GetNodeRegistry().GetNodeRevision())
 
 	fornaxnode, err := nm.nodeManager.SetupNode(v1node, revision)
 	if err != nil {

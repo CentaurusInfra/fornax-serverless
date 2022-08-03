@@ -1,0 +1,5 @@
+spec:
+  scalingPolicy:
+    minimumTarget: 0
+    maximumTarget: 100
+    burst: 3

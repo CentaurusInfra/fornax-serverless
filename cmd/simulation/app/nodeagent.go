@@ -14,20 +14,19 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package app1
+package app
 
 import (
 	"context"
 	"errors"
 	"fmt"
 	"os"
-	"strconv"
-	"strings"
 
-	"centaurusinfra.io/fornax-serverless/cmd/simulation/app/sdependency"
 	"centaurusinfra.io/fornax-serverless/cmd/simulation/app/snode"
-	"centaurusinfra.io/fornax-serverless/pkg/nodeagent/config"
+	"centaurusinfra.io/fornax-serverless/cmd/simulation/config"
 
+	"centaurusinfra.io/fornax-serverless/pkg/nodeagent/network"
+	"centaurusinfra.io/fornax-serverless/pkg/nodeagent/node"
 	fornaxtypes "centaurusinfra.io/fornax-serverless/pkg/nodeagent/types"
 	"github.com/coreos/go-systemd/v22/daemon"
 	"github.com/spf13/cobra"
@@ -50,17 +49,6 @@ const (
 	NodeAgent = "nodeagent"
 )
 
-var (
-	numofnode int64 = 1
-)
-
-// func checkPermissions() error {
-// 	if uid := os.Getuid(); uid != 0 {
-// 		return fmt.Errorf("nodeagent needs to run as uid(0)")
-// 	}
-// 	return nil
-// }
-
 func NewCommand() *cobra.Command {
 	flagSet := pflag.NewFlagSet(NodeAgent, pflag.ContinueOnError)
 	flagSet.SetNormalizeFunc(cliflag.WordSepNormalizeFunc)
@@ -78,8 +66,8 @@ func NewCommand() *cobra.Command {
 		DisableFlagParsing: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			// if err := checkPermissions(); err != nil {
-			// 	klog.ErrorS(err, "nodeagent is not running with sufficient permissions")
-			// 	os.Exit(1)
+			//  klog.ErrorS(err, "nodeagent is not running with sufficient permissions")
+			//  os.Exit(1)
 			// }
 
 			ctx := genericapiserver.SetupSignalContext()
@@ -87,22 +75,6 @@ func NewCommand() *cobra.Command {
 			// initial flag parse, since we disable cobra's flag parsing
 			if err := flagSet.Parse(args); err != nil {
 				return fmt.Errorf("failed to parse flag: %w", err)
-			}
-
-			cmds := flagSet.Args()
-			if len(cmds) > 0 {
-				if strings.Contains(cmds[0], "num-of-node") {
-					sr := strings.Split(cmds[0], "=")
-					numofnode, err = strconv.ParseInt(sr[1], 0, 64)
-					klog.InfoS("number of node", "numofnode", numofnode)
-					if err != nil {
-						klog.Info("Can not convert value for cmds[0]: ", cmds[0])
-						return fmt.Errorf("not right input command %+s", cmds[0])
-					}
-				} else {
-					klog.Info("cmds[0]: ", cmds[0])
-					return fmt.Errorf("unknown command %+s", cmds[0])
-				}
 			}
 
 			help, err := flagSet.GetBool("help")
@@ -123,7 +95,6 @@ func NewCommand() *cobra.Command {
 	// ugly, but necessary, because Cobra's default UsageFunc and HelpFunc pollute the flagset with global flags
 	const usageFmt = "Usage:\n  %s\n\nFlags:\n%s"
 	cmd.SetUsageFunc(func(cmd *cobra.Command) error {
-
 		fmt.Fprintf(cmd.OutOrStderr(), usageFmt, cmd.UseLine(), flagSet.FlagUsagesWrapped(2))
 		return nil
 	})
@@ -134,56 +105,49 @@ func NewCommand() *cobra.Command {
 	return cmd
 }
 
-func Run(ctx context.Context, nodeConfig config.NodeConfiguration) error {
+func Run(ctx context.Context, nodeConfig config.SimulationNodeConfiguration) error {
 	klog.InfoS("Golang settings", "GOGC", os.Getenv("GOGC"), "GOMAXPROCS", os.Getenv("GOMAXPROCS"), "GOTRACEBACK", os.Getenv("GOTRACEBACK"))
 
-	if err := config.ValidateNodeConfiguration(nodeConfig); len(err) != 0 {
+	if err := config.ValidateNodeConfiguration(&nodeConfig); len(err) != 0 {
 		return fmt.Errorf("invalidate nodeagent configuration, errors: %v, configuration: %v", err, nodeConfig)
 	}
 	klog.InfoS("NodeConfiguration", "configuration", nodeConfig)
 
 	logs.InitLogs()
 
-	//numofnode := 1
-	for i := 0; i < int(numofnode); i++ {
-		go RunNodeAndNodeActor(ctx, nodeConfig)
+	osHostIps, err := network.GetLocalV4IP()
+	if err != nil {
+		return err
+	}
+	osHostName, err := os.Hostname()
+	if err != nil {
+		return err
+	}
+	for i := 0; i < nodeConfig.NumOfNode; i++ {
+		hostName := fmt.Sprintf("%s-%d", osHostName, i)
+		go RunNodeAndNodeActor(ctx, osHostIps[0].String(), hostName, nodeConfig)
 		klog.Infof("%d th node and node actor created \n", i)
 	}
-
-	//wait until shutdown signal is received
-	// select {
-	// case <-ctx.Done():
-	// 	break
-	// }
 
 	<-ctx.Done()
 
 	return nil
 }
 
-func RunNodeAndNodeActor(ctx context.Context, nodeConfig config.NodeConfiguration) error {
+func RunNodeAndNodeActor(ctx context.Context, hostIp, hostName string, nodeConfig config.SimulationNodeConfiguration) error {
 	klog.InfoS("NodeConfiguration", "configuration", nodeConfig.Hostname)
 
 	logs.InitLogs()
 
-	// if err := run(ctx, nodeConfig, dependencies); err != nil {
-	// 	return fmt.Errorf("failed to run node agent: %w", err)
-	// }
-
 	go daemon.SdNotify(false, "READY=1")
 
-	dependencies, err := sdependency.InitBasicDependencies(nodeConfig)
-	if err != nil {
-		klog.InfoS("failed to init basic dependencies: %w", err)
-	}
-
-	fornaxNode := snode.FornaxNode{
-		NodeConfig:   nodeConfig,
+	fornaxNode := node.FornaxNode{
+		NodeConfig:   nodeConfig.NodeConfiguration,
 		V1Node:       nil,
 		Pods:         map[string]*fornaxtypes.FornaxPod{},
-		Dependencies: dependencies,
+		Dependencies: nil,
 	}
-	nodeActor, err := snode.NewNodeActor(&fornaxNode)
+	nodeActor, err := snode.NewNodeActor(hostIp, hostName, &fornaxNode)
 	if err != nil {
 		klog.Errorf("can not initialize node actor, error %v", err)
 	}

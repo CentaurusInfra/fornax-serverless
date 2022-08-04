@@ -16,17 +16,12 @@ limitations under the License.
 package snode
 
 import (
-	"errors"
-	"math"
 	goruntime "runtime"
 	"time"
 
-	"centaurusinfra.io/fornax-serverless/pkg/nodeagent/cadvisor"
-	"centaurusinfra.io/fornax-serverless/pkg/nodeagent/config"
-	"centaurusinfra.io/fornax-serverless/pkg/nodeagent/network"
-	"centaurusinfra.io/fornax-serverless/pkg/nodeagent/resource"
-	"centaurusinfra.io/fornax-serverless/pkg/nodeagent/runtime"
-	//fornaxtypes "centaurusinfra.io/fornax-serverless/pkg/nodeagent/types"
+	"centaurusinfra.io/fornax-serverless/pkg/nodeagent/node"
+	"centaurusinfra.io/fornax-serverless/pkg/nodeagent/types"
+
 	"centaurusinfra.io/fornax-serverless/pkg/util"
 
 	v1 "k8s.io/api/core/v1"
@@ -36,50 +31,39 @@ import (
 	"k8s.io/klog/v2"
 )
 
+const (
+	SIXTY_FOUR_G_MEM = 64 * 1024 * 1024 * 1024
+)
+
 type NodeStatusUpdater interface {
 	UpdateNodeStatus(*v1.Node) error
 }
 
-func SetNodeStatus(node *FornaxNode) error {
-	var errs = []error{}
+func SetNodeStatus(node *node.FornaxNode) error {
+	UpdateNodeCapacity(node.V1Node)
+
 	var condition *v1.NodeCondition
 	var conditions = map[v1.NodeConditionType]*v1.NodeCondition{}
-	var err error
-	condition, err = UpdateNodeAddress(node.Dependencies.NetworkProvider, node.V1Node)
-	if err != nil {
-		errs = append(errs, errors.New("can not find network provider"))
-	}
-	conditions[condition.Type] = condition
-
-	condition, err = UpdateNodeMemoryStatus(node.Dependencies.MemoryManager, node.V1Node)
-	if err != nil {
-		errs = append(errs, errors.New("can not update memory resource status"))
-	}
-	conditions[condition.Type] = condition
-
-	condition, err = UpdateNodeCPUStatus(node.Dependencies.CPUManager, node.V1Node)
-	if err != nil {
-		errs = append(errs, errors.New("can not update cpu resource status"))
-	}
-	conditions[condition.Type] = condition
-
-	condition, err = UpdateNodeVolumeStatus(node.Dependencies.VolumeManager, node.V1Node)
-	if err != nil {
-		errs = append(errs, errors.New("can not update volume resource status"))
-	}
-	conditions[condition.Type] = condition
-
 	currentTime := metav1.NewTime(time.Now())
-	if len(errs) == 0 {
-		conditions[v1.NodeReady] = &v1.NodeCondition{
-			Type:               v1.NodeReady,
-			Status:             v1.ConditionTrue,
-			Reason:             "NodeRuntime Ready",
-			Message:            "Node is ready to get pod",
-			LastHeartbeatTime:  currentTime,
-			LastTransitionTime: currentTime,
-		}
+	condition = &v1.NodeCondition{
+		Type:               v1.NodeNetworkUnavailable,
+		Status:             v1.ConditionTrue,
+		Reason:             "Node network initialized",
+		Message:            "Node network initialized",
+		LastHeartbeatTime:  currentTime,
+		LastTransitionTime: currentTime,
 	}
+	conditions[condition.Type] = condition
+
+	condition = &v1.NodeCondition{
+		Type:               v1.NodeReady,
+		Status:             v1.ConditionTrue,
+		Reason:             "Node runtime ready",
+		Message:            "Node runtime ready",
+		LastHeartbeatTime:  currentTime,
+		LastTransitionTime: currentTime,
+	}
+	conditions[condition.Type] = condition
 
 	mergeNodeConditions(node.V1Node, conditions)
 
@@ -105,160 +89,26 @@ func mergeNodeConditions(node *v1.Node, conditions map[v1.NodeConditionType]*v1.
 	}
 }
 
-func UpdateNodeAddress(networkProvider network.NetworkAddressProvider, node *v1.Node) (*v1.NodeCondition, error) {
-	if addresses, err := networkProvider.GetNetAddress(); err != nil {
-		klog.Errorf("failed to calculate node address: err %v", err)
-		return nil, err
-	} else {
-		node.Status.Addresses = addresses
-	}
-
-	currentTime := metav1.NewTime(time.Now())
-	condition := &v1.NodeCondition{
-		Type:               v1.NodeNetworkUnavailable,
-		Status:             v1.ConditionFalse,
-		Reason:             "Node network initialized",
-		Message:            "Node network initialized",
-		LastHeartbeatTime:  currentTime,
-		LastTransitionTime: currentTime,
-	}
-	return condition, nil
-}
-
-func UpdateNodeReadyStatus(criRuntime runtime.RuntimeService, node *v1.Node) (*v1.NodeCondition, error) {
-	status, err := criRuntime.GetRuntimeStatus()
-	if err != nil {
-		return nil, err
-	}
-
-	currentTime := metav1.NewTime(time.Now())
-	networkReady := false
-	runtimeReady := false
-	for _, v := range status.Conditions {
-		if v.Type == "NetworkReady" && v.Status {
-			networkReady = true
-		}
-		if v.Type == "RuntimeReady" && v.Status {
-			runtimeReady = true
-		}
-	}
-
-	var condition *v1.NodeCondition
-	if runtimeReady && networkReady {
-		condition = &v1.NodeCondition{
-			Type:               v1.NodeReady,
-			Status:             v1.ConditionTrue,
-			Reason:             "Node runtime ready",
-			Message:            "Node runtime ready",
-			LastHeartbeatTime:  currentTime,
-			LastTransitionTime: currentTime,
-		}
-	} else {
-		condition = &v1.NodeCondition{
-			Type:               v1.NodeReady,
-			Status:             v1.ConditionFalse,
-			Reason:             "Node runtime not ready",
-			Message:            "Node runtime not ready",
-			LastHeartbeatTime:  currentTime,
-			LastTransitionTime: currentTime,
-		}
-	}
-
-	return condition, nil
-}
-
-func UpdateNodeCPUStatus(cpuManager resource.CPUManager, node *v1.Node) (*v1.NodeCondition, error) {
-	if node.Status.Allocatable == nil {
-		node.Status.Allocatable = make(v1.ResourceList)
-	}
-
-	UpdateAllocatableResourceQuantity(v1.ResourceCPU, node, cpuManager.GetReservedResource().Resources)
-
-	condition := &v1.NodeCondition{}
-	return condition, nil
-}
-
-func UpdateNodeMemoryStatus(memoryManager resource.MemoryManager, node *v1.Node) (*v1.NodeCondition, error) {
-	if node.Status.Allocatable == nil {
-		node.Status.Allocatable = make(v1.ResourceList)
-	}
-
-	UpdateAllocatableResourceQuantity(v1.ResourceMemory, node, memoryManager.GetReservedResource().Resources)
-	// TODO add condition
-	condition := &v1.NodeCondition{}
-	return condition, nil
-}
-
-func UpdateNodeVolumeStatus(volumeManager resource.VolumeManager, node *v1.Node) (*v1.NodeCondition, error) {
-	if node.Status.Allocatable == nil {
-		node.Status.Allocatable = make(v1.ResourceList)
-	}
-
-	UpdateAllocatableResourceQuantity(v1.ResourceStorage, node, volumeManager.GetReservedResource().Resources)
-
-	// TODO add condition
-	condition := &v1.NodeCondition{}
-	return condition, nil
-}
-
-func UpdateNodeCapacity(cc cadvisor.CAdvisorInfoProvider, nodeConfig config.NodeConfiguration, node *v1.Node) error {
-	info, err := cc.GetNodeCAdvisorInfo()
-	if err != nil {
-		return err
-	}
-
+func UpdateNodeCapacity(node *v1.Node) error {
 	node.Status.NodeInfo.OperatingSystem = goruntime.GOOS
 	node.Status.NodeInfo.Architecture = goruntime.GOARCH
-	node.Status.NodeInfo.KernelVersion = info.VersionInfo.KernelVersion
-	node.Status.NodeInfo.OSImage = info.VersionInfo.ContainerOsVersion
+	node.Status.NodeInfo.KernelVersion = "5.15.0-41-generic"
+	node.Status.NodeInfo.OSImage = "Ubuntu 20.04.4 LTS"
 
 	if node.Status.Capacity == nil {
 		node.Status.Capacity = v1.ResourceList{}
 	}
 
-	klog.Infof("cadvisor info %v", info.MachineInfo)
-	if info == nil {
-		node.Status.Capacity[v1.ResourceCPU] = *k8sresource.NewMilliQuantity(0, k8sresource.DecimalSI)
-		node.Status.Capacity[v1.ResourceMemory] = k8sresource.MustParse("0Gi")
-		node.Status.Capacity[v1.ResourcePods] = *k8sresource.NewQuantity(0, k8sresource.DecimalSI)
-	} else {
-		node.Status.NodeInfo.MachineID = info.MachineInfo.MachineID
-		node.Status.NodeInfo.SystemUUID = info.MachineInfo.SystemUUID
-		node.Status.NodeInfo.BootID = info.MachineInfo.BootID
-
-		for rName, rCap := range resource.ResourceListFromMachineInfo(info.MachineInfo) {
-			node.Status.Capacity[rName] = rCap
-		}
-
-		if nodeConfig.PodsPerCore > 0 {
-			node.Status.Capacity[v1.ResourcePods] =
-				util.ResourceQuantity(
-					int64(math.Min(float64(info.MachineInfo.NumCores*nodeConfig.PodsPerCore), float64(nodeConfig.MaxPods))), v1.ResourcePods)
-		} else {
-			node.Status.Capacity[v1.ResourcePods] =
-				util.ResourceQuantity(int64(nodeConfig.MaxPods), v1.ResourcePods)
-		}
-	}
-
+	node.Status.Capacity[v1.ResourceCPU] = util.ResourceQuantity(12000, v1.ResourceCPU)
+	node.Status.Capacity[v1.ResourceMemory] = util.ResourceQuantity(SIXTY_FOUR_G_MEM, v1.ResourceMemory)
+	node.Status.Capacity[v1.ResourcePods] = *k8sresource.NewQuantity(1000, k8sresource.DecimalSI)
+	UpdateAllocatableResourceQuantity(v1.ResourceCPU, node, v1.ResourceList{})
+	UpdateAllocatableResourceQuantity(v1.ResourceMemory, node, v1.ResourceList{})
 	return nil
-
 }
 
 func UpdateAllocatableResourceQuantity(resourceName v1.ResourceName, node *v1.Node, reservedQuantity v1.ResourceList) {
-	//zeroQuanity := util.ResourceQuantity(0, resourceName)
-	var size int64
-
-	if resourceName == "cpu" {
-		size = 8000 // 1core = 1000m if you put 1000m, it mean it reserve 1000m = 1 core.
-	} else if resourceName == "memory" {
-		size = 64 * 1024 * 1024 * 1024 // 1G = 1024 * 1024 * 1024. if you put 1G, it mean preserve 1G memory
-	} else if resourceName == "storage" {
-		size = 99
-	} else {
-		size = 0
-	}
-	zeroQuanity := util.ResourceQuantity(size, resourceName)
-
+	zeroQuanity := util.ResourceQuantity(0, resourceName)
 	capacity, ok := node.Status.Capacity[resourceName]
 	if ok {
 		value := capacity.DeepCopy()
@@ -277,7 +127,7 @@ func UpdateAllocatableResourceQuantity(resourceName v1.ResourceName, node *v1.No
 	}
 }
 
-func IsNodeStatusReady(myNode *FornaxNode) bool {
+func IsNodeStatusReady(myNode *node.FornaxNode) bool {
 	// check node capacity and allocatable are set
 	cpuReady := false
 	memReady := false
@@ -295,11 +145,11 @@ func IsNodeStatusReady(myNode *FornaxNode) bool {
 
 	// check daemon pod status
 	daemonReady := true
-	// for _, v := range myNode.Pods {
-	// 	if v.Daemon {
-	// 		daemonReady = daemonReady && v.FornaxPodState == fornaxtypes.PodStateRunning
-	// 	}
-	// }
+	for _, v := range myNode.Pods {
+		if v.Daemon {
+			daemonReady = daemonReady && v.FornaxPodState == types.PodStateRunning
+		}
+	}
 
 	klog.InfoS("Node Ready status", "cpu", cpuReady, "mem", memReady, "daemon", daemonReady, "nodeCondition", nodeConditionReady)
 	return (cpuReady && memReady && daemonReady && nodeConditionReady)

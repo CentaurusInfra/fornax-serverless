@@ -16,62 +16,29 @@ limitations under the License.
 package snode
 
 import (
-	"fmt"
-	"net"
-	"os"
 	goruntime "runtime"
-	"sort"
-	"strconv"
 	"time"
 
-	"centaurusinfra.io/fornax-serverless/cmd/simulation/app/sdependency"
 	default_config "centaurusinfra.io/fornax-serverless/pkg/config"
 	"centaurusinfra.io/fornax-serverless/pkg/nodeagent/config"
+	"centaurusinfra.io/fornax-serverless/pkg/nodeagent/node"
 
-	"centaurusinfra.io/fornax-serverless/pkg/nodeagent/runtime"
-	"centaurusinfra.io/fornax-serverless/pkg/nodeagent/store"
-	"centaurusinfra.io/fornax-serverless/pkg/nodeagent/store/factory"
 	fornaxtypes "centaurusinfra.io/fornax-serverless/pkg/nodeagent/types"
-	"centaurusinfra.io/fornax-serverless/pkg/util"
 
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/uuid"
-
-	// criv1 "k8s.io/cri-api/pkg/apis/runtime/v1"
-	"k8s.io/klog/v2"
 )
 
-var nodenumber int32
-
-type FornaxNode struct {
-	NodeConfig   config.NodeConfiguration
-	V1Node       *v1.Node
-	Revision     int64
-	Pods         map[string]*fornaxtypes.FornaxPod
-	Dependencies *sdependency.Dependencies
-}
-
-func (n *FornaxNode) initV1Node() (*v1.Node, error) {
-	hostname, err := os.Hostname()
-	if err != nil {
-		return nil, err
-	}
-	//following two line for test purpose
-	nodenumber++
-	m := strconv.Itoa(int(nodenumber))
-	s := fmt.Sprintf("%06s", m)
-	hostname = hostname + "-" + s
-	//end test line
-
+func InitV1Node(hostIp, hostName string) (*v1.Node, error) {
 	node := &v1.Node{
 		TypeMeta: metav1.TypeMeta{
 			Kind:       "Node",
 			APIVersion: "v1",
 		},
 		ObjectMeta: metav1.ObjectMeta{
-			Name:            hostname,
+			Name:            hostName,
 			Namespace:       default_config.DefaultFornaxCoreNodeNameSpace,
 			UID:             uuid.NewUUID(),
 			ResourceVersion: "1",
@@ -81,7 +48,7 @@ func (n *FornaxNode) initV1Node() (*v1.Node, error) {
 			},
 			DeletionTimestamp:          nil,
 			DeletionGracePeriodSeconds: new(int64),
-			Labels:                     map[string]string{v1.LabelHostname: hostname, v1.LabelOSStable: goruntime.GOOS, v1.LabelArchStable: goruntime.GOARCH},
+			Labels:                     map[string]string{v1.LabelHostname: hostName, v1.LabelOSStable: goruntime.GOOS, v1.LabelArchStable: goruntime.GOARCH},
 			Annotations:                map[string]string{},
 			OwnerReferences:            []metav1.OwnerReference{},
 			Finalizers:                 []string{},
@@ -120,16 +87,9 @@ func (n *FornaxNode) initV1Node() (*v1.Node, error) {
 		LastTransitionTime: metav1.NewTime(time.Now()),
 	})
 
-	if n.Dependencies.NetworkProvider != nil {
-		node.Status.Addresses, err = n.Dependencies.NetworkProvider.GetNetAddress()
-		if err != nil {
-			return nil, err
-		}
-	} else {
-		node.Status.Addresses = []v1.NodeAddress{
-			{Type: v1.NodeInternalIP, Address: n.NodeConfig.NodeIP},
-			{Type: v1.NodeHostName, Address: hostname},
-		}
+	node.Status.Addresses = []v1.NodeAddress{
+		{Type: v1.NodeInternalIP, Address: hostIp},
+		{Type: v1.NodeHostName, Address: hostName},
 	}
 
 	return node, nil
@@ -140,149 +100,19 @@ type ContainerWorldSummary struct {
 	terminatedPods []*fornaxtypes.FornaxPod
 }
 
-func LoadPodsFromContainerRuntime(runtimeService runtime.RuntimeService, db *factory.PodStore) (ContainerWorldSummary, error) {
-	world := ContainerWorldSummary{
-		runningPods:    []*fornaxtypes.FornaxPod{},
-		terminatedPods: []*fornaxtypes.FornaxPod{},
-	}
-	pods, err := db.ListObject()
-	if err != nil {
-		klog.Errorf("can not load runtime world, probably runtime is not ready yet if node is rebooted")
-		return world, err
-	}
-
-	for _, obj := range pods {
-		podObj := obj.(*fornaxtypes.FornaxPod)
-		if podObj.RuntimePod == nil {
-			world.terminatedPods = append(world.terminatedPods, podObj)
-		} else {
-			containerIDs := []string{}
-			for _, v := range podObj.Containers {
-				containerIDs = append(containerIDs, v.RuntimeContainer.Id)
-			}
-
-			status, err := runtimeService.GetPodStatus(podObj.RuntimePod.Id, containerIDs)
-			if err == nil {
-				// runtime service return nil if no such pod
-				if status != nil {
-					for _, v := range podObj.Containers {
-						runtimeStatus, found := status.ContainerStatuses[v.RuntimeContainer.Id]
-						if found {
-							v.ContainerStatus.RuntimeStatus = runtimeStatus
-						} else {
-							// this container does not have runtime status, so, mark it as already terminated
-							podObj.FornaxPodState = fornaxtypes.PodStateFailed
-							v.State = fornaxtypes.ContainerStateTerminated
-						}
-					}
-					world.runningPods = append(world.runningPods, podObj)
-				} else {
-					// store pod does not exist in container runtime, mark all containers as terminated
-					podObj.FornaxPodState = fornaxtypes.PodStateTerminated
-					for _, v := range podObj.Containers {
-						v.State = fornaxtypes.ContainerStateTerminated
-					}
-					world.terminatedPods = append(world.terminatedPods, podObj)
-				}
-				db.PutObject(string(podObj.Identifier), podObj)
-			} else {
-				// got error, can not make decision, will retry
-				return world, err
-			}
-		}
-	}
-	return world, nil
-}
-
-func NodeSpecPodCidrChanged(myNode *v1.Node, apiNode *v1.Node) bool {
-	errs := ValidateNodeSpec(apiNode)
-	if len(errs) > 0 {
-		klog.Errorf("api node spec is not valid, errors %v", errs)
-		// if apiNode spec is invalid, treat it not changed
-		return false
-	}
-
-	// if PodCIDR changed or PodCIDRs changed
-	if len(myNode.Spec.PodCIDR) == 0 || myNode.Spec.PodCIDR != apiNode.Spec.PodCIDR || len(myNode.Spec.PodCIDRs) != len(apiNode.Spec.PodCIDRs) {
-		return true
-	}
-
-	sort.Strings(myNode.Spec.PodCIDRs)
-	sort.Strings(apiNode.Spec.PodCIDRs)
-
-	for i := 0; i < len(myNode.Spec.PodCIDRs); i++ {
-		if myNode.Spec.PodCIDRs[i] != apiNode.Spec.PodCIDRs[i] {
-			return true
-		}
-	}
-
-	return false
-}
-
-// only validate pod cidr for now
-func ValidateNodeSpec(apiNode *v1.Node) []error {
-	errors := []error{}
-	if len(apiNode.Spec.PodCIDR) == 0 {
-		errors = append(errors, fmt.Errorf("api node spec pod cidr is nil"))
-	} else if _, _, err := net.ParseCIDR(apiNode.Spec.PodCIDR); err != nil {
-		errors = append(errors, fmt.Errorf("api node spec PodCIDR %s is invalid", apiNode.Spec.PodCIDR))
-	}
-
-	for i, v := range apiNode.Spec.PodCIDRs {
-		if _, _, err := net.ParseCIDR(apiNode.Spec.PodCIDR); err != nil {
-			errors = append(errors, fmt.Errorf("api node spec PodCIDRs[%d]: %s is invalid", i, v))
-		}
-	}
-
-	if len(apiNode.Spec.PodCIDRs) > 0 && apiNode.Spec.PodCIDRs[0] != apiNode.Spec.PodCIDR {
-		errors = append(errors, fmt.Errorf("api node spec podcidrs[0] %s does not match podcidr %s", apiNode.Spec.PodCIDRs[0], apiNode.Spec.PodCIDR))
-	}
-	return errors
-}
-
-func (n *FornaxNode) Init() error {
-	return n.Dependencies.Complete(n.V1Node, n.NodeConfig, n.activePods)
-}
-
-func (n *FornaxNode) activePods() []*v1.Pod {
-	v1Pods := []*v1.Pod{}
-	for _, v := range n.Pods {
-		v1Pods = append(v1Pods, v.Pod.DeepCopy())
-	}
-	return v1Pods
-}
-
-func NewFornaxNode(nodeConfig config.NodeConfiguration, dependencies *sdependency.Dependencies) (*FornaxNode, error) {
-	fornaxNode := FornaxNode{
+func NewFornaxNode(hostIp, hostName string, nodeConfig config.NodeConfiguration) (*node.FornaxNode, error) {
+	fornaxNode := node.FornaxNode{
 		NodeConfig:   nodeConfig,
 		V1Node:       nil,
 		Revision:     0,
 		Pods:         map[string]*fornaxtypes.FornaxPod{},
-		Dependencies: dependencies,
+		Dependencies: nil,
 	}
-	v1node, err := fornaxNode.initV1Node()
+	v1node, err := InitV1Node(hostIp, hostName)
 	if err != nil {
 		return nil, err
 	} else {
 		fornaxNode.V1Node = v1node
-	}
-	nodeWithRevision, err := dependencies.NodeStore.GetNode(util.UniqueNodeName(v1node))
-	if err != nil {
-		if err != store.StoreObjectNotFound {
-			return nil, err
-		}
-	} else {
-		if util.UniqueNodeName(nodeWithRevision.Node) != util.UniqueNodeName(v1node) {
-			// if node name changed, it's a new node
-			// TODO, check if spec changed, fornax core could send a completed spec back to node agent after it's registered
-			fornaxNode.Revision = 0
-		} else {
-			fornaxNode.V1Node.UID = nodeWithRevision.Node.UID
-			fornaxNode.V1Node.Generation = nodeWithRevision.Node.Generation
-			fornaxNode.V1Node.ResourceVersion = nodeWithRevision.Node.ResourceVersion
-			fornaxNode.V1Node.CreationTimestamp = nodeWithRevision.Node.CreationTimestamp
-			fornaxNode.Revision = nodeWithRevision.Revision
-		}
 	}
 
 	SetNodeStatus(&fornaxNode)

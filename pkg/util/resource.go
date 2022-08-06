@@ -29,7 +29,7 @@ const (
 func ResourceQuantity(quantity int64, resourceName v1.ResourceName) resource.Quantity {
 	switch resourceName {
 	case v1.ResourceCPU:
-		return *resource.NewMilliQuantity(quantity, resource.DecimalSI)
+		return *resource.NewQuantity(quantity, resource.BinarySI)
 	case v1.ResourceMemory:
 		return *resource.NewQuantity(quantity, resource.BinarySI)
 	case v1.ResourcePods:

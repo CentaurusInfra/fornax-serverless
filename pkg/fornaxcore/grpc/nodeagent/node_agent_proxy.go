@@ -27,6 +27,7 @@ var (
 	NodeRevisionOutOfOrderError = errors.New("revision out of order between fornaxcore and node")
 	NodeNotFoundError           = errors.New("node not found")
 	NodeAlreadyExistError       = errors.New("node already exist")
+	PodMissingNodeLabelError    = errors.New("pod does not have fornax node label")
 )
 
 type MessageDispatcher interface {

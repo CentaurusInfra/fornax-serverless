@@ -21,14 +21,14 @@ import (
 	"centaurusinfra.io/fornax-serverless/pkg/nodeagent/pod"
 )
 
-func BuildFornaxGrpcNodeState(node *FornaxNode) *grpc.FornaxCoreMessage {
+func BuildFornaxGrpcNodeState(node *FornaxNode, revision int64) *grpc.FornaxCoreMessage {
 	podStates := []*grpc.PodState{}
-	for _, v := range node.Pods {
+	for _, v := range node.Pods.List() {
 		s := pod.BuildFornaxcoreGrpcPodState(node.Revision, v)
 		podStates = append(podStates, s.GetPodState())
 	}
 	ns := grpc.NodeState{
-		NodeRevision:  &node.Revision,
+		NodeRevision:  &revision,
 		Node:          node.V1Node,
 		PodStates:     podStates,
 		SessionStates: []*grpc.SessionState{},
@@ -43,14 +43,14 @@ func BuildFornaxGrpcNodeState(node *FornaxNode) *grpc.FornaxCoreMessage {
 	}
 }
 
-func BuildFornaxGrpcNodeReady(node *FornaxNode) *grpc.FornaxCoreMessage {
+func BuildFornaxGrpcNodeReady(node *FornaxNode, revision int64) *grpc.FornaxCoreMessage {
 	podStates := []*grpc.PodState{}
-	for _, v := range node.Pods {
+	for _, v := range node.Pods.List() {
 		s := pod.BuildFornaxcoreGrpcPodState(node.Revision, v)
 		podStates = append(podStates, s.GetPodState())
 	}
 	ns := grpc.NodeReady{
-		NodeRevision:  &node.Revision,
+		NodeRevision:  &revision,
 		Node:          node.V1Node,
 		PodStates:     podStates,
 		SessionStates: []*grpc.SessionState{},

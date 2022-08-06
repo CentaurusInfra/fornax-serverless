@@ -19,6 +19,7 @@ package nodemonitor
 import (
 	"context"
 
+	fornaxv1 "centaurusinfra.io/fornax-serverless/pkg/apis/core/v1"
 	default_config "centaurusinfra.io/fornax-serverless/pkg/config"
 	"centaurusinfra.io/fornax-serverless/pkg/fornaxcore/grpc"
 	"centaurusinfra.io/fornax-serverless/pkg/fornaxcore/grpc/nodeagent"
@@ -45,6 +46,12 @@ func (nm *nodeMonitor) OnRegistry(ctx context.Context, message *grpc.FornaxCoreM
 	v1node := message.GetNodeRegistry().GetNode().DeepCopy()
 	revision := message.GetNodeRegistry().GetNodeRevision()
 	klog.InfoS("A node is registering", "node", util.UniqueNodeName(v1node), "revision", message.GetNodeRegistry().GetNodeRevision())
+
+	// currRevision := oldcopy.Revision
+	// if revision < currRevision {
+	//  klog.Warningf("Node is registering with a older revision, fornax core revision: %d, received revision: %d", currRevision, revision)
+	// }
+	//
 
 	fornaxnode, err := nm.nodeManager.SetupNode(v1node, revision)
 	if err != nil {
@@ -77,17 +84,15 @@ func (nm *nodeMonitor) OnRegistry(ctx context.Context, message *grpc.FornaxCoreM
 
 // OnNodeReady update node state, make node ready for schedule pod
 func (nm *nodeMonitor) OnNodeReady(ctx context.Context, message *grpc.FornaxCoreMessage) (*grpc.FornaxCoreMessage, error) {
+	nodeReady := message.GetNodeReady()
 	klog.InfoS("A node is ready",
-		"node", util.UniqueNodeName(message.GetNodeReady().Node),
-		"revision", message.GetNodeReady().NodeRevision,
-		"pods", len(message.GetNodeReady().PodStates))
+		"node", util.UniqueNodeName(nodeReady.Node),
+		"revision", nodeReady.GetNodeRevision(),
+		"pods", len(nodeReady.PodStates))
 
-	_, err := nm.updateOrCreateNode(
-		message.GetNodeReady().GetNode(),
-		message.GetNodeReady().GetNodeRevision(),
-		message.GetNodeReady().GetPodStates())
+	_, err := nm.updateOrCreateNode(nodeReady.GetNode(), nodeReady.GetNodeRevision(), nodeReady.GetPodStates())
 	if err != nil {
-		klog.ErrorS(err, "Failed to sync a node", "node", util.UniqueNodeName(message.GetNodeReady().Node))
+		klog.ErrorS(err, "Failed to sync a node", "node", util.UniqueNodeName(nodeReady.Node))
 		if err == nodeagent.NodeRevisionOutOfOrderError {
 			return server.NewFullSyncRequest(), nil
 		}
@@ -98,14 +103,12 @@ func (nm *nodeMonitor) OnNodeReady(ctx context.Context, message *grpc.FornaxCore
 
 // OnNodeStateUpdate sync node pods state
 func (nm *nodeMonitor) OnNodeStateUpdate(ctx context.Context, message *grpc.FornaxCoreMessage) (*grpc.FornaxCoreMessage, error) {
+	nodeState := message.GetNodeState()
 	klog.InfoS("Received a node state",
-		"node", util.UniqueNodeName(message.GetNodeState().Node),
-		"revision", message.GetNodeState().GetNodeRevision(),
-		"pods", len(message.GetNodeState().PodStates))
-	_, err := nm.updateOrCreateNode(
-		message.GetNodeState().GetNode(),
-		message.GetNodeState().GetNodeRevision(),
-		message.GetNodeState().GetPodStates())
+		"node", util.UniqueNodeName(nodeState.GetNode()),
+		"revision", nodeState.GetNodeRevision(),
+		"pods", len(nodeState.GetPodStates()))
+	_, err := nm.updateOrCreateNode(nodeState.GetNode(), nodeState.GetNodeRevision(), nodeState.GetPodStates())
 	if err != nil {
 		klog.ErrorS(err, "Failed to sync a node", "node", util.UniqueNodeName(message.GetNodeState().Node))
 		return nil, err
@@ -117,22 +120,43 @@ func (nm *nodeMonitor) OnNodeStateUpdate(ctx context.Context, message *grpc.Forn
 // OnPodStateUpdate update single pod state
 func (nm *nodeMonitor) OnPodStateUpdate(ctx context.Context, message *grpc.FornaxCoreMessage) (*grpc.FornaxCoreMessage, error) {
 	podState := message.GetPodState()
+	revision := podState.GetNodeRevision()
 	klog.InfoS("Received a pod state",
 		"pod", podutil.UniquePodName(podState.GetPod()),
-		"state", podState.GetState(),
+		"fornax state", podState.GetState(),
+		"pod phase", podState.GetPod().Status.Phase,
 		"condition", k8spodutil.IsPodReady(podState.GetPod()),
-		"node revision", podState.GetNodeRevision())
+		"node revision", revision)
 
-	err := nm.nodeManager.UpdatePodState(podState)
-	if err != nil {
-		klog.ErrorS(err, "Failed to update pod state", "pod", podState)
-		return nil, err
+	nodeIdentifier, found := podState.GetPod().Labels[fornaxv1.LabelFornaxCoreNode]
+	if !found {
+		klog.Errorf("Pod miss node label: %s", fornaxv1.LabelFornaxCoreNode)
+		return nil, nodeagent.PodMissingNodeLabelError
+	}
+	nodeWS := nm.nodeManager.FindNode(nodeIdentifier)
+	if nodeWS == nil {
+		return nil, nodeagent.NodeRevisionOutOfOrderError
+	}
+
+	currRevision := nodeWS.Revision
+	if revision == currRevision+1 {
+		// in incremental order
+		err := nm.nodeManager.UpdatePodState(podState.GetPod().DeepCopy(), revision)
+		if err != nil {
+			klog.ErrorS(err, "Failed to update pod state", "pod", podState)
+			return nil, err
+		}
+	} else if revision == currRevision {
+		// klog.Infof("Received a same revision from node agent, revision: %d, skip", revision)
+	} else {
+		klog.Warningf("Received a disordred revision from node agent, fornax core revision: %d, received revision: %d", currRevision, revision)
+		return nil, nodeagent.NodeRevisionOutOfOrderError
 	}
 	return nil, nil
 }
 
 func (nm *nodeMonitor) updateOrCreateNode(v1node *v1.Node, revision int64, podStates []*grpc.PodState) (newNode *node.FornaxNodeWithState, err error) {
-	if existingNode := nm.nodeManager.FindNode(v1node.GetName()); existingNode == nil {
+	if nodeWS := nm.nodeManager.FindNode(util.UniqueNodeName(v1node)); nodeWS == nil {
 		// somehow node already register with other fornax cores
 		newNode, err = nm.nodeManager.CreateNode(v1node, revision)
 		if err != nil {
@@ -141,12 +165,12 @@ func (nm *nodeMonitor) updateOrCreateNode(v1node *v1.Node, revision int64, podSt
 		}
 		nm.nodeManager.SyncNodePodStates(newNode.Node, podStates)
 	} else {
-		if existingNode.Revision > revision {
-			klog.Warningf("Received a older revision of node, fornaxcore revision: %d, nodeagent revision: %d", existingNode.Revision, revision)
+		if nodeWS.Revision > revision {
+			klog.Warningf("Received a older revision of node, fornaxcore revision: %d, node revision: %d", nodeWS.Revision, revision)
 			return nil, nodeagent.NodeRevisionOutOfOrderError
-		} else if existingNode.Revision == revision {
+		} else if nodeWS.Revision == revision {
 			// klog.Infof("Received a same revision from node agent, revision: %d, skip", revision)
-			return existingNode, nil
+			return nodeWS, nil
 		}
 
 		newNode, err = nm.nodeManager.UpdateNode(v1node, revision)
@@ -156,7 +180,7 @@ func (nm *nodeMonitor) updateOrCreateNode(v1node *v1.Node, revision int64, podSt
 		}
 		nm.nodeManager.SyncNodePodStates(newNode.Node, podStates)
 	}
-	klog.InfoS("Node state and its pod states synced", "node", util.UniqueNodeName(newNode.Node))
+	klog.InfoS("Node state and its pod states synced", "node", util.UniqueNodeName(newNode.Node), "revision", revision)
 
 	return newNode, nil
 }

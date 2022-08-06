@@ -27,7 +27,6 @@ import (
 
 	"centaurusinfra.io/fornax-serverless/pkg/nodeagent/network"
 	"centaurusinfra.io/fornax-serverless/pkg/nodeagent/node"
-	fornaxtypes "centaurusinfra.io/fornax-serverless/pkg/nodeagent/types"
 	"github.com/coreos/go-systemd/v22/daemon"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
@@ -144,7 +143,7 @@ func RunNodeAndNodeActor(ctx context.Context, hostIp, hostName string, nodeConfi
 	fornaxNode := node.FornaxNode{
 		NodeConfig:   nodeConfig.NodeConfiguration,
 		V1Node:       nil,
-		Pods:         map[string]*fornaxtypes.FornaxPod{},
+		Pods:         node.NewPodPool(),
 		Dependencies: nil,
 	}
 	nodeActor, err := snode.NewNodeActor(hostIp, hostName, &fornaxNode)

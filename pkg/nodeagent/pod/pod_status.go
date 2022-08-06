@@ -73,6 +73,7 @@ func SetPodStatus(fppod *types.FornaxPod, node *v1.Node) {
 		podStatus.StartTime = &metav1.Time{
 			Time: time.Now(),
 		}
+		// post metrics pod start time - pod create time
 	}
 
 	//TODO
@@ -94,7 +95,13 @@ func ToV1PodPhase(fppod *types.FornaxPod) v1.PodPhase {
 	case types.PodStateTerminating:
 		podPhase = v1.PodUnknown
 	case types.PodStateTerminated:
-		podPhase = v1.PodSucceeded
+		if fppod.RuntimePod == nil || fppod.RuntimePod.Sandbox == nil {
+			podPhase = v1.PodFailed
+		} else {
+			podPhase = v1.PodSucceeded
+		}
+	case types.PodStateFailed:
+		podPhase = v1.PodFailed
 	default:
 		podPhase = v1.PodUnknown
 	}
@@ -141,38 +148,31 @@ func GetPodConditions(fppod *types.FornaxPod) []v1.PodCondition {
 	}
 	conditions[v1.PodScheduled] = &podScheduledCondition
 
-	// check init ready status
-	if fppod.FornaxPodState == types.PodStateCreating || fppod.FornaxPodState == types.PodStateCreated {
-		initReadyCondition.Status = v1.ConditionUnknown
-		initReadyCondition.Message = "container created, waiting for it finish"
-		initReadyCondition.Reason = "container created, waiting for it finish"
-	} else {
-		// check runtime status
-		allInitContainerNormal := true
-		for _, v := range fppod.Containers {
-			if v.InitContainer {
-				if !podcontainer.ContainerExit(v.ContainerStatus) {
-					containerReadyCondition.Status = v1.ConditionFalse
-					containerReadyCondition.Message = "init container not finished yet"
-					containerReadyCondition.Reason = "init container not finished yet"
-					allInitContainerNormal = false
-					break
-				}
-				if podcontainer.ContainerExitAbnormal(v.ContainerStatus) {
-					containerReadyCondition.Status = v1.ConditionFalse
-					containerReadyCondition.Message = "init container exit abnormally"
-					containerReadyCondition.Reason = "init container exit abnormally"
-					allInitContainerNormal = false
-					break
-				}
-				allInitContainerNormal = allInitContainerNormal && podcontainer.ContainerExitNormal(v.ContainerStatus)
+	// check init container runtime status
+	allInitContainerNormal := true
+	for _, v := range fppod.Containers {
+		if v.InitContainer {
+			if !podcontainer.ContainerExit(v.ContainerStatus) {
+				containerReadyCondition.Status = v1.ConditionFalse
+				containerReadyCondition.Message = "init container not finished yet"
+				containerReadyCondition.Reason = "init container not finished yet"
+				allInitContainerNormal = false
+				break
 			}
+			if podcontainer.ContainerExitAbnormal(v.ContainerStatus) {
+				containerReadyCondition.Status = v1.ConditionFalse
+				containerReadyCondition.Message = "init container exit abnormally"
+				containerReadyCondition.Reason = "init container exit abnormally"
+				allInitContainerNormal = false
+				break
+			}
+			allInitContainerNormal = allInitContainerNormal && podcontainer.ContainerExitNormal(v.ContainerStatus)
 		}
-		if allInitContainerNormal {
-			initReadyCondition.Status = v1.ConditionTrue
-			initReadyCondition.Message = "init container exit normally"
-			initReadyCondition.Reason = "init container exit normally"
-		}
+	}
+	if allInitContainerNormal {
+		initReadyCondition.Status = v1.ConditionTrue
+		initReadyCondition.Message = "init container exit normally"
+		initReadyCondition.Reason = "init container exit normally"
 	}
 
 	// check container ready status

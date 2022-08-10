@@ -20,35 +20,39 @@ import (
 	v1 "k8s.io/api/core/v1"
 )
 
-type NodeUpdateType string
+type NodeEventType string
 
 const (
-	NodeUpdateTypeCreate NodeUpdateType = "create"
-	NodeUpdateTypeUpdate NodeUpdateType = "update"
-	NodeUpdateTypeDelete NodeUpdateType = "delete"
+	NodeEventTypeCreate NodeEventType = "create"
+	NodeEventTypeUpdate NodeEventType = "update"
+	NodeEventTypeDelete NodeEventType = "delete"
 )
 
-type PodUpdateType string
+type PodEventType string
 
 const (
-	PodUpdateTypeCreate    PodUpdateType = "create"
-	PodUpdateTypeUpdate    PodUpdateType = "update"
-	PodUpdateTypeDelete    PodUpdateType = "delete"
-	PodUpdateTypeTerminate PodUpdateType = "terminate"
+	PodEventTypeCreate    PodEventType = "create"
+	PodEventTypeUpdate    PodEventType = "update"
+	PodEventTypeDelete    PodEventType = "delete"
+	PodEventTypeTerminate PodEventType = "terminate"
 )
 
-type NodeUpdate struct {
-	Node   *v1.Node
-	Update NodeUpdateType
+type NodeEvent struct {
+	Node *v1.Node
+	Type NodeEventType
 }
 
-type PodUpdate struct {
-	Node   *v1.Node
-	Pod    *v1.Pod
-	Update PodUpdateType
+type PodEvent struct {
+	NodeName string
+	Pod      *v1.Pod
+	Type     PodEventType
 }
 
 type NodeInfoProvider interface {
-	ListNodes() []*v1.Node
-	WatchNode(watcher chan<- interface{}) error
+	List() []*v1.Node
+	Watch(watcher chan<- interface{}) error
+}
+
+type PodInfoProvider interface {
+	Watch(watcher chan<- interface{}) error
 }

@@ -22,6 +22,8 @@ import (
 	"centaurusinfra.io/fornax-serverless/pkg/nodeagent/types"
 )
 
+type NodeUpdate struct{}
+
 type PodSandboxCreated struct {
 	Pod *types.FornaxPod
 }
@@ -55,6 +57,11 @@ type PodContainerUnhealthy struct {
 // when runtime container readiness probe succeeded,
 // if no readyness probe, treat it as ready when runtime container is in runninng state
 type PodContainerReady struct {
+	Pod       *types.FornaxPod
+	Container *types.Container
+}
+
+type PodContainerStarting struct {
 	Pod       *types.FornaxPod
 	Container *types.Container
 }

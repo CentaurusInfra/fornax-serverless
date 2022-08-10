@@ -25,7 +25,6 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apiserver/pkg/registry/generic"
 	"k8s.io/apiserver/pkg/registry/generic/registry"
-	apiserver "k8s.io/apiserver/pkg/server"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
 	"k8s.io/klog/v2"
@@ -52,7 +51,7 @@ func init() {
 }
 
 func main() {
-	storageFunc := func(scheme *runtime.Scheme, store *registry.Store, option *generic.StoreOptions) {
+	_ = func(scheme *runtime.Scheme, store *registry.Store, option *generic.StoreOptions) {
 		store.AfterCreate = func(obj runtime.Object, options *metav1.CreateOptions) {
 			fmt.Println(obj)
 		}
@@ -67,21 +66,17 @@ func main() {
 	// new fornaxcore grpc grpcServer which implement node agent proxy
 	grpcServer := grpc_server.NewGrpcServer()
 
+	podManager := pod.NewPodManager(context.Background(), grpcServer)
+
 	// start node manager
-	nodeManager := node.NewNodeManager(context.Background(), node.DefaultStaleNodeTimeout, grpcServer)
-
-	// start pod scheduler
-	klog.Info("starting pod scheduler")
-	scheduler := podscheduler.NewPodScheduler(context.Background(), grpcServer, nodeManager)
-	scheduler.Run()
-
-	// start pod manager and node manager
-	klog.Info("starting node and pod manager")
-	podManager := pod.NewPodManager(context.Background(), scheduler, grpcServer)
-	podManager.Run()
-
-	nodeManager.SetPodManager(podManager)
+	nodeManager := node.NewNodeManager(context.Background(), node.DefaultStaleNodeTimeout, grpcServer, podManager)
+	klog.Info("starting node manager")
 	nodeManager.Run()
+
+	klog.Info("starting pod manager")
+	podScheduler := podscheduler.NewPodScheduler(context.Background(), grpcServer, nodeManager, podManager)
+	podScheduler.Run()
+	podManager.Run(podScheduler)
 
 	// start fornaxcore grpc server to listen to nodeagent
 	klog.Info("starting fornaxcore grpc server")
@@ -95,7 +90,6 @@ func main() {
 	}
 	klog.Info("Fornaxcore grpc server started")
 
-	// clientcmd.BuildConfigFromFlags(masterUrl string, kubeconfigPath string)
 	// start application manager at last as it require api server
 	var kubeconfig *rest.Config
 	if root, err := os.Getwd(); err == nil {
@@ -117,16 +111,16 @@ func main() {
 	// +kubebuilder:scaffold:resource-register
 	apiserver := builder.APIServer.
 		WithLocalDebugExtension().
-		WithResourceAndStorage(&fornaxv1.Application{}, storageFunc).
-		WithResourceAndStorage(&fornaxv1.ApplicationInstance{}, storageFunc).
-		WithResourceAndStorage(&fornaxv1.ApplicationSession{}, storageFunc).
-		WithResourceAndStorage(&fornaxv1.ClientSession{}, storageFunc).
-		WithResourceAndStorage(&fornaxv1.IngressEndpoint{}, storageFunc).
-		WithConfigFns(func(config *apiserver.RecommendedConfig) *apiserver.RecommendedConfig {
-			fmt.Printf("%T\n", config.Authentication.Authenticator)
-			fmt.Println(config.Authentication.APIAudiences)
-			return config
-		})
+		WithResource(&fornaxv1.Application{}).
+		WithResource(&fornaxv1.ApplicationSession{})
+	// WithResourceAndStorage(&fornaxv1.ApplicationInstance{}, storageFunc).
+	// WithResourceAndStorage(&fornaxv1.ClientSession{}, storageFunc).
+	// WithResourceAndStorage(&fornaxv1.IngressEndpoint{}, storageFunc).
+	// WithConfigFns(func(config *apiserver.RecommendedConfig) *apiserver.RecommendedConfig {
+	//  fmt.Printf("%T\n", config.Authentication.Authenticator)
+	//  fmt.Println(config.Authentication.APIAudiences)
+	//  return config
+	// })
 
 	err = apiserver.Execute()
 	if err != nil {

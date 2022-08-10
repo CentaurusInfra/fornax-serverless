@@ -144,13 +144,8 @@ func (a *PodActor) CreatePod() (err error) {
 		klog.InfoS("New pod container actor", "pod", types.UniquePodName(a.pod), "container", container.ContainerSpec.Name)
 		// start container actor, container actor will start runtime container, and start to probe it
 		containerActor := podcontainer.NewPodContainerActor(a.Reference(), a.pod, container, a.dependencies)
-
-		err = containerActor.Start()
-		if err != nil {
-			klog.ErrorS(err, "cannot start init container", "Pod", types.UniquePodName(a.pod), "Container", v1InitContainer.Name)
-			return err
-		}
 		a.ContainerActors[v1InitContainer.Name] = containerActor
+		containerActor.Start()
 	}
 
 	klog.InfoS("Start pod containers", "podName", types.UniquePodName(a.pod))
@@ -172,12 +167,8 @@ func (a *PodActor) CreatePod() (err error) {
 
 		// start container actor, container actor will start runtime container, and start to probe it
 		containerActor := podcontainer.NewPodContainerActor(a.Reference(), a.pod, container, a.dependencies)
-		err = containerActor.Start()
-		if err != nil {
-			klog.ErrorS(err, "cannot start container", "Pod", types.UniquePodName(a.pod), "Container", v1Container.Name)
-			return err
-		}
 		a.ContainerActors[v1Container.Name] = containerActor
+		containerActor.Start()
 	}
 
 	// TODO
@@ -203,7 +194,6 @@ func (a *PodActor) TerminatePod(gracefulPeriod time.Duration) (bool, error) {
 			}
 		} else {
 			klog.InfoS("Notify running container to stop", "pod", types.UniquePodName(pod), "container", n)
-			// notify container it's being stopped, container will stop itself after pre stop check
 			a.notifyContainer(c.ContainerSpec.Name, internal.PodContainerStopping{
 				Pod:         pod,
 				Container:   c,

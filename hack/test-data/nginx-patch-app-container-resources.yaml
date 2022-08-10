@@ -4,8 +4,8 @@ spec:
     name: nginx
     resources:
       requests:
-        memory: "3G"
-        cpu: "1"
+        memory: "500M"
+        cpu: "0.5"
       limits:
-        memory: "3G"
-        cpu: "1"
+        memory: "500M"
+        cpu: "0.5"

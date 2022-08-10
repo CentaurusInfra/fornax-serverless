@@ -166,7 +166,15 @@ type ApplicationStatus struct {
 
 	// Total number of available instances, including pod not scheduled yet
 	// +optional
-	AvailableInstances int32 `json:"availableInstances,omitempty"`
+	TotalInstances int32 `json:"totalInstances,omitempty"`
+
+	// Total number of instances pending schedule and implement
+	// +optional
+	PendingInstances int32 `json:"pendingInstances,omitempty"`
+
+	// Total number of instances pending delete and cleanup
+	// +optional
+	DeletingInstances int32 `json:"deletingInstances,omitempty"`
 
 	// Total number of instances which have been started by node
 	// +optional

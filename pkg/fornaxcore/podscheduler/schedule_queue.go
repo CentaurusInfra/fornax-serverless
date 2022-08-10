@@ -23,76 +23,10 @@ import (
 	"container/heap"
 
 	fornaxv1 "centaurusinfra.io/fornax-serverless/pkg/apis/core/v1"
+	"centaurusinfra.io/fornax-serverless/pkg/collection"
 	podutil "centaurusinfra.io/fornax-serverless/pkg/util"
 	v1 "k8s.io/api/core/v1"
 )
-
-type QueueItem struct {
-	elem  interface{}
-	index int
-}
-
-type LessFunc func(interface{}, interface{}) bool
-type KeyFunc func(interface{}) string
-
-type priorityQueue struct {
-	indexes  map[string]*QueueItem
-	queue    []*QueueItem
-	lessFunc LessFunc
-	keyFunc  KeyFunc
-}
-
-func NewPriorityQueue(lessFunc LessFunc, keyFunc KeyFunc) *priorityQueue {
-	return &priorityQueue{
-		indexes:  map[string]*QueueItem{},
-		queue:    []*QueueItem{},
-		lessFunc: lessFunc,
-		keyFunc:  keyFunc,
-	}
-}
-func (pq *priorityQueue) Len() int {
-	return len(pq.queue)
-}
-
-func (pq *priorityQueue) Less(i, j int) bool {
-	return pq.lessFunc(pq.queue[i].elem, pq.queue[j].elem)
-}
-
-func (pq *priorityQueue) Swap(i, j int) {
-	pq.queue[i], pq.queue[j] = pq.queue[j], pq.queue[i]
-	pq.queue[i].index = i
-	pq.queue[j].index = j
-}
-
-func (pq *priorityQueue) Push(obj interface{}) {
-	n := len(pq.queue)
-	item := &QueueItem{
-		elem:  obj,
-		index: n,
-	}
-	pq.queue = append(pq.queue, item)
-	pq.indexes[pq.keyFunc(obj)] = item
-}
-
-func (pq *priorityQueue) Peak() interface{} {
-	n := len(pq.queue)
-	if n > 0 {
-		return pq.queue[n-1].elem
-	} else {
-		return nil
-	}
-}
-
-func (pq *priorityQueue) Pop() interface{} {
-	old := pq.queue
-	n := len(old)
-	item := old[n-1]
-	old[n-1] = nil
-	item.index = -1
-	pq.queue = old[0 : n-1]
-	delete(pq.indexes, pq.keyFunc(item.elem))
-	return item.elem
-}
 
 type PodScheduleItem struct {
 	pod         *v1.Pod
@@ -110,11 +44,14 @@ func PodName(pj interface{}) string {
 
 // A schedulePriorityQueue implements heap.Interface and holds Items.
 type schedulePriorityQueue struct {
-	queue *priorityQueue
+	mu    sync.Mutex
+	queue *collection.PriorityQueue
 }
 
 func (pq *schedulePriorityQueue) AddPod(v1pod *v1.Pod, duration time.Duration) {
-	if _, found := pq.queue.indexes[podutil.UniquePodName(v1pod)]; !found {
+	pq.mu.Lock()
+	defer pq.mu.Unlock()
+	if _, item := pq.queue.Get(podutil.UniquePodName(v1pod)); item == nil {
 		item := &PodScheduleItem{
 			pod:         v1pod,
 			requestTime: time.Now().Add(duration),
@@ -125,22 +62,30 @@ func (pq *schedulePriorityQueue) AddPod(v1pod *v1.Pod, duration time.Duration) {
 	}
 }
 
-func (pq *schedulePriorityQueue) RemovePod(v1pod *v1.Pod) {
-	if item, found := pq.queue.indexes[podutil.UniquePodName(v1pod)]; found {
-		delete(pq.queue.indexes, podutil.UniquePodName(v1pod))
-		heap.Remove(pq.queue, item.index)
+// RemovePod remove pod from qeueue with same name of specified pod reference, and return removed pod
+func (pq *schedulePriorityQueue) RemovePod(v1pod *v1.Pod) *v1.Pod {
+	pq.mu.Lock()
+	defer pq.mu.Unlock()
+	if index, item := pq.queue.Get(podutil.UniquePodName(v1pod)); item != nil {
+		heap.Remove(pq.queue, index)
+		return item.(*PodScheduleItem).pod
 	}
+	return nil
 }
 
 func (pq *schedulePriorityQueue) GetPod(name string) *v1.Pod {
-	if pod, found := pq.queue.indexes[name]; found {
-		return pod.elem.(*PodScheduleItem).pod
+	pq.mu.Lock()
+	defer pq.mu.Unlock()
+	if _, item := pq.queue.Get(name); item != nil {
+		return item.(*PodScheduleItem).pod
 	} else {
 		return nil
 	}
 }
 
 func (pq *schedulePriorityQueue) PeakPod() *v1.Pod {
+	pq.mu.Lock()
+	defer pq.mu.Unlock()
 	ob := pq.queue.Peak()
 	if ob == nil {
 		return nil
@@ -149,11 +94,25 @@ func (pq *schedulePriorityQueue) PeakPod() *v1.Pod {
 }
 
 func (pq *schedulePriorityQueue) NextPod() *v1.Pod {
-	ob := heap.Pop(pq.queue)
+	item := pq.nextItem()
+	if item == nil {
+		return nil
+	}
+	return item.pod
+}
+
+func (pq *schedulePriorityQueue) nextItem() *PodScheduleItem {
+	pq.mu.Lock()
+	defer pq.mu.Unlock()
+	ob := pq.queue.Peak()
 	if ob == nil {
 		return nil
 	}
-	return ob.(*PodScheduleItem).pod
+	ob = heap.Pop(pq.queue)
+	if ob == nil {
+		return nil
+	}
+	return ob.(*PodScheduleItem)
 }
 
 type PodScheduleQueue struct {
@@ -177,14 +136,23 @@ func (q *PodScheduleQueue) Length() (int, int) {
 }
 
 func (ps *PodScheduleQueue) ReviveBackoffItem() {
-	items := []*v1.Pod{}
-	for _, v := range ps.backoffRetryQueue.queue.indexes {
-		if v.elem.(*PodScheduleItem).requestTime.Before(time.Now()) {
-			items = append(items, v.elem.(*PodScheduleItem).pod)
+	pods := []*v1.Pod{}
+	timeNow := time.Now()
+	for {
+		item := ps.backoffRetryQueue.nextItem()
+		if item == nil {
+			break
+		}
+		if item.requestTime.Before(timeNow) {
+			pods = append(pods, item.pod)
+		} else {
+			// put it back
+			ps.backoffRetryQueue.AddPod(item.pod, item.requestTime.Sub(timeNow))
+			break
 		}
 	}
 
-	for _, v := range items {
+	for _, v := range pods {
 		ps.AddPod(v, 0)
 	}
 }
@@ -196,11 +164,10 @@ func (q *PodScheduleQueue) NextPod() (pod *v1.Pod) {
 		if q.stop {
 			break
 		}
-		pod = q.activeQueue.PeakPod()
+		pod = q.activeQueue.NextPod()
 		if pod == nil {
 			q.c.Wait()
 		} else {
-			pod = q.activeQueue.NextPod()
 			break
 		}
 	}
@@ -210,28 +177,18 @@ func (q *PodScheduleQueue) NextPod() (pod *v1.Pod) {
 
 // BackoffPod move a pod from active queue into retry queue with a backoff duration
 func (q *PodScheduleQueue) BackoffPod(v1pod *v1.Pod, backoffDuration time.Duration) {
-	if oldcopy := q.activeQueue.GetPod(podutil.UniquePodName(v1pod)); oldcopy != nil {
-		q.activeQueue.RemovePod(oldcopy)
-	}
-
-	if oldcopy := q.backoffRetryQueue.GetPod(podutil.UniquePodName(v1pod)); oldcopy != nil {
-		q.backoffRetryQueue.RemovePod(oldcopy)
-	}
-
+	q.activeQueue.RemovePod(v1pod)
 	q.backoffRetryQueue.AddPod(v1pod, backoffDuration)
 }
 
 // AddPod add pod into active queue, if there is already a copy with same name, remove old copy and add new copy,
 func (q *PodScheduleQueue) AddPod(v1pod *v1.Pod, backoff time.Duration) {
-	if oldcopy := q.backoffRetryQueue.GetPod(podutil.UniquePodName(v1pod)); oldcopy != nil {
-		// remove old version and add new version to active queue
-		q.backoffRetryQueue.RemovePod(oldcopy)
-		q.activeQueue.AddPod(v1pod, backoff)
-	} else if oldcopy := q.activeQueue.GetPod(podutil.UniquePodName(v1pod)); oldcopy != nil {
-		// remove old version and add new version to active queue
-		q.activeQueue.RemovePod(oldcopy)
+	// remove old version and add new version to active queue
+	if oldcopy := q.backoffRetryQueue.RemovePod(v1pod); oldcopy != nil {
 		q.activeQueue.AddPod(v1pod, backoff)
 	} else {
+		// remove old version and add new version to active queue
+		q.activeQueue.RemovePod(v1pod)
 		q.activeQueue.AddPod(v1pod, backoff)
 	}
 	q.c.L.Lock()
@@ -241,13 +198,11 @@ func (q *PodScheduleQueue) AddPod(v1pod *v1.Pod, backoff time.Duration) {
 
 // RemovePod remove pod from active and retry queue
 func (q *PodScheduleQueue) RemovePod(v1pod *v1.Pod) *v1.Pod {
-	if oldcopy := q.activeQueue.GetPod(podutil.UniquePodName(v1pod)); oldcopy != nil {
-		q.activeQueue.RemovePod(oldcopy)
+	if oldcopy := q.activeQueue.RemovePod(v1pod); oldcopy != nil {
 		return oldcopy
 	}
 
-	if oldcopy := q.backoffRetryQueue.GetPod(podutil.UniquePodName(v1pod)); oldcopy != nil {
-		q.backoffRetryQueue.RemovePod(oldcopy)
+	if oldcopy := q.backoffRetryQueue.RemovePod(v1pod); oldcopy != nil {
 		return oldcopy
 	}
 
@@ -256,7 +211,8 @@ func (q *PodScheduleQueue) RemovePod(v1pod *v1.Pod) *v1.Pod {
 
 func newSchedulePriorityQueue() *schedulePriorityQueue {
 	return &schedulePriorityQueue{
-		queue: NewPriorityQueue(PodRequestTimeLess, PodName),
+		mu:    sync.Mutex{},
+		queue: collection.NewPriorityQueue(PodRequestTimeLess, PodName),
 	}
 }
 

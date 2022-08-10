@@ -91,15 +91,15 @@ func (n *SimulationNodeActor) startStateReport() {
 	// start go routine to report node status forever
 	go wait.Until(func() {
 		SetNodeStatus(n.node)
-		n.notify(n.fornoxCoreRef, node.BuildFornaxGrpcNodeState(n.node))
+		n.notify(n.fornoxCoreRef, node.BuildFornaxGrpcNodeState(n.node, n.node.Revision))
 	}, 1*time.Minute, n.stopCh)
 }
 
-func (n *SimulationNodeActor) incrementNodeRevision() error {
+func (n *SimulationNodeActor) incrementNodeRevision() (int64, error) {
 	n.nodeMutex.Lock()
 	defer n.nodeMutex.Unlock()
 	n.node.Revision += 1
-	return nil
+	return n.node.Revision, nil
 }
 
 func (n *SimulationNodeActor) actorMessageProcess(msg message.ActorMessage) (interface{}, error) {
@@ -119,10 +119,7 @@ func (n *SimulationNodeActor) actorMessageProcess(msg message.ActorMessage) (int
 			klog.Warning("Received cleanup when pod is not in terminated or failed state", "pod", fornaxtypes.UniquePodName(fppod))
 			return nil, fmt.Errorf("Pod is not in terminated state, pod: %s", fornaxtypes.UniquePodName(fppod))
 		}
-		_, found := n.node.Pods[string(fppod.Identifier)]
-		if found {
-			delete(n.node.Pods, fppod.Identifier)
-		}
+		n.node.Pods.Del(fppod.Identifier)
 	default:
 		klog.InfoS("Received unknown message", "from", msg.Sender, "msg", msg.Body)
 	}
@@ -162,7 +159,7 @@ func (n *SimulationNodeActor) processFornaxCoreMessage(msg *fornaxgrpc.FornaxCor
 
 // initialize node with node spec provided by fornaxcore, especially pod cidr
 func (n *SimulationNodeActor) onNodeFullSyncCommand(msg *fornaxgrpc.NodeFullSync) error {
-	n.notify(n.fornoxCoreRef, node.BuildFornaxGrpcNodeState(n.node))
+	n.notify(n.fornoxCoreRef, node.BuildFornaxGrpcNodeState(n.node, n.node.Revision))
 	return nil
 }
 
@@ -194,12 +191,14 @@ func (n *SimulationNodeActor) onNodeConfigurationCommand(msg *fornaxgrpc.NodeCon
 			SetNodeStatus(n.node)
 			if IsNodeStatusReady(n.node) {
 				klog.InfoS("Node is ready, tell fornax core")
-				n.node.V1Node.Status.Phase = v1.NodeRunning
 				// bump revision to let fornax core to update node status
-				n.incrementNodeRevision()
-				n.notify(n.fornoxCoreRef, node.BuildFornaxGrpcNodeReady(n.node))
-				n.state = node.NodeStateReady
-				n.startStateReport()
+				revision, err := n.incrementNodeRevision()
+				if err == nil {
+					n.node.V1Node.Status.Phase = v1.NodeRunning
+					n.notify(n.fornoxCoreRef, node.BuildFornaxGrpcNodeReady(n.node, revision))
+					n.state = node.NodeStateReady
+					n.startStateReport()
+				}
 			} else {
 				time.Sleep(5 * time.Second)
 			}
@@ -224,8 +223,8 @@ func (n *SimulationNodeActor) initializeNodeDaemons(pods []*v1.Pod) error {
 			return errors.Errorf("Daemon pod must use host network")
 		}
 
-		_, found := n.node.Pods[util.UniquePodName(p)]
-		if !found {
+		v := n.node.Pods.Get(util.UniquePodName(p))
+		if v == nil {
 			_, err := n.createPodAndActor(fornaxtypes.PodStateRunning, p.DeepCopy(), nil, true)
 			if err != nil {
 				return err
@@ -276,7 +275,7 @@ func (n *SimulationNodeActor) createPodAndActor(state fornaxtypes.PodState,
 		return nil, err
 	}
 
-	n.node.Pods[fpod.Identifier] = fpod
+	n.node.Pods.Add(fpod.Identifier, fpod)
 	return fpod, nil
 }
 
@@ -285,8 +284,8 @@ func (n *SimulationNodeActor) onPodCreateCommand(msg *fornaxgrpc.PodCreate) erro
 	if n.state != node.NodeStateReady {
 		return fmt.Errorf("Node is not in ready state to create a new pod")
 	}
-	_, found := n.node.Pods[*msg.PodIdentifier]
-	if !found {
+	v := n.node.Pods.Get(*msg.PodIdentifier)
+	if v == nil {
 		fpod, err := n.createPodAndActor(
 			fornaxtypes.PodStateCreating,
 			msg.GetPod().DeepCopy(),
@@ -344,8 +343,8 @@ func (n *SimulationNodeActor) onPodCreateCommand(msg *fornaxgrpc.PodCreate) erro
 
 // find pod actor and send a message to it, if pod actor does not exist, return error
 func (n *SimulationNodeActor) onPodTerminateCommand(msg *fornaxgrpc.PodTerminate) error {
-	fpod, found := n.node.Pods[*msg.PodIdentifier]
-	if !found {
+	fpod := n.node.Pods.Get(*msg.PodIdentifier)
+	if fpod == nil {
 		return fmt.Errorf("Pod: %s does not exist, fornax core is not in sync", *msg.PodIdentifier)
 	} else {
 		fpod.Pod.Status.Phase = v1.PodSucceeded
@@ -354,7 +353,7 @@ func (n *SimulationNodeActor) onPodTerminateCommand(msg *fornaxgrpc.PodTerminate
 		time.Sleep(1 * time.Second)
 		n.incrementNodeRevision()
 		n.notify(n.fornoxCoreRef, pod.BuildFornaxcoreGrpcPodState(n.node.Revision, fpod))
-		delete(n.node.Pods, *msg.PodIdentifier)
+		n.node.Pods.Del(*msg.PodIdentifier)
 		klog.Info("Pod have been terminated and Pod ID: ", fpod.Identifier)
 	}
 	return nil

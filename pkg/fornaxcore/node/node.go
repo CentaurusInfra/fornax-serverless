@@ -20,6 +20,7 @@ import (
 	"sync"
 	"time"
 
+	"centaurusinfra.io/fornax-serverless/pkg/collection"
 	"centaurusinfra.io/fornax-serverless/pkg/fornaxcore/store"
 	fornaxutil "centaurusinfra.io/fornax-serverless/pkg/util"
 
@@ -39,7 +40,7 @@ type FornaxNodeWithState struct {
 	Node       *v1.Node
 	Revision   int64
 	State      NodeWorkingState
-	Pods       map[string]bool
+	Pods       *collection.ConcurrentStringSet
 	DaemonPods map[string]*v1.Pod
 	LastSeen   time.Time
 }
@@ -82,6 +83,8 @@ type StaleNodeBucket struct {
 }
 
 func (snb *StaleNodeBucket) refreshNode(node *FornaxNodeWithState) {
+	snb.Lock()
+	defer snb.Unlock()
 	snb.bucketRefresh[fornaxutil.UniqueNodeName(node.Node)] = node
 	delete(snb.bucketStale, fornaxutil.UniqueNodeName(node.Node))
 }

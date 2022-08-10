@@ -145,7 +145,7 @@ func IsNodeStatusReady(myNode *node.FornaxNode) bool {
 
 	// check daemon pod status
 	daemonReady := true
-	for _, v := range myNode.Pods {
+	for _, v := range myNode.Pods.List() {
 		if v.Daemon {
 			daemonReady = daemonReady && v.FornaxPodState == types.PodStateRunning
 		}

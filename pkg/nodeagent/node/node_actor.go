@@ -355,7 +355,7 @@ func (n *FornaxNodeActor) buildAFornaxPod(state fornaxtypes.PodState,
 	}
 
 	// for _, v := range fornaxPod.Pod.Spec.Containers {
-	// 	klog.Info("Pod Containers port mapping", v.Ports)
+	//  klog.Info("Pod Containers port mapping", v.Ports)
 	// }
 	return fornaxPod, nil
 }

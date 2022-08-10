@@ -37,7 +37,7 @@ type PodContainerActor struct {
 	stop         bool
 	innerActor   message.LocalChannelActor
 	pod          *types.FornaxPod
-	container    *types.Container
+	container    *types.FornaxContainer
 	dependencies *dependency.Dependencies
 	supervisor   message.ActorRef
 	probers      map[ProbeType]*ContainerProber
@@ -388,7 +388,7 @@ func (a *PodContainerActor) stopContainer(timeout time.Duration) (interface{}, e
 	return nil, nil
 }
 
-func NewPodContainerActor(supervisor message.ActorRef, pod *types.FornaxPod, container *types.Container, dependencies *dependency.Dependencies) *PodContainerActor {
+func NewPodContainerActor(supervisor message.ActorRef, pod *types.FornaxPod, container *types.FornaxContainer, dependencies *dependency.Dependencies) *PodContainerActor {
 	id := fmt.Sprintf("%s:%s", types.UniquePodName(pod), string(container.ContainerSpec.Name))
 	pca := &PodContainerActor{
 		stop:         false,

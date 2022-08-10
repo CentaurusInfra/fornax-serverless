@@ -49,13 +49,14 @@ const (
 )
 
 type FornaxNodeActor struct {
-	nodeMutex     sync.RWMutex
-	stopCh        chan struct{}
-	node          *FornaxNode
-	state         NodeState
-	innerActor    message.Actor
-	fornoxCoreRef message.ActorRef
-	podActors     *PodActorPool
+	nodeMutex       sync.RWMutex
+	stopCh          chan struct{}
+	node            *FornaxNode
+	state           NodeState
+	innerActor      message.Actor
+	fornoxCoreRef   message.ActorRef
+	podActors       *PodActorPool
+	nodePortManager *nodePortManager
 }
 
 func (n *FornaxNodeActor) Stop() error {
@@ -121,18 +122,14 @@ func (n *FornaxNodeActor) Start() error {
 func (n *FornaxNodeActor) recreatePodStateFromRuntimeSummary(runtimeSummary ContainerWorldSummary) {
 	for _, fpod := range runtimeSummary.terminatedPods {
 		// still recreate pod actor for terminated pod in case some cleanup are required
-		// klog.InfoS("Recover pod actor for a terminated pod", "pod", fornaxtypes.UniquePodName(fpod), "state", fpod.PodState)
 		klog.InfoS("Recover pod actor for a terminated pod", "pod", fpod)
-		n.recoverPodActor(fpod)
-		// report back to fornax core, this pod is stopped
-		// n.notify(n.fornoxCoreRef, pod.BuildFornaxcoreGrpcPodStateForTerminatedPod(n.node.Revision, fpod))
+		n.startPodActor(fpod)
 	}
 
 	for _, fpod := range runtimeSummary.runningPods {
 		klog.InfoS("Recover pod actor for a running pod", "pod", fornaxtypes.UniquePodName(fpod), "state", fpod.FornaxPodState)
-		n.recoverPodActor(fpod)
-		// report pod back to fornax core, and recreate pod and actors if it does not exist
-		// n.notify(n.fornoxCoreRef, pod.BuildFornaxcoreGrpcPodState(n.node.Revision, fpod))
+		n.nodePortManager.initNodePortRangeSlot(n.node.V1Node, fpod.Pod)
+		n.startPodActor(fpod)
 	}
 }
 
@@ -179,6 +176,7 @@ func (n *FornaxNodeActor) actorMessageProcess(msg message.ActorMessage) (interfa
 			n.podActors.Del(string(fppod.Identifier))
 			n.node.Pods.Del(fppod.Identifier)
 		}
+		n.nodePortManager.DeallocatePodPortMapping(n.node.V1Node, fppod.Pod)
 		err := n.node.Dependencies.PodStore.DelObject(fppod.Identifier)
 		if err != nil {
 			// TODO, if failed to delete a terminated pod, it should be fine, but need better cleanup
@@ -317,6 +315,8 @@ func (n *FornaxNodeActor) initializeNodeDaemons(pods []*v1.Pod) error {
 	return nil
 }
 
+// buildAFornaxPod validate pod spec, and allocate host port for pod container port, it also set pod lables,
+// modified pod spec will saved in store and return back to FornaxCore to make pod spec in sync
 func (n *FornaxNodeActor) buildAFornaxPod(state fornaxtypes.PodState,
 	v1pod *v1.Pod,
 	configMap *v1.ConfigMap,
@@ -331,7 +331,7 @@ func (n *FornaxNodeActor) buildAFornaxPod(state fornaxtypes.PodState,
 		Daemon:                  isDaemon,
 		Pod:                     v1pod.DeepCopy(),
 		RuntimePod:              nil,
-		Containers:              map[string]*fornaxtypes.Container{},
+		Containers:              map[string]*fornaxtypes.FornaxContainer{},
 		LastStateTransitionTime: time.Now(),
 	}
 	pod.SetPodStatus(fornaxPod, n.node.V1Node)
@@ -344,11 +344,25 @@ func (n *FornaxNodeActor) buildAFornaxPod(state fornaxtypes.PodState,
 		}
 		fornaxPod.ConfigMap = configMap.DeepCopy()
 	}
+
+	// if fornax pod need to expose host port for containter port, there are chance port could be conflict between pods,
+	// to avoid port conflict on host of multiple pods, node allocate a unique host port number for each container port
+	// and overwrite pod spec's container port mapping, modified pod spec is returned back to FornaxCore,
+	// FornaxCore use modified port mapping to let its client to access pod using node allocated host port
+	err := n.nodePortManager.AllocatePodPortMapping(n.node.V1Node, fornaxPod.Pod)
+	if err != nil {
+		return nil, err
+	}
+
+	// for _, v := range fornaxPod.Pod.Spec.Containers {
+	//  klog.Info("Pod Containers port mapping", v.Ports)
+	// }
 	return fornaxPod, nil
 }
 
-func (n *FornaxNodeActor) recoverPodActor(fpod *fornaxtypes.FornaxPod) (*fornaxtypes.FornaxPod, *pod.PodActor, error) {
-	// set pod node related information in case node name and ip changed
+// startPodActor start a actor for a pod
+// set pod node related information in case node name and ip changed
+func (n *FornaxNodeActor) startPodActor(fpod *fornaxtypes.FornaxPod) (*fornaxtypes.FornaxPod, *pod.PodActor, error) {
 	fpod.Pod = fpod.Pod.DeepCopy()
 	fpod.Pod.Status.HostIP = n.node.V1Node.Status.Addresses[0].Address
 	fpod.Pod.Labels[fornaxv1.LabelFornaxCoreNode] = util.UniqueNodeName(n.node.V1Node)
@@ -360,7 +374,8 @@ func (n *FornaxNodeActor) recoverPodActor(fpod *fornaxtypes.FornaxPod) (*fornaxt
 	return fpod, fpActor, nil
 }
 
-func (n *FornaxNodeActor) createPodAndActor(state fornaxtypes.PodState,
+func (n *FornaxNodeActor) createPodAndActor(
+	state fornaxtypes.PodState,
 	v1Pod *v1.Pod,
 	v1Config *v1.ConfigMap,
 	isDaemon bool) (*fornaxtypes.FornaxPod, *pod.PodActor, error) {
@@ -379,11 +394,7 @@ func (n *FornaxNodeActor) createPodAndActor(state fornaxtypes.PodState,
 	}
 
 	// new pod actor and start it
-	fpActor := pod.NewPodActor(n.innerActor.Reference(), fpod, &n.node.NodeConfig, n.node.Dependencies, nil)
-	n.node.Pods.Add(fpod.Identifier, fpod)
-	n.podActors.Add(fpod.Identifier, fpActor)
-	fpActor.Start()
-	return fpod, fpActor, nil
+	return n.startPodActor(fpod)
 }
 
 // find pod actor and send a message to it, if pod actor does not exist, create one
@@ -469,13 +480,14 @@ func (n *FornaxNodeActor) notify(receiver message.ActorRef, msg interface{}) {
 
 func NewNodeActor(node *FornaxNode) (*FornaxNodeActor, error) {
 	actor := &FornaxNodeActor{
-		nodeMutex:     sync.RWMutex{},
-		stopCh:        make(chan struct{}),
-		node:          node,
-		state:         NodeStateInitializing,
-		innerActor:    nil,
-		fornoxCoreRef: nil,
-		podActors:     NewPodActorPool(),
+		nodeMutex:       sync.RWMutex{},
+		stopCh:          make(chan struct{}),
+		node:            node,
+		state:           NodeStateInitializing,
+		innerActor:      nil,
+		fornoxCoreRef:   nil,
+		podActors:       NewPodActorPool(),
+		nodePortManager: NewNodePortManager(),
 	}
 	actor.innerActor = message.NewLocalChannelActor(node.V1Node.GetName(), actor.actorMessageProcess)
 

@@ -580,7 +580,7 @@ func (appc *ApplicationManager) syncApplication(ctx context.Context, application
 		activeCount := application.Status.TotalInstances - application.Status.DeletingInstances
 		desireCount := application.Status.DesiredInstances
 		if activeCount != desireCount {
-			klog.InfoS("Application doesnot not meet desired state, requeue", "application", applicationKey, "desired", desireCount, "active", activeCount)
+			klog.InfoS("Application does not meet desired state, requeue", "application", applicationKey, "desired", desireCount, "active", activeCount)
 			appc.queue.AddAfter(applicationKey, DefaultApplicationDesiredStateRecycleDuration)
 		}
 	}

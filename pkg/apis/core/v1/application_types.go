@@ -56,7 +56,7 @@ type ApplicationSpec struct {
 	// Important: Run "make" to regenerate code after modifying this file
 
 	// runtime image and resource requirement of a application container
-	Container corev1.Container `json:"container,omitempty"`
+	Containers []corev1.Container `json:"containers,omitempty"`
 
 	// Data contains the configuration data.
 	// Each key must consist of alphanumeric characters, '-', '_' or '.'.
@@ -252,10 +252,10 @@ func (in *Application) IsStorageVersion() bool {
 func (in *Application) Validate(ctx context.Context) field.ErrorList {
 	errorList := make(field.ErrorList, 0)
 
-	if &in.Spec.Container == nil {
+	if len(in.Spec.Containers) == 0 {
 		err := field.Error{
 			Type:  field.ErrorTypeRequired,
-			Field: "Spec.Container",
+			Field: "Spec.Containers",
 		}
 		errorList = append(errorList, &err)
 	}

@@ -18,6 +18,7 @@ package util
 
 import (
 	"fmt"
+	"reflect"
 	"time"
 
 	v1 "k8s.io/api/core/v1"
@@ -187,6 +188,12 @@ func MergePodStatus(oldPod, newPod *v1.Pod) {
 
 	if newPod.DeletionGracePeriodSeconds != nil && oldPod.DeletionGracePeriodSeconds == nil {
 		oldPod.DeletionGracePeriodSeconds = newPod.DeletionGracePeriodSeconds
+	}
+
+	if !reflect.DeepEqual(oldPod.Spec, newPod.Spec) {
+		// pod spec could be modified by NodeAgent, especially container port mapping
+		// we just horner newPod, and replace oldPod's spec
+		oldPod.Spec = newPod.Spec
 	}
 }
 

@@ -145,9 +145,8 @@ func (a *PodActor) actorMessageProcess(msg message.ActorMessage) (interface{}, e
 	case internal.PodContainerFailed:
 		err = a.onPodContainerFailed(msg.Body.(internal.PodContainerFailed))
 	case HouseKeeping:
-		klog.InfoS("Handle Pod error", "pod", types.UniquePodName(a.pod), "err", a.lastError, "runtime", a.pod.RuntimePod)
+		// retry to calibarate error and cleanup, return if cleanup failed, do not change previous error state
 		if a.lastError != nil {
-			// retry to calibarate error and cleanup, return if cleanup failed, do not change previous error state
 			err = a.handlePodError()
 		}
 	default:
@@ -205,10 +204,8 @@ func (a *PodActor) create() error {
 // containers are notified to exit itself, and use onPodContainerStopped call back to get container status,
 // and recall this method to check if all container are finished, and finally set pod to terminted state
 // termiante method do no-op if pod state is already in terminating state unless forece retry is true
-func (a *PodActor) terminate(forceRetry bool) error {
+func (a *PodActor) terminate(force bool) error {
 	pod := a.pod
-	klog.InfoS("Stop container and termiate pod", "pod", types.UniquePodName(pod))
-
 	if len(a.SessionActors) != 0 {
 		pod.FornaxPodState = types.PodStateEvacuating
 		// TODO evacuate session
@@ -218,17 +215,14 @@ func (a *PodActor) terminate(forceRetry bool) error {
 			return nil
 		}
 
-		if pod.FornaxPodState == types.PodStateTerminating && forceRetry == false {
-			// pod is already in terminating state, idempotently retry
-			return nil
-		}
+		klog.InfoS("Stopping container and terminating pod", "pod", types.UniquePodName(pod), "state", pod.FornaxPodState)
 		pod.FornaxPodState = types.PodStateTerminating
 
 		gracefulPeriodSeconds := int64(0)
 		if pod.Pod.DeletionGracePeriodSeconds != nil {
 			gracefulPeriodSeconds = *pod.Pod.DeletionGracePeriodSeconds
 		}
-		terminated, err := a.TerminatePod(time.Duration(gracefulPeriodSeconds))
+		terminated, err := a.TerminatePod(time.Duration(gracefulPeriodSeconds), force)
 		if err != nil {
 			klog.ErrorS(err, "Pod termination failed, state is left in terminating to retry later,", "pod", types.UniquePodName(pod))
 			return err
@@ -262,7 +256,7 @@ func (a *PodActor) active() error {
 
 func (a *PodActor) handlePodError() (err error) {
 	pod := a.pod
-	klog.InfoS("Handle Pod error", "pod", types.UniquePodName(pod), "err", a.lastError, "runtime", pod.RuntimePod)
+	klog.InfoS("Handle Pod error", "pod", types.UniquePodName(pod), "err", a.lastError)
 	switch {
 	case pod.FornaxPodState == types.PodStateTerminating:
 		err = a.terminate(true)
@@ -328,7 +322,7 @@ func (a *PodActor) onPodContainerStopped(msg internal.PodContainerStopped) error
 	klog.InfoS("Pod Container stopped", "Pod", types.UniquePodName(pod), "ContainerName", container.ContainerSpec.Name)
 
 	// TODO, release cpu, memory resource stat usage
-	a.handlePodContainerFailure(pod, container)
+	a.handlePodContainerExit(pod, container)
 	return nil
 }
 
@@ -336,11 +330,11 @@ func (a *PodActor) onPodContainerFailed(msg internal.PodContainerFailed) error {
 	pod := msg.Pod
 	container := msg.Container
 	klog.InfoS("Pod Container Failed", "Pod", types.UniquePodName(pod), "ContainerName", container.ContainerSpec.Name)
-	a.handlePodContainerFailure(pod, container)
+	a.handlePodContainerExit(pod, container)
 	return nil
 }
 
-func (a *PodActor) handlePodContainerFailure(pod *types.FornaxPod, container *types.Container) {
+func (a *PodActor) handlePodContainerExit(pod *types.FornaxPod, container *types.FornaxContainer) {
 	if container.InitContainer {
 		if podcontainer.ContainerExitNormal(container.ContainerStatus) {
 			// init container is expected to run to end
@@ -349,7 +343,6 @@ func (a *PodActor) handlePodContainerFailure(pod *types.FornaxPod, container *ty
 			a.terminate(true)
 		}
 	} else {
-		klog.InfoS("terminate pod when container meet failure")
 		a.terminate(true)
 	}
 }

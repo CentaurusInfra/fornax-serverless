@@ -50,9 +50,6 @@ __Stateful application public API__
 | Create application | Create application and its scaling policy definition; trigger creation of app instance pool |
 | Update app scaling policy | Update application scaling policy |
 | Delete application | Delete application and all its resources |
-| List instances | List instances of the application |
-| Claim instance | Take one instance from the pool, mark it as claimed(occupied); may trigger replenishment of resource pool |
-| Dispose instance | Gracefully delete the instance (with optional grace time); after the grace time, instance will be forcefully deleted |
 | Start application session | Take one open session from the ready session pool, mark it as actively started; returns its exposed endpoint |
 | End application session | Mark the application session as finished |
 
@@ -83,166 +80,33 @@ Stateful application and instance
 ![application data model](pictures/architecture/fornax-app-datamodel.jpg)
 For types of ConfigMap, Pod, Secret,  their namespaces are derived in format of “tenant name-application name”.
 
-Stateless Application and instance: TBD
 ### Raw Resources
 Compute node, having spec of hardware resource (CPU, memory disk capacity, network bandwidth) and the dynamic indicators (CPU utilization, free memory, available disk space, network consumption rate). 
 Fornax-serverless, at current stage, only cares about the information that directly affects workload scheduling/execution (CPU/memory/volume).
 
 ## Public API
-API is defied in RESTful fashion.
-### Application Management Service
-1. Create application
+FornaxCore probide Public API implemented using Kubernetes api server framework, Client can operate on two api resources
+* application
+* application session
 
-Request
-	HTTP Post
-	Path: tenants/tenant-name/apps/
-	Payload: app-spec
-Response
-	OK
-Error
-	Payload: {error: error-message}
+A Go sdk is generated to allow client to call api to operate and list watch these resources  using compatible Kubernetes client.
+Operator can also use standtard kubectl command line to operate on these two resources.
 
-App-spec has following significant fields:
-tenant
-app-name
-instance template (similar to deployment template, including configmap and secret references if applicable)
-scaling policy
-
-2. Update application Scaling Policy
-
-Request
-	HTTP Put
-	Path: tenants/tenant-name/apps/app-name
-	Payload: scaling-policy
-Response
-	OK
-Error
-	Payload: {error: error-message}
-
-App scaling policy has following significant fields:
-Max active instances
-App instance warmup pool (fixed num, or % of active instances)
-
-3. Delete application
-
-Request
-	HTTP Delete
-	Path: tenants/tenant-name/apps/app-name
-Response
-	OK
-Error
-	Payload: {error: error-message}
-
-### Instance Management Service
-4. Create instances
-
-Request
-	HTTP Post
-	Path: tenants/tenant-name/app/app-name/instances
-	Payload: instance spec
-Response
-	OK
-		Payload: {id: instance-id}
-	Error
-		Payload: {error: message}
-
-5. Get instance
-
-Request
-	HTTP Get
-	Path: tenants/tenant-name/app/app-name/instances/instance-id
-	OK
-		Payload: instance spec + status
-	Error
-		Payload: {error: message}
-
-6. List instances
-
-Request
-	HTTP Get
-	Path: tenants/tenant-name/app/app-name/instances
-	Query options: ?status=ready&limits=3 (to search for 3 open instances)
-Response
-	OK
-		Payload: [ instance1, instance2, instance3…]
-
-7. Claim instance
-
-Request
-	HTTP Put
-	Path: tenants/tenant-name/apps/app-name/instances/instance-id
-	Payload: {status: claimed}
-Response
-	OK
-		Payload: {endpoint: exposed-endpoint}, which has format of tcp/udp-hostname/ip:port.
-Error
-	Payload: {error: error-message}
-
-8. Dispose instance
-
-Request
-	HTTP Delete
-	Path: tenants/tenant-name/apps/app-name/instances/instance-id
-	Query options: ?gracetime=10s (by default 30s)
-Response
-	OK
-Error
-	Payload: {error: error-message}
-
-### Application Session Management Service
-1. Start application session
-
-Request
-	HTTP Post
-	Path: tenants/tenant-name/apps/app-name/sessions
-	Payload: {status: claimed}
-Response
-	OK
-		Payload: {id: session-id, endpoint: exposed-endpoint}, which has format of tcp/udp-hostname/ip:port.
-	Error
-		Payload: {error: error-message}
-
-2. End application session
-
-Request
-	HTTP Delete
-	Path: tenants/tenant-name/apps/app-name/sessions/session-id
-Response
-	OK
-Error
-	Payload: {error: error-message}
-
-### Tenant Management Service
-_Minimum public API is offered to manage tenant resource for now; more comprehensive tenant management is not covered right now_
-
-9. Create Tenant
-
-Request
-    HTTP Post
-    Path: tenants/
-    Payload: {tenant: tenat-name}
-Response
-    OK
-    Error
-        Payload: {error: error-message}
-
-10. Delete Tenant
-Request
-    HTTP Delete
-    Path: tenants/tenant-name
-Response
-    OK
-    Error
-        Payload: {error: error-message}
+## Internal resources
+Internally Application and Session are implemented using Pod and Node Port(Service endpoint), These resources are persisted on Node, not in FornaxCore.
+Internal resources are not operatable using Public API also, it is used by FornaxCore to request NodeAgent and IngressGateway to implement workload and service endpoint.
+These internal resources are also saved on each node and ingress gateway in distributed manner.
+FornaxCore list watch NodeAgent and IngressGateway to find resource status change and control application and application session resources accordingly.
 
 ## System Architecture
 ### Overall Structure
-Fornax-serverless system includes the fornax core (the system manager), ingress-gateway, plus node agents. There is also data storage which keeps all the critical data; this makes possible for the manager stateless to run multiple instances to avoid single point of failure.
+Fornax-serverless includes three main components, FornaxCore, IngressGateway and NodeAgent. NodeAgent and IngressGateway create grpc channel to communicate with FornaxCore. Using this channel, FornaxCore list/watch resources created on Node and IngressGateway, also send command message to NodeAgent or IngressGateway to create/delete resources on node.
+
 ![fornax structure](pictures/architecture/fornax-structure.jpg)
 
-Fornax core, running as one single process, provides API service and manages 4 major resources (app, instance, endpoint, and node). It schedules Pod creation on nodes and endpoint creation on ingress gateway; also reconciles with node agents of node and Pod status to monitor resource changes. Reconciler makes sure expected instances are running at any time.
+Fornax core, running as one single process, provides API service and manages resources (app, pod, endpoint, and node). It schedules Pod and Service endpoint creation on node/ingress gateway; also reconciles with node agents of node and Pod status to monitor resource changes. Reconciler makes sure expected instances are running at any time.
 
-Node agent runs on each node, creating/removing Pod as requested, and reporting node status and pod status back to the system manager. Node agent is customized on basis of Kubelet; the protocol of these reports is Kubernetes API calls for Node and Pod status updates.
+NodeAgent runs on each node, it use Node Agent grpc message to receive Pod request to create/terminate pod, and report node status and pod status back to the FornaxCore. NodeAgent is customized on basis of Kubelet; the protocol of these reports is Kubernetes API calls for Node and Pod status updates.
 
 Ingress gateway is a network entity providing access to applications running on nodes.
 
@@ -254,7 +118,7 @@ Traditionally Kubernetes use controllers and scheduler to drive implementation o
 
 Fornax-serverless platform will simplify this relatively time-consuming workload implementation process by (_rough idea; may up to change when being implemented_)
 * removing api/message exchange between controllers and scheduler, workload resource is implemented using a task workflow which is initiated directly by customer API call
-* workload task workflow does not watch resource change, it’s executed inside service as a task creates Pod spec and Endpoint spec, and calls Node agent and Ingress gateway api to implement resources directly.
+* workload task workflow does not watch resource change, it’s executed inside service as a task creates Pod spec and Endpoint spec, and calls NodeAgent and Ingress gateway api to implement resources directly.
 * node selecting is using the latest information that the Node manager maintains in its memory pool of nodes. The node manager uses sophisticated and efficient techniques (e.g. sorted priority queue), chooses a candidate node to place the workload to.
 * API does not retry pod scheduling when create application instance api is called, API service return failure back to client when task workflow failed, let client to retry if workload is still required.
 * Pod is rescheduled and recreated only by reconciler when pod of an implemented application instance crashes, and the application policy is recreating on failure.
@@ -320,7 +184,7 @@ For cluster of size 50-100 nodes, it is estimated that 1GB sufficient for the da
 The latency of data store read/write should be less than 1ms for medium size payload (2-4KB).
 
 Etcd is a natural choice for edge cluster with nodes less than 100: its performance seems ok with a few simultaneous connections (see https://etcd.io/docs/v3.3/benchmarks/etcd-3-demo-benchmarks/ for latency benchmark). Etcd fits well for active-passive mode.
-### Fornax Core
+### FornaxCore
 The endpoints to access foxnax core are manually added as part of system bootstrapping process.
 
 #### Application Management
@@ -351,12 +215,12 @@ This component is needed for an environment for external clients to access appli
 ### API Gateway
 For upstream services (like gaming services) to access the public management API to manage the required resources. This is not part of system to develop; will leverage exitent edge facility or proven industry practice (e.g. keeplived) to provide such functionality.
 
-### Node agent
+### NodeAgent
 Mostly based on kubelet; expected to have some change to leverage Quark runtime’s standby/ready modes.
 
 The specific mode is specified as “fornax/workload-mode” of Pod metadata.annotations. The values can be standby or ready, by default ready.
 
-Node agents delegate Pod network connectivity setup to CNI plugin. Node agents also enforce Pod network isolations (TBD).
+NodeAgents delegate Pod network connectivity setup to CNI plugin. NodeAgents also enforce Pod network isolations (TBD).
 
 ### Log & Metrics server
 Log & Metrics server collects application logs and metrics, publishes them to external services to allow customers to retrieve them at any time, e.g. AWS Cloud watch.
@@ -373,6 +237,6 @@ There are a few deployment units in this system.
 | Unit | Working mode | Deployment |
 | ------ | ----- | ----- |
 | etcd | Distributed Cluster | Container |
-| Fornax Core | Master/Slave | Container |
+| FornaxCore | Master/Slave | Container |
 | Ingress Gateway | Dual Active | Normal application |
-| Node agent | One on each node | Normal application |
+| NodeAgent | One on each node | Normal application |

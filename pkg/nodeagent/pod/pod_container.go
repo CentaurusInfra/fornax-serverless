@@ -47,7 +47,7 @@ func (a *PodActor) createContainer(podSandboxConfig *criv1.PodSandboxConfig, con
 
 	// create the container log dir
 	klog.InfoS("Create container log dir", "pod", types.UniquePodName(a.pod), "container", containerSpec.Name)
-	logDir, err := BuildContainerLogsDirectory(pod.Namespace, pod.Name, pod.UID, containerSpec.Name)
+	logDir, err := BuildContainerLogsDirectory(pod, containerSpec.Name)
 	if err != nil {
 		klog.ErrorS(err, "Failed to create container log", "pod", types.UniquePodName(a.pod), "container", containerSpec.Name, "logDir", logDir)
 		return nil, ErrCreateContainerConfig
@@ -85,7 +85,7 @@ func (m *PodActor) generateContainerConfig(container *v1.Container, imageRef *cr
 	//  return nil, nil, err
 	// }
 
-	_, err := BuildContainerLogsDirectory(pod.Namespace, pod.Name, pod.UID, container.Name)
+	_, err := BuildContainerLogsDirectory(pod, container.Name)
 	if err != nil {
 		return nil, fmt.Errorf("create log directory for container %s failed: %v", container.Name, err)
 	}
@@ -162,7 +162,7 @@ func (m *PodActor) generateContainerConfig(container *v1.Container, imageRef *cr
 	return config, nil
 }
 
-func (a *PodActor) terminateContainer(container *types.Container) error {
+func (a *PodActor) terminateContainer(container *types.FornaxContainer) error {
 	pod := a.pod
 	klog.InfoS("Terminate container and remove it",
 		"Pod", types.UniquePodName(pod),

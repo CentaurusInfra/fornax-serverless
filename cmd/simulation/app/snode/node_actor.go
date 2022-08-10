@@ -248,7 +248,7 @@ func (n *SimulationNodeActor) buildAFornaxPod(state fornaxtypes.PodState,
 		Daemon:                  isDaemon,
 		Pod:                     v1pod.DeepCopy(),
 		RuntimePod:              nil,
-		Containers:              map[string]*fornaxtypes.Container{},
+		Containers:              map[string]*fornaxtypes.FornaxContainer{},
 		LastStateTransitionTime: time.Now(),
 	}
 	pod.SetPodStatus(fornaxPod, n.node.V1Node)

@@ -1,19 +1,7 @@
-apiVersion: core.fornax-serverless.centaurusinfra.io/v1
-kind: Application
-metadata:
-  name: nginx
-  labels:
-    name: nginx
 spec:
-  sessionConfig:
-    numOfSessionOfInstance: 1
-    minSessions: 1
-    maxSessions: 10
-    maxSurge: 1
-    minOfIdleSessions: 0
   scalingPolicy:
     minimumTarget: 0
-    maximumTarget: 3
+    maximumTarget: 0
     burst: 1
   containers:
     - image: nginx:latest
@@ -25,9 +13,21 @@ spec:
         limits:
           memory: "500M"
           cpu: "0.5"
+    - image: mysql:latest
+      name: mysql
+      env:
+        - name: MYSQL_ROOT_PASSWORD
+          value: password
       ports:
-        - containerPort: 80
-          name: nginx
+        - containerPort: 3306
+          name: mysql
+      resources:
+        requests:
+          memory: "500M"
+          cpu: "0.5"
+        limits:
+          memory: "500M"
+          cpu: "0.5"
   workingMode: Standlone
   configData:
     config1: data1

@@ -416,17 +416,6 @@ func (pm *podManager) pruneTerminatingPods() {
 			klog.InfoS("A terminating pod", "pod", name, "phase", pod.v1pod.Status.Phase, "hostIp", pod.v1pod.Status.HostIP, "nodename", pod.nodeName, "deletion time", pod.v1pod.DeletionTimestamp, "grace second", *pod.v1pod.DeletionGracePeriodSeconds)
 		}
 	}
-
-	schedulePods := pm.podStatePool.pendingSchedulePods.copyMap()
-	for name, pod := range schedulePods {
-		klog.InfoS("A schedule pod", "pod", name, "nodename", pod.nodeName, "deletion time", pod.v1pod.DeletionTimestamp)
-	}
-
-	implPods := pm.podStatePool.pendingImplPods.copyMap()
-	for name, pod := range implPods {
-		klog.InfoS("A schedule pod", "pod", name, "phase", pod.v1pod.Status.Phase, "hostIp", pod.v1pod.Status.HostIP, "nodename", pod.nodeName, "deletion time", pod.v1pod.DeletionTimestamp)
-	}
-
 }
 
 func (pm *podManager) printPodSummary() {

@@ -72,6 +72,20 @@ func MakePodDataDirs(rootPath string, pod *v1.Pod) error {
 	return nil
 }
 
+func CleanupPodLogDir(rootPath string, pod *v1.Pod) error {
+	if err := os.RemoveAll(config.GetPodLogDir(rootPath, pod.Namespace, pod.Name, pod.UID)); err != nil && !os.IsExist(err) {
+		return err
+	}
+	return nil
+}
+
+func MakePodLogDir(rootPath string, pod *v1.Pod) error {
+	if err := os.MkdirAll(config.GetPodLogDir(rootPath, pod.Namespace, pod.Name, pod.UID), 0750); err != nil && !os.IsExist(err) {
+		return err
+	}
+	return nil
+}
+
 func GetPullSecretsForPod(pod *v1.Pod) []v1.Secret {
 	pullSecrets := []v1.Secret{}
 
@@ -101,13 +115,10 @@ func ContainerLogFileName(containerName string, restartCount int) string {
 	return filepath.Join(containerName, fmt.Sprintf("%d.log", restartCount))
 }
 
-func BuildContainerLogsDirectory(podNamespace, podName string, podUID types.UID, containerName string) (string, error) {
-	podpath, err := BuildPodLogsDirectory(podNamespace, podName, podUID)
-	if err != nil {
-		return "", err
-	}
-
+func BuildContainerLogsDirectory(pod *v1.Pod, containerName string) (string, error) {
+	podpath := config.GetPodLogDir(config.DefaultPodLogsRootPath, pod.Namespace, pod.Name, pod.UID)
 	containerpath := filepath.Join(podpath, containerName)
+
 	if _, err := os.Stat(containerpath); os.IsNotExist(err) {
 		err = os.Mkdir(containerpath, os.FileMode(int(0755)))
 		return "", err

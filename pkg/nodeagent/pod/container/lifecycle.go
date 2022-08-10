@@ -34,7 +34,7 @@ const (
 	maxRespBodyLength = 10 * 1 << 10 // 10KB
 )
 
-func (pl *PodContainerActor) runLifecycleHandler(pod *types.FornaxPod, container *types.Container, handler *v1.LifecycleHandler) (string, error) {
+func (pl *PodContainerActor) runLifecycleHandler(pod *types.FornaxPod, container *types.FornaxContainer, handler *v1.LifecycleHandler) (string, error) {
 	switch {
 	case handler.Exec != nil:
 		var msg string
@@ -69,7 +69,7 @@ func (pl *PodContainerActor) runLifecycleHandler(pod *types.FornaxPod, container
 	}
 }
 
-func (pl *PodContainerActor) runHTTPHandler(pod *types.FornaxPod, container *types.Container, handler *v1.LifecycleHandler) (string, error) {
+func (pl *PodContainerActor) runHTTPHandler(pod *types.FornaxPod, container *types.FornaxContainer, handler *v1.LifecycleHandler) (string, error) {
 	host := handler.HTTPGet.Host
 	if len(host) == 0 {
 		if len(pod.RuntimePod.IPs) == 0 {

@@ -183,46 +183,68 @@ func LoadPodsFromContainerRuntime(runtimeService runtime.RuntimeService, db *fac
 		return world, err
 	}
 
+	// check runtime status for each pod saved in pod store
 	for _, obj := range pods {
-		podObj := obj.(*fornaxtypes.FornaxPod)
-		if podObj.RuntimePod == nil {
-			world.terminatedPods = append(world.terminatedPods, podObj)
+		fornaxpod := obj.(*fornaxtypes.FornaxPod)
+		if fornaxpod.RuntimePod == nil {
+			world.terminatedPods = append(world.terminatedPods, fornaxpod)
 		} else {
 			containerIDs := []string{}
-			for _, v := range podObj.Containers {
+			for _, v := range fornaxpod.Containers {
 				containerIDs = append(containerIDs, v.RuntimeContainer.Id)
 			}
 
-			status, err := runtimeService.GetPodStatus(podObj.RuntimePod.Id, containerIDs)
+			status, err := runtimeService.GetPodStatus(fornaxpod.RuntimePod.Id, containerIDs)
 			if err == nil {
 				// runtime service return nil if no such pod
 				if status != nil {
-					for _, v := range podObj.Containers {
+					for _, v := range fornaxpod.Containers {
 						runtimeStatus, found := status.ContainerStatuses[v.RuntimeContainer.Id]
 						if found {
 							v.ContainerStatus.RuntimeStatus = runtimeStatus
 						} else {
 							// this container does not have runtime status, so, mark it as already terminated
-							podObj.FornaxPodState = fornaxtypes.PodStateFailed
+							fornaxpod.FornaxPodState = fornaxtypes.PodStateFailed
 							v.State = fornaxtypes.ContainerStateTerminated
 						}
 					}
-					world.runningPods = append(world.runningPods, podObj)
+					world.runningPods = append(world.runningPods, fornaxpod)
 				} else {
 					// store pod does not exist in container runtime, mark all containers as terminated
-					podObj.FornaxPodState = fornaxtypes.PodStateTerminated
-					for _, v := range podObj.Containers {
+					fornaxpod.FornaxPodState = fornaxtypes.PodStateTerminated
+					for _, v := range fornaxpod.Containers {
 						v.State = fornaxtypes.ContainerStateTerminated
 					}
-					world.terminatedPods = append(world.terminatedPods, podObj)
+					world.terminatedPods = append(world.terminatedPods, fornaxpod)
 				}
-				db.PutPod(podObj)
+				db.PutPod(fornaxpod)
 			} else {
 				// got error, can not make decision, will retry
 				return world, err
 			}
 		}
 	}
+
+	// do reverse lookup for ophan pod which in container runtime but not saved in node agent store
+	// it's difficult to recover a fornax pod from a container runtime pod if there is no other information,
+	// at this moment, we just terminate it
+
+	// runTimePods, err := runtimeService.GetPods(true)
+	// if err != nil {
+	// 	return world, err
+	// }
+	// for _, runtimePod := range runTimePods {
+	// 	ophanPod := false
+	// 	for _, v := range world.runningPods {
+	// 		if v.RuntimePod.Id == runtimePod.Id {
+	// 			ophanPod = true
+	// 		}
+	// 	}
+	//
+	// 	if ophanPod {
+	// 		runtimeService.TerminatePod(runtimePod.Id, []string{})
+	// 	}
+	// }
 	return world, nil
 }
 

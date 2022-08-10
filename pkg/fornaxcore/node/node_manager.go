@@ -159,7 +159,6 @@ func (nm *nodeManager) SyncNodePodStates(node *v1.Node, podStates []*grpc.PodSta
 	}
 }
 
-// handleAPodState
 func (nm *nodeManager) handleAPodState(fornaxnode *FornaxNodeWithState, newStatePod *v1.Pod) error {
 	podName := fornaxutil.UniquePodName(newStatePod)
 

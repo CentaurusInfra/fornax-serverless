@@ -65,6 +65,11 @@ func (pool *ApplicationPodPool) getPodNames() []string {
 
 // getPodApplicationPodTemplate will translate application spec to a pod spec, it also call node port manager to allocate node port for exported each container port
 func (appc *ApplicationManager) getPodApplicationPodTemplate(application *fornaxv1.Application) *v1.Pod {
+	containers := []v1.Container{}
+	for _, v := range application.Spec.Containers {
+		containers = append(containers, *v.DeepCopy())
+	}
+
 	enableServiceLinks := false
 	setHostnameAsFQDN := false
 	mountServiceAccount := false
@@ -106,7 +111,7 @@ func (appc *ApplicationManager) getPodApplicationPodTemplate(application *fornax
 		Spec: v1.PodSpec{
 			Volumes:                       []v1.Volume{},
 			InitContainers:                []v1.Container{},
-			Containers:                    []v1.Container{*application.Spec.Container.DeepCopy()},
+			Containers:                    containers,
 			EphemeralContainers:           []v1.EphemeralContainer{},
 			RestartPolicy:                 v1.RestartPolicyNever,
 			TerminationGracePeriodSeconds: nil,

@@ -59,7 +59,7 @@ const (
 	ContainerStateStarted     ContainerState = "Started"
 )
 
-type Container struct {
+type FornaxContainer struct {
 	State            ContainerState           `json:"state,omitempty"`
 	InitContainer    bool                     `json:"initContainer,omitempty"`
 	ContainerSpec    *v1.Container            `json:"containerSpec,omitempty"`
@@ -74,15 +74,16 @@ type FornaxNodeWithRevision struct {
 }
 
 type FornaxPod struct {
-	Identifier              string                `json:"identifier,omitempty"`
-	ApplicationId           types.UID             `json:"applicationId,omitempty"`
-	FornaxPodState          PodState              `json:"podState,omitempty"`
-	Daemon                  bool                  `json:"daemon,omitempty"`
-	Pod                     *v1.Pod               `json:"pod,omitempty"`
-	ConfigMap               *v1.ConfigMap         `json:"configMap,omitempty"`
-	RuntimePod              *runtime.Pod          `json:"runtimePod,omitempty"`
-	Containers              map[string]*Container `json:"containers,omitempty"`
-	LastStateTransitionTime time.Time             `json:"lastStateTransitionTime,omitempty"`
+	Identifier              string                      `json:"identifier,omitempty"`
+	ApplicationId           types.UID                   `json:"applicationId,omitempty"`
+	FornaxPodState          PodState                    `json:"podState,omitempty"`
+	NodeRevision            int64                       `json:"nodeRevision,omitempty"`
+	Daemon                  bool                        `json:"daemon,omitempty"`
+	Pod                     *v1.Pod                     `json:"pod,omitempty"`
+	ConfigMap               *v1.ConfigMap               `json:"configMap,omitempty"`
+	RuntimePod              *runtime.Pod                `json:"runtimePod,omitempty"`
+	Containers              map[string]*FornaxContainer `json:"containers,omitempty"`
+	LastStateTransitionTime time.Time                   `json:"lastStateTransitionTime,omitempty"`
 }
 
 type Session struct {

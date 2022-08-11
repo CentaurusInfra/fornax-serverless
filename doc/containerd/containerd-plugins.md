@@ -1,7 +1,7 @@
 # ContainerD CRI Configuration and Setting
 
 ## Overview
-Docker have docker daemon and containerd cri, General docker use docker daemon. our fornax-serverless platform use containerd cri to integration with Quark container. But docker have containerd cri and it is disable by default. this doc describe how to enable containerd cri plugins.
+Docker have docker daemon and containerd cri, General docker use docker daemon. The fornax-serverless platform use containerd cri to integration with Quark container. But docker have containerd cri and it is disable by default. this doc describe how to enable containerd cri plugins.
 
 
 ### I. Final containerd config.toml file and change the setting.

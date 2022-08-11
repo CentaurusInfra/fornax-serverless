@@ -10,7 +10,7 @@ Node Agent is installed on each node which run containers, Node Agent use Contai
 ## Install Etcd
 Fornax Core use etcd as data store, follow <https://etcd.io/docs/v3.4/install/> to install Etcd
 
-## Install Fornax core binary
+## Install Fornax Core
 
 ### From source code
 
@@ -20,7 +20,7 @@ Fornax serverless require golang 1.8+, please install golang from <https://go.de
 Checkout code from <https://github.com/CentaurusInfra/fornax-serverless> into go workspace, from project folder, execute
 
 ```sh
-make
+make install
 ```
 
 3. start Fornax core.
@@ -151,7 +151,7 @@ journalctl -u containerd -f
   Checkout code from <https://github.com/CentaurusInfra/fornax-serverless> into go workspace, from project folder, execute
 
   ```
-  make
+  make install
   ```
 
   3. start Node Agent

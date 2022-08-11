@@ -4,7 +4,7 @@
 Docker have docker daemon and containerd cri, General docker use docker daemon. our fornax-serverless platform use containerd cri to integration with Quark container. But docker have containerd cri and it is disable by default. this doc describe how to enable containerd cri plugins.
 
 
-### I. Final containerd config.toml file and change the seting.
+### I. Final containerd config.toml file and change the setting.
 1. Run the folloing command to find out containerd config.toml file location.
 ```script
 dpkg -L containerd.io | grep toml
@@ -42,8 +42,8 @@ you can see containerd container runtime is active status.
 
 
 ### III Stop Docker Service (Docker Daemon).
-1. If you already have docker service(Docker Application Container Engine Or Docker Daemon). We need stop this service.
-2. Check docker service status. seen screen shot
+1. If you already have docker service(Docker Application Container Engine Or Docker Daemon) and is in active. You need stop this service.
+2. Check docker service status. see screen shot
 ```script
 sudo service docker status
 ```

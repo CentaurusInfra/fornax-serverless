@@ -131,7 +131,7 @@ it's expected runtime and network is ready in output, like
 },
 ```
 
-if there is any error, check containerd log,
+If there is any error, check containerd log,
 
 ```sh
 journalctl -u containerd -f

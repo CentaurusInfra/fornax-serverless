@@ -213,7 +213,7 @@ spec:
     maxSurge: 1
     minOfIdleSessions: 0
   scalingPolicy:
-    minimumTarget: 0
+    minimumTarget: 1
     maximumTarget: 3
     burst: 1
   containers:

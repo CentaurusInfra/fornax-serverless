@@ -16,7 +16,7 @@ Fornax Core use etcd as data store, follow <https://etcd.io/docs/v3.4/install/> 
 
 1. Install go
 
-Fornax serverless require go 1.8+, install golang from <https://go.dev/doc/installed>
+Fornax serverless require go 1.8+, install golang from <https://go.dev/doc/install>
 
 2. Compile source code
 
@@ -150,7 +150,7 @@ journalctl -u containerd -f
 
   1. Install go
   
-  Fornax serverless require go 1.8+, install golang from <https://go.dev/doc/installed>
+  Fornax serverless require go 1.8+, install golang from <https://go.dev/doc/install>
   
   2. Compile source code
   

@@ -22,6 +22,8 @@ import (
 	"centaurusinfra.io/fornax-serverless/pkg/nodeagent/types"
 )
 
+type NodeUpdate struct{}
+
 type PodSandboxCreated struct {
 	Pod *types.FornaxPod
 }
@@ -32,55 +34,60 @@ type PodSandboxReady struct {
 
 type PodContainerCreated struct {
 	Pod       *types.FornaxPod
-	Container *types.Container
+	Container *types.FornaxContainer
 }
 
 // when runtime container is started
 type PodContainerStarted struct {
 	Pod       *types.FornaxPod
-	Container *types.Container
+	Container *types.FornaxContainer
 }
 
 type PodContainerStandy struct {
 	Pod       *types.FornaxPod
-	Container *types.Container
+	Container *types.FornaxContainer
 }
 
 // when runtime container readiness probe failed
 type PodContainerUnhealthy struct {
 	Pod       *types.FornaxPod
-	Container *types.Container
+	Container *types.FornaxContainer
 }
 
 // when runtime container readiness probe succeeded,
 // if no readyness probe, treat it as ready when runtime container is in runninng state
 type PodContainerReady struct {
 	Pod       *types.FornaxPod
-	Container *types.Container
+	Container *types.FornaxContainer
+}
+
+type PodContainerStarting struct {
+	Pod       *types.FornaxPod
+	Container *types.FornaxContainer
 }
 
 type PodContainerStopping struct {
 	Pod         *types.FornaxPod
-	Container   *types.Container
+	Container   *types.FornaxContainer
 	GracePeriod time.Duration
 }
 
 // when runtime container stopped with a exit code
 type PodContainerStopped struct {
 	Pod       *types.FornaxPod
-	Container *types.Container
+	Container *types.FornaxContainer
 }
 
 // when runtime container is removed
 type PodContainerTerminated struct {
 	Pod       *types.FornaxPod
-	Container *types.Container
+	Container *types.FornaxContainer
 }
 
 // when runtime container startup and liveness probe failed
 type PodContainerFailed struct {
 	Pod       *types.FornaxPod
-	Container *types.Container
+	Container *types.FornaxContainer
 }
 
 type PodTerminate struct{}

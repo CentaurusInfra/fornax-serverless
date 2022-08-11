@@ -227,11 +227,10 @@ func UpdateNodeCapacity(cc cadvisor.CAdvisorInfoProvider, nodeConfig config.Node
 		node.Status.Capacity = v1.ResourceList{}
 	}
 
-	klog.Infof("cadvisor info %v", info.MachineInfo)
 	if info == nil {
-		node.Status.Capacity[v1.ResourceCPU] = *k8sresource.NewMilliQuantity(0, k8sresource.DecimalSI)
-		node.Status.Capacity[v1.ResourceMemory] = k8sresource.MustParse("0Gi")
-		node.Status.Capacity[v1.ResourcePods] = *k8sresource.NewQuantity(0, k8sresource.DecimalSI)
+		node.Status.Capacity[v1.ResourceCPU] = util.ResourceQuantity(0, v1.ResourceCPU)
+		node.Status.Capacity[v1.ResourceMemory] = util.ResourceQuantity(0, v1.ResourceMemory)
+		node.Status.Capacity[v1.ResourcePods] = util.ResourceQuantity(0, v1.ResourcePods)
 	} else {
 		node.Status.NodeInfo.MachineID = info.MachineInfo.MachineID
 		node.Status.NodeInfo.SystemUUID = info.MachineInfo.SystemUUID
@@ -293,7 +292,7 @@ func IsNodeStatusReady(myNode *FornaxNode) bool {
 
 	// check daemon pod status
 	daemonReady := true
-	for _, v := range myNode.Pods {
+	for _, v := range myNode.Pods.List() {
 		if v.Daemon {
 			daemonReady = daemonReady && v.FornaxPodState == fornaxtypes.PodStateRunning
 		}

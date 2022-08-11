@@ -1,0 +1,18 @@
+spec:
+  containers:
+    - image: nginx:latest
+      name: nginx
+      resources:
+        requests:
+          memory: "500M"
+          cpu: "0.5"
+        limits:
+          memory: "500M"
+          cpu: "0.5"
+      ports:
+        - containerPort: 80
+          name: nginx
+  scalingPolicy:
+    minimumTarget: 0
+    maximumTarget: 3
+    burst: 1

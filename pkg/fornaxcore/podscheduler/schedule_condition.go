@@ -16,15 +16,13 @@ limitations under the License.
 package podscheduler
 
 import (
-	"fmt"
-
 	podutil "centaurusinfra.io/fornax-serverless/pkg/util"
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 )
 
 var (
-	MinimumCpuRequestQuantity    = podutil.ResourceQuantity(10000, v1.ResourceCPU)
+	MinimumCpuRequestQuantity    = podutil.ResourceQuantity(1, v1.ResourceCPU)
 	MinimumMemoryRequestQuantity = podutil.ResourceQuantity(50000, v1.ResourceMemory)
 )
 
@@ -60,8 +58,6 @@ func (*CPUCondition) Mandatory() bool {
 // check if node stastify cpu requirement
 func (cond *CPUCondition) Apply(node *SchedulableNode, allocatableResourceList *v1.ResourceList) bool {
 	cpu := allocatableResourceList.Cpu()
-	fmt.Println(*cpu)
-	fmt.Println(cond.ResourceQuantity)
 	return cpu.Sign() > 0 && cpu.Cmp(cond.ResourceQuantity) > 0
 }
 
@@ -100,8 +96,6 @@ func (*MemoryCondition) Mandatory() bool {
 // check if node stastify memory requirement
 func (cond *MemoryCondition) Apply(node *SchedulableNode, allocatableResourceList *v1.ResourceList) bool {
 	memory := allocatableResourceList.Memory()
-	fmt.Println(*memory)
-	fmt.Println(cond.ResourceQuantity)
 	return memory.Sign() > 0 && memory.Cmp(cond.ResourceQuantity) > 0
 }
 

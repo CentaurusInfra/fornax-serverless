@@ -24,6 +24,7 @@ import (
 	criv1 "k8s.io/cri-api/pkg/apis/runtime/v1"
 	"k8s.io/klog/v2"
 
+	"centaurusinfra.io/fornax-serverless/pkg/nodeagent/config"
 	"centaurusinfra.io/fornax-serverless/pkg/nodeagent/runtime"
 	"centaurusinfra.io/fornax-serverless/pkg/nodeagent/types"
 	"k8s.io/kubernetes/pkg/kubelet/util/format"
@@ -62,7 +63,7 @@ func (m *PodActor) createPodSandbox() (*runtime.Pod, error) {
 	//  }
 	// }
 
-	klog.InfoS("Call runtime to create sandbox", "pod", types.UniquePodName(m.pod))
+	klog.InfoS("Call runtime to create sandbox", "pod", types.UniquePodName(m.pod), "sandboxConfig", podSandboxConfig)
 	runtimepod, err := m.dependencies.CRIRuntimeService.CreateSandbox(podSandboxConfig, runtimeHandler)
 	if err != nil {
 		message := fmt.Sprintf("Failed to create sandbox for pod %q: %v", format.Pod(pod), err)
@@ -124,11 +125,7 @@ func (m *PodActor) generatePodSandboxConfig() (*criv1.PodSandboxConfig, error) {
 		podSandboxConfig.Hostname = pod.Spec.Hostname
 	}
 
-	logDir, err := BuildPodLogsDirectory(pod.Namespace, pod.Name, pod.UID)
-	if err != nil {
-		return nil, err
-	}
-	podSandboxConfig.LogDirectory = logDir
+	podSandboxConfig.LogDirectory = config.GetPodLogDir(config.DefaultPodLogsRootPath, pod.Namespace, pod.Name, pod.UID)
 
 	portMappings := []*criv1.PortMapping{}
 	for _, c := range pod.Spec.Containers {

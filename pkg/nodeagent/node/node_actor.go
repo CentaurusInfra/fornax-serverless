@@ -49,19 +49,20 @@ const (
 )
 
 type FornaxNodeActor struct {
-	nodeMutex     sync.RWMutex
-	stopCh        chan struct{}
-	node          *FornaxNode
-	state         NodeState
-	innerActor    message.Actor
-	fornoxCoreRef message.ActorRef
-	podActors     map[string]*pod.PodActor
+	nodeMutex       sync.RWMutex
+	stopCh          chan struct{}
+	node            *FornaxNode
+	state           NodeState
+	innerActor      message.Actor
+	fornoxCoreRef   message.ActorRef
+	podActors       *PodActorPool
+	nodePortManager *nodePortManager
 }
 
 func (n *FornaxNodeActor) Stop() error {
 	n.stopCh <- struct{}{}
 	n.innerActor.Stop()
-	for _, v := range n.podActors {
+	for _, v := range n.podActors.List() {
 		v.Stop()
 	}
 	return nil
@@ -91,7 +92,6 @@ func (n *FornaxNodeActor) Start() error {
 	}
 
 	n.state = NodeStateRegistering
-	n.incrementNodeRevision()
 	// register with fornax core
 	for {
 		if n.state != NodeStateRegistering {
@@ -122,41 +122,38 @@ func (n *FornaxNodeActor) Start() error {
 func (n *FornaxNodeActor) recreatePodStateFromRuntimeSummary(runtimeSummary ContainerWorldSummary) {
 	for _, fpod := range runtimeSummary.terminatedPods {
 		// still recreate pod actor for terminated pod in case some cleanup are required
-		// klog.InfoS("Recover pod actor for a terminated pod", "pod", fornaxtypes.UniquePodName(fpod), "state", fpod.PodState)
 		klog.InfoS("Recover pod actor for a terminated pod", "pod", fpod)
-		n.recoverPodActor(fpod)
-		// report back to fornax core, this pod is stopped
-		n.notify(n.fornoxCoreRef, pod.BuildFornaxcoreGrpcPodStateForTerminatedPod(n.node.Revision, fpod))
+		n.startPodActor(fpod)
 	}
 
 	for _, fpod := range runtimeSummary.runningPods {
 		klog.InfoS("Recover pod actor for a running pod", "pod", fornaxtypes.UniquePodName(fpod), "state", fpod.FornaxPodState)
-		n.recoverPodActor(fpod)
-		// report pod back to fornax core, and recreate pod and actors if it does not exist
-		n.notify(n.fornoxCoreRef, pod.BuildFornaxcoreGrpcPodState(n.node.Revision, fpod))
+		n.nodePortManager.initNodePortRangeSlot(n.node.V1Node, fpod.Pod)
+		n.startPodActor(fpod)
 	}
 }
 
 func (n *FornaxNodeActor) startStateReport() {
 	// start go routine to report node status forever
 	go wait.Until(func() {
-		SetNodeStatus(n.node)
-		n.notify(n.fornoxCoreRef, BuildFornaxGrpcNodeState(n.node))
+		n.notify(n.innerActor.Reference(), internal.NodeUpdate{})
 	}, 1*time.Minute, n.stopCh)
 }
 
-func (n *FornaxNodeActor) incrementNodeRevision() error {
+func (n *FornaxNodeActor) incrementNodeRevision() int64 {
 	n.nodeMutex.Lock()
 	defer n.nodeMutex.Unlock()
 
 	n.node.Revision += 1
-	return n.node.Dependencies.NodeStore.PutNode(
+	n.node.Dependencies.NodeStore.PutNode(
 		&fornaxtypes.FornaxNodeWithRevision{
 			Identifier: util.UniqueNodeName(n.node.V1Node),
 			Node:       n.node.V1Node.DeepCopy(),
 			Revision:   n.node.Revision,
 		},
 	)
+
+	return n.node.Revision
 }
 
 func (n *FornaxNodeActor) actorMessageProcess(msg message.ActorMessage) (interface{}, error) {
@@ -164,28 +161,30 @@ func (n *FornaxNodeActor) actorMessageProcess(msg message.ActorMessage) (interfa
 	case *fornaxgrpc.FornaxCoreMessage:
 		return n.processFornaxCoreMessage(msg.Body.(*fornaxgrpc.FornaxCoreMessage))
 	case internal.PodStatusChange:
-		// increment node revision since one pod status changed
 		fppod := msg.Body.(internal.PodStatusChange).Pod
-		n.incrementNodeRevision()
-		n.notify(n.fornoxCoreRef, pod.BuildFornaxcoreGrpcPodState(n.node.Revision, fppod))
+		revision := n.incrementNodeRevision()
+		n.notify(n.fornoxCoreRef, pod.BuildFornaxcoreGrpcPodState(revision, fppod))
 	case internal.PodCleanup:
 		fppod := msg.Body.(internal.PodCleanup).Pod
 		klog.InfoS("Cleanup pod actor and store", "pod", fornaxtypes.UniquePodName(fppod), "state", fppod.FornaxPodState)
 		if fppod.FornaxPodState != fornaxtypes.PodStateTerminated && fppod.FornaxPodState != fornaxtypes.PodStateFailed {
-			klog.Warning("Received cleanup when pod is not in terminated or failed state", "pod", fornaxtypes.UniquePodName(fppod))
-			return nil, fmt.Errorf("Pod is not in terminated state, pod: %s", fornaxtypes.UniquePodName(fppod))
+			return nil, fmt.Errorf("Cannot cleanup pod as it is not in terminated state, pod: %s", fornaxtypes.UniquePodName(fppod))
 		}
-		actor, found := n.podActors[string(fppod.Identifier)]
-		if found {
+		actor := n.podActors.Get(string(fppod.Identifier))
+		if actor != nil {
 			actor.Stop()
-			delete(n.podActors, string(fppod.Identifier))
-			delete(n.node.Pods, fppod.Identifier)
+			n.podActors.Del(string(fppod.Identifier))
+			n.node.Pods.Del(fppod.Identifier)
 		}
+		n.nodePortManager.DeallocatePodPortMapping(n.node.V1Node, fppod.Pod)
 		err := n.node.Dependencies.PodStore.DelObject(fppod.Identifier)
 		if err != nil {
 			// TODO, if failed to delete a terminated pod, it should be fine, but need better cleanup
 			return nil, err
 		}
+	case internal.NodeUpdate:
+		SetNodeStatus(n.node)
+		n.notify(n.fornoxCoreRef, BuildFornaxGrpcNodeState(n.node, n.node.Revision))
 	default:
 		klog.InfoS("Received unknown message", "from", msg.Sender, "msg", msg.Body)
 	}
@@ -225,7 +224,7 @@ func (n *FornaxNodeActor) processFornaxCoreMessage(msg *fornaxgrpc.FornaxCoreMes
 
 // initialize node with node spec provided by fornaxcore, especially pod cidr
 func (n *FornaxNodeActor) onNodeFullSyncCommand(msg *fornaxgrpc.NodeFullSync) error {
-	n.notify(n.fornoxCoreRef, BuildFornaxGrpcNodeState(n.node))
+	n.notify(n.fornoxCoreRef, BuildFornaxGrpcNodeState(n.node, n.node.Revision))
 	return nil
 }
 
@@ -246,7 +245,7 @@ func (n *FornaxNodeActor) onNodeConfigurationCommand(msg *fornaxgrpc.NodeConfigu
 	n.node.V1Node.Spec = *apiNode.Spec.DeepCopy()
 
 	if NodeSpecPodCidrChanged(n.node.V1Node, apiNode) {
-		if len(n.node.Pods) > 0 {
+		if len(n.node.Pods.List()) > 0 {
 			return fmt.Errorf("change pod cidr when node has pods is not allowed, should not happen")
 		}
 		// TODO, set up pod cidr
@@ -271,10 +270,10 @@ func (n *FornaxNodeActor) onNodeConfigurationCommand(msg *fornaxgrpc.NodeConfigu
 			SetNodeStatus(n.node)
 			if IsNodeStatusReady(n.node) {
 				klog.InfoS("Node is ready, tell fornax core")
-				n.node.V1Node.Status.Phase = v1.NodeRunning
 				// bump revision to let fornax core to update node status
-				n.incrementNodeRevision()
-				n.notify(n.fornoxCoreRef, BuildFornaxGrpcNodeReady(n.node))
+				revision := n.incrementNodeRevision()
+				n.node.V1Node.Status.Phase = v1.NodeRunning
+				n.notify(n.fornoxCoreRef, BuildFornaxGrpcNodeReady(n.node, revision))
 				n.state = NodeStateReady
 				n.startStateReport()
 			} else {
@@ -301,8 +300,8 @@ func (n *FornaxNodeActor) initializeNodeDaemons(pods []*v1.Pod) error {
 			return errors.Errorf("Daemon pod must use host network")
 		}
 
-		_, found := n.node.Pods[util.UniquePodName(p)]
-		if !found {
+		v := n.node.Pods.Get(util.UniquePodName(p))
+		if v == nil {
 			_, actor, err := n.createPodAndActor(fornaxtypes.PodStateCreating, p.DeepCopy(), nil, true)
 			if err != nil {
 				return err
@@ -316,6 +315,8 @@ func (n *FornaxNodeActor) initializeNodeDaemons(pods []*v1.Pod) error {
 	return nil
 }
 
+// buildAFornaxPod validate pod spec, and allocate host port for pod container port, it also set pod lables,
+// modified pod spec will saved in store and return back to FornaxCore to make pod spec in sync
 func (n *FornaxNodeActor) buildAFornaxPod(state fornaxtypes.PodState,
 	v1pod *v1.Pod,
 	configMap *v1.ConfigMap,
@@ -330,7 +331,7 @@ func (n *FornaxNodeActor) buildAFornaxPod(state fornaxtypes.PodState,
 		Daemon:                  isDaemon,
 		Pod:                     v1pod.DeepCopy(),
 		RuntimePod:              nil,
-		Containers:              map[string]*fornaxtypes.Container{},
+		Containers:              map[string]*fornaxtypes.FornaxContainer{},
 		LastStateTransitionTime: time.Now(),
 	}
 	pod.SetPodStatus(fornaxPod, n.node.V1Node)
@@ -343,23 +344,38 @@ func (n *FornaxNodeActor) buildAFornaxPod(state fornaxtypes.PodState,
 		}
 		fornaxPod.ConfigMap = configMap.DeepCopy()
 	}
+
+	// if fornax pod need to expose host port for containter port, there are chance port could be conflict between pods,
+	// to avoid port conflict on host of multiple pods, node allocate a unique host port number for each container port
+	// and overwrite pod spec's container port mapping, modified pod spec is returned back to FornaxCore,
+	// FornaxCore use modified port mapping to let its client to access pod using node allocated host port
+	err := n.nodePortManager.AllocatePodPortMapping(n.node.V1Node, fornaxPod.Pod)
+	if err != nil {
+		return nil, err
+	}
+
+	// for _, v := range fornaxPod.Pod.Spec.Containers {
+	//  klog.Info("Pod Containers port mapping", v.Ports)
+	// }
 	return fornaxPod, nil
 }
 
-func (n *FornaxNodeActor) recoverPodActor(fpod *fornaxtypes.FornaxPod) (*fornaxtypes.FornaxPod, *pod.PodActor, error) {
-	// set pod node related information in case node name and ip changed
+// startPodActor start a actor for a pod
+// set pod node related information in case node name and ip changed
+func (n *FornaxNodeActor) startPodActor(fpod *fornaxtypes.FornaxPod) (*fornaxtypes.FornaxPod, *pod.PodActor, error) {
 	fpod.Pod = fpod.Pod.DeepCopy()
 	fpod.Pod.Status.HostIP = n.node.V1Node.Status.Addresses[0].Address
 	fpod.Pod.Labels[fornaxv1.LabelFornaxCoreNode] = util.UniqueNodeName(n.node.V1Node)
 
 	fpActor := pod.NewPodActor(n.innerActor.Reference(), fpod, &n.node.NodeConfig, n.node.Dependencies, pod.ErrRecoverPod)
+	n.node.Pods.Add(fpod.Identifier, fpod)
+	n.podActors.Add(fpod.Identifier, fpActor)
 	fpActor.Start()
-	n.node.Pods[fpod.Identifier] = fpod
-	n.podActors[fpod.Identifier] = fpActor
 	return fpod, fpActor, nil
 }
 
-func (n *FornaxNodeActor) createPodAndActor(state fornaxtypes.PodState,
+func (n *FornaxNodeActor) createPodAndActor(
+	state fornaxtypes.PodState,
 	v1Pod *v1.Pod,
 	v1Config *v1.ConfigMap,
 	isDaemon bool) (*fornaxtypes.FornaxPod, *pod.PodActor, error) {
@@ -378,11 +394,7 @@ func (n *FornaxNodeActor) createPodAndActor(state fornaxtypes.PodState,
 	}
 
 	// new pod actor and start it
-	fpActor := pod.NewPodActor(n.innerActor.Reference(), fpod, &n.node.NodeConfig, n.node.Dependencies, nil)
-	fpActor.Start()
-	n.node.Pods[fpod.Identifier] = fpod
-	n.podActors[fpod.Identifier] = fpActor
-	return fpod, fpActor, nil
+	return n.startPodActor(fpod)
 }
 
 // find pod actor and send a message to it, if pod actor does not exist, create one
@@ -390,8 +402,8 @@ func (n *FornaxNodeActor) onPodCreateCommand(msg *fornaxgrpc.PodCreate) error {
 	if n.state != NodeStateReady {
 		return fmt.Errorf("Node is not in ready state to create a new pod")
 	}
-	_, found := n.node.Pods[*msg.PodIdentifier]
-	if !found {
+	v := n.node.Pods.Get(*msg.PodIdentifier)
+	if v == nil {
 		pod, actor, err := n.createPodAndActor(
 			fornaxtypes.PodStateCreating,
 			msg.GetPod().DeepCopy(),
@@ -413,8 +425,8 @@ func (n *FornaxNodeActor) onPodCreateCommand(msg *fornaxgrpc.PodCreate) error {
 
 // find pod actor and send a message to it, if pod actor does not exist, return error
 func (n *FornaxNodeActor) onPodTerminateCommand(msg *fornaxgrpc.PodTerminate) error {
-	podActor, found := n.podActors[*msg.PodIdentifier]
-	if !found {
+	podActor := n.podActors.Get(*msg.PodIdentifier)
+	if podActor == nil {
 		return fmt.Errorf("Pod: %s does not exist, fornax core is not in sync", *msg.PodIdentifier)
 	} else {
 		n.notify(podActor.Reference(), internal.PodTerminate{})
@@ -427,8 +439,8 @@ func (n *FornaxNodeActor) onPodActiveCommand(msg *fornaxgrpc.PodActive) error {
 	if n.state != NodeStateReady {
 		return fmt.Errorf("Node is not in ready state to active a standby pod")
 	}
-	podActor, found := n.podActors[*msg.PodIdentifier]
-	if !found {
+	podActor := n.podActors.Get(*msg.PodIdentifier)
+	if podActor == nil {
 		return fmt.Errorf("Pod: %s does not exist, fornax core is not in sync", *msg.PodIdentifier)
 	} else {
 		n.notify(podActor.Reference(), internal.PodActive{})
@@ -442,8 +454,8 @@ func (n *FornaxNodeActor) onSessionStartCommand(msg *fornaxgrpc.SessionStart) er
 	if n.state != NodeStateReady {
 		return fmt.Errorf("node is not in ready state to start a session")
 	}
-	podActor, found := n.podActors[*msg.PodIdentifier]
-	if !found {
+	podActor := n.podActors.Get(*msg.PodIdentifier)
+	if podActor == nil {
 		return fmt.Errorf("Pod: %s does not exist, can not start session", *msg.PodIdentifier)
 	} else {
 		n.notify(podActor.Reference(), internal.SessionStart{})
@@ -453,8 +465,8 @@ func (n *FornaxNodeActor) onSessionStartCommand(msg *fornaxgrpc.SessionStart) er
 
 // find pod actor to let it terminate a session, if pod actor does not exist, return failure
 func (n *FornaxNodeActor) onSessionCloseCommand(msg *fornaxgrpc.SessionClose) error {
-	podActor, found := n.podActors[*msg.PodIdentifier]
-	if !found {
+	podActor := n.podActors.Get(*msg.PodIdentifier)
+	if podActor == nil {
 		return fmt.Errorf("Pod: %s does not exist, fornax core is not in sync, can not close session", *msg.PodIdentifier)
 	} else {
 		n.notify(podActor.Reference(), internal.SessionClose{})
@@ -468,13 +480,14 @@ func (n *FornaxNodeActor) notify(receiver message.ActorRef, msg interface{}) {
 
 func NewNodeActor(node *FornaxNode) (*FornaxNodeActor, error) {
 	actor := &FornaxNodeActor{
-		nodeMutex:     sync.RWMutex{},
-		stopCh:        make(chan struct{}),
-		node:          node,
-		state:         NodeStateInitializing,
-		innerActor:    nil,
-		fornoxCoreRef: nil,
-		podActors:     map[string]*pod.PodActor{},
+		nodeMutex:       sync.RWMutex{},
+		stopCh:          make(chan struct{}),
+		node:            node,
+		state:           NodeStateInitializing,
+		innerActor:      nil,
+		fornoxCoreRef:   nil,
+		podActors:       NewPodActorPool(),
+		nodePortManager: NewNodePortManager(),
 	}
 	actor.innerActor = message.NewLocalChannelActor(node.V1Node.GetName(), actor.actorMessageProcess)
 

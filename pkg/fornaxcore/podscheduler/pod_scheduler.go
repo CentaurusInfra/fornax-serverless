@@ -24,7 +24,6 @@ import (
 	"centaurusinfra.io/fornax-serverless/pkg/fornaxcore/grpc/nodeagent"
 	ie "centaurusinfra.io/fornax-serverless/pkg/fornaxcore/internal"
 	"centaurusinfra.io/fornax-serverless/pkg/util"
-	fornaxutil "centaurusinfra.io/fornax-serverless/pkg/util"
 
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/klog/v2"
@@ -49,11 +48,11 @@ type SchedulePolicy struct {
 type podScheduler struct {
 	stop                      bool
 	ctx                       context.Context
-	nodeUpdateCh              chan interface{}
-	nodeInforProvider         ie.NodeInfoProvider
+	updateCh                  chan interface{}
+	nodeInfoP                 ie.NodeInfoProvider
 	nodeAgent                 nodeagent.NodeAgentProxy
 	scheduleQueue             *PodScheduleQueue
-	nodePool                  SchedulableNodePool
+	nodePool                  *SchedulableNodePool
 	ScheduleConditionBuilders []ConditionBuildFunc
 	policy                    SchedulePolicy
 }
@@ -94,9 +93,11 @@ func (ps *podScheduler) selectNode(pod *v1.Pod, nodes []*SchedulableNode) *Sched
 
 // add pod into node resource list, and send pod to node via grpc channel, if it channel failed, reschedule
 func (ps *podScheduler) bindNode(snode *SchedulableNode, pod *v1.Pod) error {
-	klog.InfoS("Bind pod to node", "pod", util.UniquePodName(pod), "node", util.UniqueNodeName(snode.Node))
+	podName := util.UniquePodName(pod)
+	nodeName := util.UniqueNodeName(snode.Node)
+	klog.InfoS("Bind pod to node", "pod", podName, "node", nodeName)
 
-	resourceList := fornaxutil.GetPodResourceList(pod)
+	resourceList := util.GetPodResourceList(pod)
 	snode.AdmitPodOccupiedResourceList(resourceList)
 
 	// set pod status
@@ -106,9 +107,9 @@ func (ps *podScheduler) bindNode(snode *SchedulableNode, pod *v1.Pod) error {
 	pod.Status.Reason = "Scheduled"
 
 	// call nodeagent to start pod
-	err := ps.nodeAgent.CreatePod(fornaxutil.UniqueNodeName(snode.Node), pod)
+	err := ps.nodeAgent.CreatePod(nodeName, pod)
 	if err != nil {
-		klog.ErrorS(err, "Failed to bind pod, reschedule", "node", snode, "pod", pod)
+		klog.ErrorS(err, "Failed to bind pod, reschedule", "node", nodeName, "pod", podName)
 		ps.unbindNode(snode, pod)
 		pod.Status.Phase = v1.PodPending
 		pod.Status.Message = "Schedule failed"
@@ -127,18 +128,16 @@ func (ps *podScheduler) unbindNode(node *SchedulableNode, pod *v1.Pod) {
 }
 
 func (ps *podScheduler) schedulePod(pod *v1.Pod) {
-	klog.InfoS("Schedule a pod", "pod", util.UniquePodName(pod))
-
-	// get pod schedule condition
-	// 1/ resource, cpu, mem, volume, pid
-	// 2/ other pod conditions, recent schedule usage, node affinity, name,
-	//
-	// go through nodes to find suitable node
-	// node pool is a sorted list by conditions
+	podName := util.UniquePodName(pod)
+	klog.InfoS("Schedule a pod", "pod", podName)
+	if pod.DeletionTimestamp != nil {
+		// pod has been requested to delete, skip
+		return
+	}
 
 	conditions := CalculateScheduleConditions(ps.ScheduleConditionBuilders, pod)
 	availableNodes := []*SchedulableNode{}
-	nodes := ps.nodePool
+	nodes := ps.nodePool.GetNodes()
 	for _, node := range nodes {
 		allocatedResources := node.getAllocatableResources()
 		good := true
@@ -158,33 +157,34 @@ func (ps *podScheduler) schedulePod(pod *v1.Pod) {
 		}
 	}
 
-	// send pod to retry backoff queue
 	if len(availableNodes) == 0 {
-		klog.InfoS("Can not find a node candidate for scheduling pod, retry later", "pod", util.UniquePodName(pod))
+		// send pod to retry backoff queue
+		klog.InfoS("Can not find a node candidate for scheduling pod, retry later", "pod", podName)
 		ps.scheduleQueue.BackoffPod(pod, ps.policy.BackoffDuration)
 	} else {
-		// select highest score node
 		node := ps.selectNode(pod, availableNodes)
 		if node == nil {
-			klog.InfoS("All node candidate do not met requirement, retry later", "pod", util.UniquePodName(pod))
+			klog.InfoS("All node candidate do not met requirement, retry later", "pod", podName)
 			ps.scheduleQueue.BackoffPod(pod, ps.policy.BackoffDuration)
+		} else {
+			err := ps.bindNode(node, pod)
+			if err != nil {
+				ps.scheduleQueue.BackoffPod(pod, ps.policy.BackoffDuration)
+			}
 		}
-
-		// send to selected node
-		ps.bindNode(node, pod)
 	}
 }
 
-func (ps *podScheduler) updateNodePool(v1node *v1.Node, updateType ie.NodeUpdateType) *SchedulableNode {
-	nodeName := fornaxutil.UniqueNodeName(v1node)
-	if updateType == ie.NodeUpdateTypeDelete {
-		delete(ps.nodePool, nodeName)
+func (ps *podScheduler) updateNodePool(v1node *v1.Node, updateType ie.NodeEventType) *SchedulableNode {
+	nodeName := util.UniqueNodeName(v1node)
+	if updateType == ie.NodeEventTypeDelete {
+		ps.nodePool.deleteNode(nodeName)
 		return nil
 	} else {
-		if snode, found := ps.nodePool[fornaxutil.UniqueNodeName(v1node)]; found {
+		if snode := ps.nodePool.getNode(nodeName); snode != nil {
 			snode.LastSeen = time.Now()
 			if !util.IsNodeRunning(v1node) {
-				delete(ps.nodePool, nodeName)
+				ps.nodePool.deleteNode(nodeName)
 			}
 			return snode
 		} else {
@@ -199,7 +199,7 @@ func (ps *podScheduler) updateNodePool(v1node *v1.Node, updateType ie.NodeUpdate
 					ResourceList:               GetNodeAllocatableResourceList(v1node),
 					PodPreOccupiedResourceList: v1.ResourceList{},
 				}
-				ps.nodePool[nodeName] = snode
+				ps.nodePool.addNode(nodeName, snode)
 			}
 			// TODO, if there are pod in backoff queue with similar resource req, notify to try schedule
 
@@ -208,14 +208,14 @@ func (ps *podScheduler) updateNodePool(v1node *v1.Node, updateType ie.NodeUpdate
 	}
 }
 
-func (ps *podScheduler) updatePodOccupiedResourceList(snode *SchedulableNode, v1pod *v1.Pod, updateType ie.PodUpdateType) {
+func (ps *podScheduler) updatePodOccupiedResourceList(snode *SchedulableNode, v1pod *v1.Pod, updateType ie.PodEventType) {
 	switch updateType {
-	case ie.PodUpdateTypeDelete, ie.PodUpdateTypeTerminate:
+	case ie.PodEventTypeDelete, ie.PodEventTypeTerminate:
 		// if pod deleted or disappear, remove it from preoccupied list
 		resourceList := util.GetPodResourceList(v1pod)
 		snode.ReleasePodOccupiedResourceList(resourceList)
 		// TODO, if there are pod in backoff queue with similar resource req, notify to try schedule
-	case ie.PodUpdateTypeCreate:
+	case ie.PodEventTypeCreate:
 		resourceList := util.GetPodResourceList(v1pod)
 		snode.AdmitPodOccupiedResourceList(resourceList)
 	}
@@ -223,14 +223,8 @@ func (ps *podScheduler) updatePodOccupiedResourceList(snode *SchedulableNode, v1
 
 func (ps *podScheduler) printScheduleSummary() {
 	activeNum, retryNum := ps.scheduleQueue.Length()
-	klog.InfoS("Scheduler summary", "active queue length", activeNum, "backoff queue length", retryNum, "available nodes", len(ps.nodePool))
-	// debug node pools
-	// pools := ps.nodePool
-	// for _, v := range pools {
-	//  klog.InfoS("node available reource", "resourceList", v.Node.Status.Allocatable)
-	//  resourceList := ps.getAllocatableResources(v)
-	//  klog.InfoS("node allocatel reource", "resourceList", resourceList)
-	// }
+	klog.InfoS("Scheduler summary", "active queue length", activeNum, "backoff queue length", retryNum, "available nodes", ps.nodePool.size())
+	ps.nodePool.printSummary()
 }
 
 func (ps *podScheduler) Run() {
@@ -251,27 +245,29 @@ func (ps *podScheduler) Run() {
 	// receive pod and node update to update scheduleable node resource and condition
 	go func() {
 		ticker := time.NewTicker(DefaultBackoffRetryDuration)
-		nodes := ps.nodeInforProvider.ListNodes()
+		nodes := ps.nodeInfoP.List()
 		for _, n := range nodes {
-			ps.updateNodePool(n, ie.NodeUpdateTypeCreate)
+			ps.updateNodePool(n, ie.NodeEventTypeCreate)
 		}
 		for {
 			select {
 			case <-ps.ctx.Done():
 				ps.stop = true
 				break
-			case update := <-ps.nodeUpdateCh:
+			case update := <-ps.updateCh:
 				switch t := update.(type) {
-				case *ie.PodUpdate:
-					if u, ok := update.(*ie.PodUpdate); ok {
-						snode := ps.updateNodePool(u.Node, ie.NodeUpdateTypeUpdate)
-						if snode != nil {
-							ps.updatePodOccupiedResourceList(snode, u.Pod, u.Update)
+				case *ie.PodEvent:
+					if u, ok := update.(*ie.PodEvent); ok {
+						if len(u.NodeName) != 0 {
+							snode := ps.nodePool.getNode(u.NodeName)
+							if snode != nil {
+								ps.updatePodOccupiedResourceList(snode, u.Pod, u.Type)
+							}
 						}
 					}
-				case *ie.NodeUpdate:
-					if u, ok := update.(*ie.NodeUpdate); ok {
-						ps.updateNodePool(u.Node, u.Update)
+				case *ie.NodeEvent:
+					if u, ok := update.(*ie.NodeEvent); ok {
+						ps.updateNodePool(u.Node, u.Type)
 					}
 					ps.scheduleQueue.ReviveBackoffItem()
 				default:
@@ -279,25 +275,29 @@ func (ps *podScheduler) Run() {
 				}
 			case <-ticker.C:
 				// check backoff queue, move item to active queue if item exceed cool down time
-				ps.printScheduleSummary()
 				if ps.scheduleQueue.backoffRetryQueue.queue.Len() > 0 {
-					klog.Info("check backoff schedule item and revive mature itemm")
+					klog.Info("check backoff schedule item and revive mature item")
 					ps.scheduleQueue.ReviveBackoffItem()
 				}
+				ps.printScheduleSummary()
 			}
 		}
 	}()
 }
 
-func NewPodScheduler(ctx context.Context, nodeAgent nodeagent.NodeAgentProxy, nodeInforProvider ie.NodeInfoProvider) *podScheduler {
+func NewPodScheduler(ctx context.Context, nodeAgent nodeagent.NodeAgentProxy, nodeInfoP ie.NodeInfoProvider, podInfoP ie.PodInfoProvider) *podScheduler {
 	ps := &podScheduler{
-		ctx:               ctx,
-		stop:              false,
-		nodeUpdateCh:      make(chan interface{}, 100),
-		nodeInforProvider: nodeInforProvider,
-		nodeAgent:         nodeAgent,
-		scheduleQueue:     NewScheduleQueue(),
-		nodePool:          map[string]*SchedulableNode{},
+		ctx:           ctx,
+		stop:          false,
+		updateCh:      make(chan interface{}, 100),
+		nodeInfoP:     nodeInfoP,
+		nodeAgent:     nodeAgent,
+		scheduleQueue: NewScheduleQueue(),
+		nodePool: &SchedulableNodePool{
+			mu:          sync.Mutex{},
+			nodes:       map[string]*SchedulableNode{},
+			sortedNodes: []*SchedulableNode{},
+		},
 		ScheduleConditionBuilders: []ConditionBuildFunc{
 			NewPodCPUCondition,
 			NewPodMemoryCondition,
@@ -307,6 +307,7 @@ func NewPodScheduler(ctx context.Context, nodeAgent nodeagent.NodeAgentProxy, no
 			BackoffDuration:     10 * time.Second,
 		},
 	}
-	ps.nodeInforProvider.WatchNode(ps.nodeUpdateCh)
+	nodeInfoP.Watch(ps.updateCh)
+	podInfoP.Watch(ps.updateCh)
 	return ps
 }

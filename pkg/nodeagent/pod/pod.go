@@ -95,6 +95,13 @@ func (a *PodActor) CreatePod() (err error) {
 		return err
 	}
 
+	// Make log directories for the pod
+	klog.InfoS("Make Pod log dirs", "pod", types.UniquePodName(a.pod))
+	if err := MakePodLogDir(a.nodeConfig.PodLogRootPath, pod); err != nil {
+		klog.ErrorS(err, "Unable to make pod data directories for pod", "pod", types.UniquePodName(a.pod))
+		return err
+	}
+
 	// TODO, Try to attach and mount volumes into pod, mounted vol will be mounted into container later, do not support volume for now
 	klog.InfoS("Prepare pod volumes", "pod", types.UniquePodName(a.pod))
 	if err := a.dependencies.VolumeManager.WaitForAttachAndMount(pod); err != nil {
@@ -131,7 +138,7 @@ func (a *PodActor) CreatePod() (err error) {
 			klog.ErrorS(err, "Cannot create init container", "Pod", types.UniquePodName(a.pod), "Container", v1InitContainer.Name)
 			return err
 		}
-		container := &types.Container{
+		container := &types.FornaxContainer{
 			State:            types.ContainerStateCreating,
 			InitContainer:    true,
 			ContainerSpec:    v1InitContainer.DeepCopy(),
@@ -144,13 +151,8 @@ func (a *PodActor) CreatePod() (err error) {
 		klog.InfoS("New pod container actor", "pod", types.UniquePodName(a.pod), "container", container.ContainerSpec.Name)
 		// start container actor, container actor will start runtime container, and start to probe it
 		containerActor := podcontainer.NewPodContainerActor(a.Reference(), a.pod, container, a.dependencies)
-
-		err = containerActor.Start()
-		if err != nil {
-			klog.ErrorS(err, "cannot start init container", "Pod", types.UniquePodName(a.pod), "Container", v1InitContainer.Name)
-			return err
-		}
 		a.ContainerActors[v1InitContainer.Name] = containerActor
+		containerActor.Start()
 	}
 
 	klog.InfoS("Start pod containers", "podName", types.UniquePodName(a.pod))
@@ -160,7 +162,7 @@ func (a *PodActor) CreatePod() (err error) {
 			klog.ErrorS(err, "cannot create container", "Pod", types.UniquePodName(a.pod), "Container", v1Container.Name)
 			return err
 		}
-		container := &types.Container{
+		container := &types.FornaxContainer{
 			State:            types.ContainerStateCreating,
 			InitContainer:    false,
 			ContainerSpec:    v1Container.DeepCopy(),
@@ -172,12 +174,8 @@ func (a *PodActor) CreatePod() (err error) {
 
 		// start container actor, container actor will start runtime container, and start to probe it
 		containerActor := podcontainer.NewPodContainerActor(a.Reference(), a.pod, container, a.dependencies)
-		err = containerActor.Start()
-		if err != nil {
-			klog.ErrorS(err, "cannot start container", "Pod", types.UniquePodName(a.pod), "Container", v1Container.Name)
-			return err
-		}
 		a.ContainerActors[v1Container.Name] = containerActor
+		containerActor.Start()
 	}
 
 	// TODO
@@ -185,7 +183,7 @@ func (a *PodActor) CreatePod() (err error) {
 	return nil
 }
 
-func (a *PodActor) TerminatePod(gracefulPeriod time.Duration) (bool, error) {
+func (a *PodActor) TerminatePod(gracefulPeriod time.Duration, force bool) (bool, error) {
 	pod := a.pod
 	if pod.FornaxPodState != types.PodStateTerminating && pod.FornaxPodState != types.PodStateFailed {
 		return false, fmt.Errorf("Pod %s is not terminatable since it's still in state %s", types.UniquePodName(a.pod), a.pod.FornaxPodState)
@@ -194,7 +192,7 @@ func (a *PodActor) TerminatePod(gracefulPeriod time.Duration) (bool, error) {
 	terminatedContainers := []string{}
 	allContainerTerminated := true
 	for n, c := range pod.Containers {
-		if podcontainer.ContainerExit(c.ContainerStatus) {
+		if podcontainer.ContainerExit(c.ContainerStatus) || force {
 			klog.InfoS("Terminating stopped container", "pod", types.UniquePodName(pod), "container", n)
 			if err := a.terminateContainer(c); err == nil {
 				terminatedContainers = append(terminatedContainers, c.ContainerSpec.Name)
@@ -203,7 +201,6 @@ func (a *PodActor) TerminatePod(gracefulPeriod time.Duration) (bool, error) {
 			}
 		} else {
 			klog.InfoS("Notify running container to stop", "pod", types.UniquePodName(pod), "container", n)
-			// notify container it's being stopped, container will stop itself after pre stop check
 			a.notifyContainer(c.ContainerSpec.Name, internal.PodContainerStopping{
 				Pod:         pod,
 				Container:   c,
@@ -241,14 +238,21 @@ func (a *PodActor) CleanupPod() (err error) {
 	// TODO, Try to unmount volumes into pod, mounted vol will be detached by volumemanager if volume not required anymore
 	klog.InfoS("Unmount Pod volume", "pod", types.UniquePodName(a.pod))
 	if err := a.dependencies.VolumeManager.UnmountPodVolume(pod); err != nil {
-		klog.ErrorS(err, "Unable to unmount volumes for pod", "pod", klog.KObj(pod))
+		klog.ErrorS(err, "Unable to unmount volumes for pod", "pod", types.UniquePodName(a.pod))
 		return err
 	}
 
 	// Remove data directories for the pod
 	klog.InfoS("Remove Pod Data dirs", "pod", types.UniquePodName(a.pod))
 	if err := CleanupPodDataDirs(a.nodeConfig.RootPath, pod); err != nil {
-		klog.ErrorS(err, "Unable to make pod data directories for pod", "pod", klog.KObj(pod))
+		klog.ErrorS(err, "Unable to remove pod data directories for pod", "pod", types.UniquePodName(a.pod))
+		return err
+	}
+
+	// Remove log directories for the pod
+	klog.InfoS("Remove Pod log dirs", "pod", types.UniquePodName(a.pod))
+	if err := CleanupPodLogDir(a.nodeConfig.PodLogRootPath, pod); err != nil {
+		klog.ErrorS(err, "Unable to remove pod log directories for pod", "pod", types.UniquePodName(a.pod))
 		return err
 	}
 

@@ -21,11 +21,13 @@ import (
 	"os"
 	goruntime "runtime"
 	"sort"
+	"sync"
 	"time"
 
 	default_config "centaurusinfra.io/fornax-serverless/pkg/config"
 	"centaurusinfra.io/fornax-serverless/pkg/nodeagent/config"
 	"centaurusinfra.io/fornax-serverless/pkg/nodeagent/dependency"
+	"centaurusinfra.io/fornax-serverless/pkg/nodeagent/pod"
 	"centaurusinfra.io/fornax-serverless/pkg/nodeagent/runtime"
 	"centaurusinfra.io/fornax-serverless/pkg/nodeagent/store"
 	"centaurusinfra.io/fornax-serverless/pkg/nodeagent/store/factory"
@@ -41,11 +43,51 @@ import (
 	"k8s.io/klog/v2"
 )
 
+type PodPool struct {
+	mu   sync.Mutex
+	pods map[string]*fornaxtypes.FornaxPod
+}
+
+func NewPodPool() *PodPool {
+	return &PodPool{
+		mu:   sync.Mutex{},
+		pods: map[string]*fornaxtypes.FornaxPod{},
+	}
+}
+
+func (pool *PodPool) Get(id string) *fornaxtypes.FornaxPod {
+	pool.mu.Lock()
+	defer pool.mu.Unlock()
+	return pool.pods[id]
+}
+
+func (pool *PodPool) Add(id string, pod *fornaxtypes.FornaxPod) {
+	pool.mu.Lock()
+	defer pool.mu.Unlock()
+	pool.pods[id] = pod
+}
+
+func (pool *PodPool) Del(id string) {
+	pool.mu.Lock()
+	defer pool.mu.Unlock()
+	delete(pool.pods, id)
+}
+
+func (pool *PodPool) List() []*fornaxtypes.FornaxPod {
+	pool.mu.Lock()
+	defer pool.mu.Unlock()
+	v1Pods := []*fornaxtypes.FornaxPod{}
+	for _, v := range pool.pods {
+		v1Pods = append(v1Pods, v)
+	}
+	return v1Pods
+}
+
 type FornaxNode struct {
 	NodeConfig   config.NodeConfiguration
 	V1Node       *v1.Node
 	Revision     int64
-	Pods         map[string]*fornaxtypes.FornaxPod
+	Pods         *PodPool
 	Dependencies *dependency.Dependencies
 }
 
@@ -141,46 +183,68 @@ func LoadPodsFromContainerRuntime(runtimeService runtime.RuntimeService, db *fac
 		return world, err
 	}
 
+	// check runtime status for each pod saved in pod store
 	for _, obj := range pods {
-		podObj := obj.(*fornaxtypes.FornaxPod)
-		if podObj.RuntimePod == nil {
-			world.terminatedPods = append(world.terminatedPods, podObj)
+		fornaxpod := obj.(*fornaxtypes.FornaxPod)
+		if fornaxpod.RuntimePod == nil {
+			world.terminatedPods = append(world.terminatedPods, fornaxpod)
 		} else {
 			containerIDs := []string{}
-			for _, v := range podObj.Containers {
+			for _, v := range fornaxpod.Containers {
 				containerIDs = append(containerIDs, v.RuntimeContainer.Id)
 			}
 
-			status, err := runtimeService.GetPodStatus(podObj.RuntimePod.Id, containerIDs)
+			status, err := runtimeService.GetPodStatus(fornaxpod.RuntimePod.Id, containerIDs)
 			if err == nil {
 				// runtime service return nil if no such pod
 				if status != nil {
-					for _, v := range podObj.Containers {
+					for _, v := range fornaxpod.Containers {
 						runtimeStatus, found := status.ContainerStatuses[v.RuntimeContainer.Id]
 						if found {
 							v.ContainerStatus.RuntimeStatus = runtimeStatus
 						} else {
 							// this container does not have runtime status, so, mark it as already terminated
-							podObj.FornaxPodState = fornaxtypes.PodStateFailed
+							fornaxpod.FornaxPodState = fornaxtypes.PodStateFailed
 							v.State = fornaxtypes.ContainerStateTerminated
 						}
 					}
-					world.runningPods = append(world.runningPods, podObj)
+					world.runningPods = append(world.runningPods, fornaxpod)
 				} else {
 					// store pod does not exist in container runtime, mark all containers as terminated
-					podObj.FornaxPodState = fornaxtypes.PodStateTerminated
-					for _, v := range podObj.Containers {
+					fornaxpod.FornaxPodState = fornaxtypes.PodStateTerminated
+					for _, v := range fornaxpod.Containers {
 						v.State = fornaxtypes.ContainerStateTerminated
 					}
-					world.terminatedPods = append(world.terminatedPods, podObj)
+					world.terminatedPods = append(world.terminatedPods, fornaxpod)
 				}
-				db.PutObject(string(podObj.Identifier), podObj)
+				db.PutPod(fornaxpod)
 			} else {
 				// got error, can not make decision, will retry
 				return world, err
 			}
 		}
 	}
+
+	// do reverse lookup for ophan pod which in container runtime but not saved in node agent store
+	// it's difficult to recover a fornax pod from a container runtime pod if there is no other information,
+	// at this moment, we just terminate it
+
+	// runTimePods, err := runtimeService.GetPods(true)
+	// if err != nil {
+	// 	return world, err
+	// }
+	// for _, runtimePod := range runTimePods {
+	// 	ophanPod := false
+	// 	for _, v := range world.runningPods {
+	// 		if v.RuntimePod.Id == runtimePod.Id {
+	// 			ophanPod = true
+	// 		}
+	// 	}
+	//
+	// 	if ophanPod {
+	// 		runtimeService.TerminatePod(runtimePod.Id, []string{})
+	// 	}
+	// }
 	return world, nil
 }
 
@@ -236,9 +300,10 @@ func (n *FornaxNode) Init() error {
 
 func (n *FornaxNode) activePods() []*v1.Pod {
 	v1Pods := []*v1.Pod{}
-	for _, v := range n.Pods {
+	for _, v := range n.Pods.List() {
 		v1Pods = append(v1Pods, v.Pod.DeepCopy())
 	}
+
 	return v1Pods
 }
 
@@ -247,7 +312,7 @@ func NewFornaxNode(nodeConfig config.NodeConfiguration, dependencies *dependency
 		NodeConfig:   nodeConfig,
 		V1Node:       nil,
 		Revision:     0,
-		Pods:         map[string]*fornaxtypes.FornaxPod{},
+		Pods:         NewPodPool(),
 		Dependencies: dependencies,
 	}
 	v1node, err := fornaxNode.initV1Node()
@@ -277,4 +342,44 @@ func NewFornaxNode(nodeConfig config.NodeConfiguration, dependencies *dependency
 
 	SetNodeStatus(&fornaxNode)
 	return &fornaxNode, nil
+}
+
+type PodActorPool struct {
+	mu        sync.RWMutex
+	podActors map[string]*pod.PodActor
+}
+
+func NewPodActorPool() *PodActorPool {
+	return &PodActorPool{
+		mu:        sync.RWMutex{},
+		podActors: map[string]*pod.PodActor{},
+	}
+}
+
+func (pool *PodActorPool) Get(id string) *pod.PodActor {
+	pool.mu.RLock()
+	defer pool.mu.RUnlock()
+	return pool.podActors[id]
+}
+
+func (pool *PodActorPool) Add(id string, actor *pod.PodActor) {
+	pool.mu.Lock()
+	defer pool.mu.Unlock()
+	pool.podActors[id] = actor
+}
+
+func (pool *PodActorPool) Del(id string) {
+	pool.mu.Lock()
+	defer pool.mu.Unlock()
+	delete(pool.podActors, id)
+}
+
+func (pool *PodActorPool) List() []*pod.PodActor {
+	pool.mu.RLock()
+	defer pool.mu.RUnlock()
+	v1Pods := []*pod.PodActor{}
+	for _, v := range pool.podActors {
+		v1Pods = append(v1Pods, v)
+	}
+	return v1Pods
 }

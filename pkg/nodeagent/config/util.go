@@ -25,6 +25,11 @@ func GetPodsDir(rootPath string) string {
 	return filepath.Join(rootPath, DefaultPodsDirName)
 }
 
+// getPodLogDir returns the full path to the pod log dir
+func GetPodLogDir(rootPath string, podNamespace, podName string, podUID types.UID) string {
+	return filepath.Join(rootPath, podNamespace, podName, string(podUID))
+}
+
 // getPluginsDir returns the full path to the directory under which plugin
 // directories are created.  Plugins can use these directories for data that
 // they need to persist.  Plugins should create subdirectories under this named

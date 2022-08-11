@@ -122,7 +122,60 @@ func (snode *SchedulableNode) ReleasePodOccupiedResourceList(resourceList *v1.Re
 	snode.PodPreOccupiedResourceList[v1.ResourceStorage] = nodeStorage
 }
 
-type SchedulableNodePool map[string]*SchedulableNode
+type SchedulableNodePool struct {
+	mu          sync.Mutex
+	nodes       map[string]*SchedulableNode
+	sortedNodes []*SchedulableNode
+}
+
+func (pool *SchedulableNodePool) getNode(name string) *SchedulableNode {
+	if n, f := pool.nodes[name]; f {
+		return n
+	}
+	return nil
+}
+
+func (pool *SchedulableNodePool) deleteNode(name string) {
+	pool.mu.Lock()
+	defer pool.mu.Unlock()
+	delete(pool.nodes, name)
+	pool.cow()
+}
+
+func (pool *SchedulableNodePool) addNode(name string, node *SchedulableNode) {
+	pool.mu.Lock()
+	defer pool.mu.Unlock()
+	pool.nodes[name] = node
+	pool.cow()
+}
+
+// cow us copy on write to avoid concurrent map iteration and modification
+func (pool *SchedulableNodePool) cow() {
+	// TODO add real sorting logic
+	sortedNodes := []*SchedulableNode{}
+	for _, v := range pool.nodes {
+		sortedNodes = append(sortedNodes, v)
+	}
+	pool.sortedNodes = sortedNodes
+}
+
+func (pool *SchedulableNodePool) size() int {
+	return len(pool.nodes)
+}
+
+func (pool *SchedulableNodePool) GetNodes() []*SchedulableNode {
+	return pool.sortedNodes
+}
+
+func (pool *SchedulableNodePool) printSummary() {
+	// debug node pools
+	// klog.InfoS("Scheduleable Node summary")
+	// nodes := pool.nodes
+	// for _, v := range nodes {
+	//  allocatableList := v.getAllocatableResources()
+	//  klog.InfoS("node reource list", "capacity", v.ResourceList, "allocatable", allocatableList)
+	// }
+}
 
 type ScheduleStat struct {
 	podCreatedIn10Min    int

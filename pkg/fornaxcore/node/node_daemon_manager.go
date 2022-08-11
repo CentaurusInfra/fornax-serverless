@@ -17,8 +17,6 @@ limitations under the License.
 package node
 
 import (
-	"centaurusinfra.io/fornax-serverless/pkg/fornaxcore/integtest"
-	"centaurusinfra.io/fornax-serverless/pkg/util"
 	v1 "k8s.io/api/core/v1"
 )
 
@@ -34,8 +32,7 @@ type nodeDaemonManager struct {
 // GetDaemons implements NodeDaemonManager
 func (*nodeDaemonManager) GetDaemons(node *FornaxNodeWithState) map[string]*v1.Pod {
 	// TODO manage real daemon pods
-	daemonPod := integtest.BuildATestDaemonPod()
-	return map[string]*v1.Pod{util.UniquePodName(daemonPod): daemonPod.DeepCopy()}
+	return map[string]*v1.Pod{}
 }
 
 func NewNodeDaemonManager() NodeDaemonManager {

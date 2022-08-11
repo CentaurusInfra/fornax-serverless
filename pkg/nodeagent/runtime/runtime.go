@@ -55,15 +55,12 @@ func (r *remoteRuntimeManager) GetPodSandbox(podSandboxID string) (*criv1.PodSan
 
 // Status implements cri.RuntimeService
 func (r *remoteRuntimeManager) GetRuntimeStatus() (*criv1.RuntimeStatus, error) {
-	klog.Info("Get RemoteRuntimeService Status")
 
 	resp, err := r.runtimeService.Status(false)
 	if err != nil {
 		klog.ErrorS(err, "Failed to get runtime status")
 		return nil, err
 	}
-
-	klog.InfoS("RemoteRuntimeService Status Response", "status", resp.Status)
 
 	if resp.Status == nil || len(resp.Status.Conditions) < 2 {
 		errorMessage := "RuntimeReady or NetworkReady condition are not set"

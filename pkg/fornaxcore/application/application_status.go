@@ -19,10 +19,11 @@ package application
 import (
 	"context"
 	"fmt"
+	"reflect"
 	"time"
 
 	fornaxv1 "centaurusinfra.io/fornax-serverless/pkg/apis/core/v1"
-	fornaxclient "centaurusinfra.io/fornax-serverless/pkg/client/clientset/versioned/typed/core/v1"
+	"centaurusinfra.io/fornax-serverless/pkg/util"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/tools/cache"
@@ -32,28 +33,46 @@ import (
 
 const (
 	// The number of times we retry updating a Application's status.
-	StatusUpdateRetries = 1
+	UPDATE_RETRIES = 1
 )
 
 // updateApplicationStatus attempts to update the Status.Replicas of the given Application, with a single GET/PUT retry.
-func (appc *ApplicationManager) updateApplicationStatus(client fornaxclient.ApplicationInterface, application *fornaxv1.Application, newStatus *fornaxv1.ApplicationStatus) (*fornaxv1.Application, error) {
-	if application.Status.DesiredInstances == newStatus.DesiredInstances &&
-		application.Status.AvailableInstances == newStatus.AvailableInstances &&
-		application.Status.IdleInstances == newStatus.IdleInstances &&
-		application.Status.ReadyInstances == newStatus.ReadyInstances {
+func (appc *ApplicationManager) updateApplicationStatus(application *fornaxv1.Application, newStatus *fornaxv1.ApplicationStatus) (*fornaxv1.Application, error) {
+	client := appc.apiServerClient.CoreV1().Applications(application.Namespace)
+
+	var getErr, updateErr error
+	var updatedApplication *fornaxv1.Application
+
+	finalizer := application.Finalizers
+	if newStatus.TotalInstances == 0 {
+		util.RemoveFinalizer(&application.ObjectMeta, fornaxv1.FinalizerApplicationPod)
+	} else {
+		util.AddFinalizer(&application.ObjectMeta, fornaxv1.FinalizerApplicationPod)
+	}
+	if len(finalizer) != len(application.Finalizers) {
+		for i := 0; i <= UPDATE_RETRIES; i++ {
+			updatedApplication, updateErr = client.Update(context.TODO(), application, metav1.UpdateOptions{})
+			if updateErr == nil {
+				return updatedApplication, nil
+			}
+		}
+	}
+
+	if reflect.DeepEqual(application.Status, *newStatus) {
+		// no change, return
 		return application, nil
 	}
 
 	applicationKey, _ := cache.MetaNamespaceKeyFunc(application)
-	var getErr, updateErr error
-	var updatedApplication *fornaxv1.Application
 	klog.Infof(fmt.Sprintf("Updating application status for %s, ", applicationKey) +
 		fmt.Sprintf("desiredInstances %d->%d, ", application.Status.DesiredInstances, newStatus.DesiredInstances) +
-		fmt.Sprintf("availableInstances %d->%d, ", application.Status.AvailableInstances, newStatus.AvailableInstances) +
+		fmt.Sprintf("availableInstances %d->%d, ", application.Status.TotalInstances, newStatus.TotalInstances) +
+		fmt.Sprintf("pendingInstances %d->%d, ", application.Status.PendingInstances, newStatus.PendingInstances) +
+		fmt.Sprintf("deletingInstances %d->%d, ", application.Status.DeletingInstances, newStatus.DeletingInstances) +
 		fmt.Sprintf("readyInstances %d->%d, ", application.Status.ReadyInstances, newStatus.ReadyInstances) +
 		fmt.Sprintf("idleInstances %d->%d, ", application.Status.IdleInstances, newStatus.IdleInstances))
 
-	for i := 0; i <= StatusUpdateRetries; i++ {
+	for i := 0; i <= UPDATE_RETRIES; i++ {
 		application.Status = *newStatus
 		updatedApplication, updateErr = client.UpdateStatus(context.TODO(), application, metav1.UpdateOptions{})
 		if updateErr == nil {
@@ -69,55 +88,85 @@ func (appc *ApplicationManager) updateApplicationStatus(client fornaxclient.Appl
 	}
 }
 
-func (appc *ApplicationManager) calculateStatus(application *fornaxv1.Application, desiredNumber int, deploymentErr error) *fornaxv1.ApplicationStatus {
-	newStatus := application.Status.DeepCopy()
-	newStatus.DesiredInstances = int32(desiredNumber)
+func (appc *ApplicationManager) getApplicationPoolSummary(pool *ApplicationPodPool) ApplicationPodPoolSummary {
+	summary := ApplicationPodPoolSummary{}
+	pods := pool.getPodNames()
+	for _, k := range pods {
+		pod := appc.podManager.FindPod(k)
+		if pod != nil {
+			summary.totalCount += 1
+			if pod.DeletionTimestamp == nil {
+				if k8spodutil.IsPodReady(pod) {
+					summary.readyCount += 1
+					// TODO, change this logic after session management is added
+					summary.idleCount += 1
+				} else {
+					summary.pendingCount += 1
+				}
+			} else {
+				summary.deletingCount += 1
+			}
+		} else {
+			summary.deletedCount += 1
+		}
+	}
 
-	availableCount := 0
-	idleCount := 0
-	readyCount := 0
+	return summary
+}
+
+func (appc *ApplicationManager) calculateStatus(application *fornaxv1.Application, desiredCount int, deploymentErr error) *fornaxv1.ApplicationStatus {
+
 	applicationKey, err := cache.MetaNamespaceKeyFunc(application)
 	if err != nil {
 		return nil
 	}
 
-	if pool, found := appc.applicationPods[applicationKey]; found {
-		for k := range pool.pods {
-			pod := appc.podManager.FindPod(k)
-			if pod != nil && pod.DeletionTimestamp == nil {
-				availableCount += 1
-				if k8spodutil.IsPodReady(pod) {
-					readyCount += 1
-				}
-				// TODO, change this logic after session management is added
-				idleCount += 1
-			}
-		}
+	var poolSummary ApplicationPodPoolSummary
+	if pool, found := appc.applicationPodPools[applicationKey]; found {
+		poolSummary = appc.getApplicationPoolSummary(pool)
+	} else {
+		return nil
 	}
 
-	newStatus.AvailableInstances = int32(availableCount)
-	newStatus.IdleInstances = int32(idleCount)
-	newStatus.ReadyInstances = int32(readyCount)
+	if application.Status.DesiredInstances == int32(desiredCount) &&
+		application.Status.TotalInstances == poolSummary.totalCount &&
+		application.Status.IdleInstances == poolSummary.idleCount &&
+		application.Status.DeletingInstances == poolSummary.deletingCount &&
+		application.Status.PendingInstances == poolSummary.pendingCount &&
+		application.Status.ReadyInstances == poolSummary.readyCount {
+		// no change, return old status
+		return application.Status.DeepCopy()
+	}
+
+	newStatus := application.Status.DeepCopy()
+	newStatus.DesiredInstances = int32(desiredCount)
+	newStatus.TotalInstances = poolSummary.totalCount
+	newStatus.PendingInstances = poolSummary.pendingCount
+	newStatus.DeletingInstances = poolSummary.deletingCount
+	newStatus.IdleInstances = poolSummary.idleCount
+	newStatus.ReadyInstances = poolSummary.readyCount
 	if deploymentErr != nil {
 		newStatus.DeploymentStatus = fornaxv1.DeploymentStatusPartialSuccess
 	} else {
 		newStatus.DeploymentStatus = fornaxv1.DeploymentStatusSuccess
 	}
 
-	if desiredNumber > 0 && availableCount == 0 {
+	if desiredCount > 0 && poolSummary.totalCount == 0 {
 		newStatus.DeploymentStatus = fornaxv1.DeploymentStatusFailure
 	}
 
 	var action fornaxv1.DeploymentAction
-	if desiredNumber >= availableCount {
+	if int32(desiredCount) >= poolSummary.totalCount {
 		action = fornaxv1.DeploymentActionCreateInstance
 	} else {
 		action = fornaxv1.DeploymentActionDeleteInstance
 	}
 
-	message := fmt.Sprintf("sync application, desired: %d, available: %d, ready: %d, idle: %d",
+	message := fmt.Sprintf("sync application, total: %d, desired: %d, pending: %d, deleting: %d, ready: %d, idle: %d",
+		newStatus.TotalInstances,
 		newStatus.DesiredInstances,
-		newStatus.AvailableInstances,
+		newStatus.PendingInstances,
+		newStatus.DeletingInstances,
 		newStatus.ReadyInstances,
 		newStatus.IdleInstances)
 

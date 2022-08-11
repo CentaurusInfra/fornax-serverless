@@ -17,9 +17,11 @@ limitations under the License.
 package application
 
 import (
+	"sync"
 	"time"
 
 	fornaxv1 "centaurusinfra.io/fornax-serverless/pkg/apis/core/v1"
+	"centaurusinfra.io/fornax-serverless/pkg/collection"
 	default_config "centaurusinfra.io/fornax-serverless/pkg/config"
 	"centaurusinfra.io/fornax-serverless/pkg/util"
 
@@ -28,8 +30,46 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
+type ApplicationPodPoolSummary struct {
+	totalCount    int32
+	pendingCount  int32
+	deletingCount int32
+	idleCount     int32
+	readyCount    int32
+	deletedCount  int32
+}
+
+type ApplicationPodPool struct {
+	appmu sync.RWMutex
+	pods  collection.ConcurrentStringSet
+}
+
+func NewApplicationPodPool() *ApplicationPodPool {
+	return &ApplicationPodPool{
+		appmu: sync.RWMutex{},
+		pods:  *collection.NewConcurrentSet(),
+	}
+}
+
+func (pool *ApplicationPodPool) addItem(identifier string) {
+	pool.pods.AddItem(identifier)
+}
+
+func (pool *ApplicationPodPool) deleteItem(identifier string) {
+	pool.pods.DeleteItem(identifier)
+}
+
+func (pool *ApplicationPodPool) getPodNames() []string {
+	return pool.pods.GetKeys()
+}
+
 // getPodApplicationPodTemplate will translate application spec to a pod spec, it also call node port manager to allocate node port for exported each container port
 func (appc *ApplicationManager) getPodApplicationPodTemplate(application *fornaxv1.Application) *v1.Pod {
+	containers := []v1.Container{}
+	for _, v := range application.Spec.Containers {
+		containers = append(containers, *v.DeepCopy())
+	}
+
 	enableServiceLinks := false
 	setHostnameAsFQDN := false
 	mountServiceAccount := false
@@ -71,7 +111,7 @@ func (appc *ApplicationManager) getPodApplicationPodTemplate(application *fornax
 		Spec: v1.PodSpec{
 			Volumes:                       []v1.Volume{},
 			InitContainers:                []v1.Container{},
-			Containers:                    []v1.Container{*application.Spec.Container.DeepCopy()},
+			Containers:                    containers,
 			EphemeralContainers:           []v1.EphemeralContainer{},
 			RestartPolicy:                 v1.RestartPolicyNever,
 			TerminationGracePeriodSeconds: nil,
@@ -109,7 +149,21 @@ func (appc *ApplicationManager) getPodApplicationPodTemplate(application *fornax
 			SetHostnameAsFQDN:         &setHostnameAsFQDN,
 			OS:                        &v1.PodOS{},
 		},
-		Status: v1.PodStatus{},
+		Status: v1.PodStatus{
+			Phase:                      v1.PodPending,
+			Conditions:                 []v1.PodCondition{},
+			Message:                    "",
+			Reason:                     "",
+			NominatedNodeName:          "",
+			HostIP:                     "",
+			PodIP:                      "",
+			PodIPs:                     []v1.PodIP{},
+			StartTime:                  nil,
+			InitContainerStatuses:      []v1.ContainerStatus{},
+			ContainerStatuses:          []v1.ContainerStatus{},
+			QOSClass:                   "",
+			EphemeralContainerStatuses: []v1.ContainerStatus{},
+		},
 	}
 	return pod
 }

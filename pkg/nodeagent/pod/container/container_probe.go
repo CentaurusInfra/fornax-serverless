@@ -60,7 +60,7 @@ type ContainerProber struct {
 	podSpec         *v1.Pod
 	runtimeService  runtime.RuntimeService
 	Probe           *v1.Probe
-	Container       *types.Container
+	Container       *types.FornaxContainer
 	ProbeType       ProbeType
 	LastProbeTime   time.Time
 	ProbeStat       ProbeStat

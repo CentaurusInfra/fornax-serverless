@@ -37,7 +37,7 @@ type PodContainerActor struct {
 	stop         bool
 	innerActor   message.LocalChannelActor
 	pod          *types.FornaxPod
-	container    *types.Container
+	container    *types.FornaxContainer
 	dependencies *dependency.Dependencies
 	supervisor   message.ActorRef
 	probers      map[ProbeType]*ContainerProber
@@ -56,7 +56,7 @@ func (a *PodContainerActor) Stop() {
 	}
 }
 
-func (a *PodContainerActor) Start() error {
+func (a *PodContainerActor) Start() {
 	klog.InfoS("Starting container actor", "pod", types.UniquePodName(a.pod), "container", a.container.ContainerSpec.Name, "init container", a.container.InitContainer)
 
 	a.innerActor.Start()
@@ -70,15 +70,9 @@ func (a *PodContainerActor) Start() error {
 		a.notify(internal.PodContainerCreated{Pod: a.pod, Container: a.container})
 
 		if a.container.InitContainer || types.PodIsNotStandBy(a.pod) {
-			err := a.startContainer()
-			if err != nil {
-				return err
-			}
-			return err
+			a.startContainer()
 		}
 	}
-
-	return nil
 }
 
 func (a *PodContainerActor) notify(msg interface{}) {
@@ -91,6 +85,8 @@ func (a *PodContainerActor) messageProcess(msg message.ActorMessage) (interface{
 	switch msg.Body.(type) {
 	case internal.PodContainerStopping:
 		reply, err = a.stopContainer(msg.Body.(internal.PodContainerStopping).GracePeriod)
+	case internal.PodContainerStarting:
+		err = a.startContainer()
 	case internal.PodOOM:
 	default:
 	}
@@ -99,10 +95,10 @@ func (a *PodContainerActor) messageProcess(msg message.ActorMessage) (interface{
 
 func (a *PodContainerActor) startContainer() error {
 	klog.InfoS("Starting container", "pod", types.UniquePodName(a.pod), "container", a.container.ContainerSpec.Name)
-	// if not standby pod, start
 	err := a.dependencies.CRIRuntimeService.StartContainer(a.container.RuntimeContainer.Id)
 	if err != nil {
-		klog.ErrorS(err, "Can not start container using runtime", "pod", types.UniquePodName(a.pod), "container", a.container.ContainerSpec.Name)
+		klog.ErrorS(err, "Failed to start container", "pod", types.UniquePodName(a.pod), "container", a.container.ContainerSpec.Name)
+		a.notify(internal.PodContainerFailed{Pod: a.pod, Container: a.container})
 		return err
 	}
 
@@ -392,7 +388,7 @@ func (a *PodContainerActor) stopContainer(timeout time.Duration) (interface{}, e
 	return nil, nil
 }
 
-func NewPodContainerActor(supervisor message.ActorRef, pod *types.FornaxPod, container *types.Container, dependencies *dependency.Dependencies) *PodContainerActor {
+func NewPodContainerActor(supervisor message.ActorRef, pod *types.FornaxPod, container *types.FornaxContainer, dependencies *dependency.Dependencies) *PodContainerActor {
 	id := fmt.Sprintf("%s:%s", types.UniquePodName(pod), string(container.ContainerSpec.Name))
 	pca := &PodContainerActor{
 		stop:         false,

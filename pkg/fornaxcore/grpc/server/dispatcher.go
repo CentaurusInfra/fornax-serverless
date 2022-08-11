@@ -21,7 +21,6 @@ import (
 	"fmt"
 
 	"centaurusinfra.io/fornax-serverless/pkg/fornaxcore/grpc"
-	"k8s.io/klog/v2"
 )
 
 func (g *grpcServer) getNodeChan(node string) (chan<- *grpc.FornaxCoreMessage, error) {
@@ -37,7 +36,7 @@ func (g *grpcServer) getNodeChan(node string) (chan<- *grpc.FornaxCoreMessage, e
 }
 
 func (g *grpcServer) DispatchMessage(nodeIdentifier string, message *grpc.FornaxCoreMessage) error {
-	klog.InfoS("Send a message to node", "node", nodeIdentifier, "msgType", message.GetMessageType())
+	// klog.InfoS("Send a message to node", "node", nodeIdentifier, "msgType", message.GetMessageType())
 	ch, err := g.getNodeChan(nodeIdentifier)
 	if err != nil {
 		return err

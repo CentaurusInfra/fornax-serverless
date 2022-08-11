@@ -56,7 +56,7 @@ type ApplicationSpec struct {
 	// Important: Run "make" to regenerate code after modifying this file
 
 	// runtime image and resource requirement of a application container
-	Container corev1.Container `json:"container,omitempty"`
+	Containers []corev1.Container `json:"containers,omitempty"`
 
 	// Data contains the configuration data.
 	// Each key must consist of alphanumeric characters, '-', '_' or '.'.
@@ -166,7 +166,15 @@ type ApplicationStatus struct {
 
 	// Total number of available instances, including pod not scheduled yet
 	// +optional
-	AvailableInstances int32 `json:"availableInstances,omitempty"`
+	TotalInstances int32 `json:"totalInstances,omitempty"`
+
+	// Total number of instances pending schedule and implement
+	// +optional
+	PendingInstances int32 `json:"pendingInstances,omitempty"`
+
+	// Total number of instances pending delete and cleanup
+	// +optional
+	DeletingInstances int32 `json:"deletingInstances,omitempty"`
 
 	// Total number of instances which have been started by node
 	// +optional
@@ -244,10 +252,10 @@ func (in *Application) IsStorageVersion() bool {
 func (in *Application) Validate(ctx context.Context) field.ErrorList {
 	errorList := make(field.ErrorList, 0)
 
-	if &in.Spec.Container == nil {
+	if len(in.Spec.Containers) == 0 {
 		err := field.Error{
 			Type:  field.ErrorTypeRequired,
-			Field: "Spec.Container",
+			Field: "Spec.Containers",
 		}
 		errorList = append(errorList, &err)
 	}

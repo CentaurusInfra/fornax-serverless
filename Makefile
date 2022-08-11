@@ -73,7 +73,7 @@ build: generate fmt vet ## Build binary.
 	go build -o bin/integtestgrpcserver cmd/integtestgrpcserver/main.go
 	go build -o bin/apiserver cmd/apiserver/main.go
 	go build -o bin/nodeagent cmd/nodeagent/main.go
-	go build -o bin/simulation cmd/simulation/main.go
+	go build -o bin/simulatenode cmd/simulation/main.go
 
 .PHONY: run
 run: manifests generate fmt vet ## Run from your host.
@@ -129,14 +129,11 @@ undeploy: ## Undeploy controller from the K8s cluster specified in ~/.kube/confi
 	@sudo ./bin/nodeagent --fornaxcore-ip localhost:18001 --disable-swap=false
 
 APISERVER-BOOT = $(shell pwd)/bin/apiserver-boot
-.PHONY: run-apiserver-boot
-run-apiserver-boot: ## Download apiserver-boot cmd locally if necessary.
+.PHONY: run-apiserver-local
+run-apiserver-local: ## Download apiserver-boot cmd locally if necessary.
 	$(call go-get-tool,$(APISERVER-BOOT),sigs.k8s.io/apiserver-builder-alpha/cmd/apiserver-boot@v1.23.0)
 	$(APISERVER-BOOT) run local --run etcd,apiserver
-
-.PHONY: run-apiserver-local
-run-apiserver-local:
-	@bin/apiserver --etcd-servers=http://localhost:2379 --secure-port=9443 --feature-gates=APIPriorityAndFairness=false --standalone-debug-mode --bind-address=127.0.0.1
+	#@bin/apiserver --etcd-servers=http://localhost:2379 --secure-port=9443 --feature-gates=APIPriorityAndFairness=false --standalone-debug-mode --bind-address=127.0.0.1
 
 CONTROLLER_GEN = $(shell pwd)/bin/controller-gen
 .PHONY: controller-gen

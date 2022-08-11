@@ -1,14 +1,14 @@
 Fornax serverless has two components, Fornax Core and Node Agent.
 
-Fornax Core is a controlplane service and api server. Only one server is required, but people can always install multiple Fornax Cores for primary/standby modes to ensure high availability, Fornax Core use etcd as data store.
+Fornax Core is a customised k8s api server and resource controller/scheduler, and it run a grpc service listen on 18001 port to accept Node Agent connection.
+Only one Fornax Core server is required, but people can always run multiple Fornax Cores for high availability, 
 
 Node Agent is installed on each node which run containers, Node Agent use Containerd and CNI plugin to implement container.
 
 # Install Fornax Core
 
 ## Install Etcd
-
-follow <https://etcd.io/docs/v3.4/install/>
+Fornax Core use etcd as data store, follow <https://etcd.io/docs/v3.4/install/> to install Etcd
 
 ## Install Fornax core binary
 
@@ -139,9 +139,8 @@ journalctl -u containerd -f
 
 ## Install Fornax Node Agent
 
-  you can install node agent in same host as FornaxCore, currently Node agent does not support Windows
-  Fornax Core server has a grpc server listen on 18001 port to accept Node Agent connection.
-  you need to provide Fornax Core server ip address to let node agent know to which FornaxCore server to connect.
+  you can install node agent in same host as FornaxCore, currently Node agent does not support Windows.
+  you need to provide Fornax Core server ip address and port to let node agent know to which FornaxCore server to connect.
   If you have multiple Fornax Core server, provide them in a list
 
 ### From source code

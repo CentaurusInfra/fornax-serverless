@@ -139,8 +139,8 @@ journalctl -u containerd -f
 
 ## Install Fornax Node Agent
 
-  you can install node agent in same host as FornaxCore, currently Node agent does not support Windows.
-  you need to provide Fornax Core server ip address and port to let node agent know to which FornaxCore server to connect.
+  You can install node agent in same host as FornaxCore, currently Node agent does not support Windows.
+  You need to provide Fornax Core server ip address and port to let node agent know to which FornaxCore server to connect.
   If you have multiple Fornax Core server, provide them in a list
 
 ### From source code

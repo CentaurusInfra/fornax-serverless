@@ -212,7 +212,7 @@ spec:
     maxSessions: 10
     maxSurge: 1
     minOfIdleSessions: 0
-    scalingPolicy:
+  scalingPolicy:
     minimumTarget: 0
     maximumTarget: 3
     burst: 1

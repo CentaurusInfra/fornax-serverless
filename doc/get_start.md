@@ -15,8 +15,11 @@ Fornax Core use etcd as data store, follow <https://etcd.io/docs/v3.4/install/> 
 ### From source code
 
 1. Install go
-Fornax serverless require golang 1.8+, please install golang from <https://go.dev/doc/installed>
+
+Fornax serverless require go 1.8+, install golang from <https://go.dev/doc/installed>
+
 2. Compile source code
+
 Checkout code from <https://github.com/CentaurusInfra/fornax-serverless> into go workspace, from project folder, execute
 
 ```sh
@@ -146,8 +149,11 @@ journalctl -u containerd -f
 ### From source code
 
   1. Install go
-  Fornax serverless require golang 1.8+, please install golang from <https://go.dev/doc/installed>
+  
+  Fornax serverless require go 1.8+, install golang from <https://go.dev/doc/installed>
+  
   2. Compile source code
+  
   Checkout code from <https://github.com/CentaurusInfra/fornax-serverless> into go workspace, from project folder, execute
 
   ```

@@ -105,7 +105,7 @@ sudo systemctl restart containerd
 
 follow <https://github.com/kubernetes-sigs/cri-tools/blob/master/docs/crictl.md>
 
-### check containerd state
+### Check containerd state
 
 ```
 crictl info
@@ -204,7 +204,7 @@ journalctl -u containerd -f
 1. Create application spec yaml file
 
  ```yaml
-cat << EOF | tee ./hack/test-data/nginx-create-app.yaml
+cat << EOF | sudo tee ./hack/test-data/nginx-create-app.yaml
 apiVersion: core.fornax-serverless.centaurusinfra.io/v1
 kind: Application
 metadata:

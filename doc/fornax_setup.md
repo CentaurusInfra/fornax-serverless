@@ -4,7 +4,7 @@
 This doc is the detail steps which setting up, configuration and install component for Fornax Serverless Machine.
 
 ## Machine Prepare
-If you have a branch new machine, your should install following component to start the machine. (Following is detail step for AWS EC2 virtual machine).
+If you have a brand new machine, your should install following component to start the machine. (Following is detail steps for AWS EC2 virtual machine).
 
 ```script
 sudo apt-get update
@@ -61,11 +61,13 @@ Add following setting to machine ~/.bashrc (notes: ubuntu is yourself user login
 ```script
 sudo vi ~/.bashrc
 ```
+
+```sh
 export GOPATH="/home/ubuntu/go"
 export GOROOT="/usr/local/go"
 export GOBIN="/home/ubuntu/go/bin"
 export PATH="$PATH:/usr/local/go/bin:/home/ubuntu/go/bin"
-
+```
 Take effetive
 ```script
 sudo source ~/.bashrc
@@ -77,7 +79,7 @@ Create working folder, download code, and go working folder (fornax-serverles)
 sudo mkdir -p src/centaurusinfra.io
 cd src/centaurusinfra.io
 ```
-In centaurusinfra.io fold run follwing command
+In centaurusinfra.io folder and run follwing command
 ```script
 git clone https://github.com/CentaurusInfra/fornax-serverless.git
 cd fornax-serverless
@@ -121,7 +123,7 @@ dpkg -L containerd.io | grep toml
 Using vi to open the file
 ```script
 sudo chmod 777 /etc/containerd/config.toml
-sudo vi /etc/containerd.toml
+sudo vi /etc/containerd/config.toml
 ```
 
 Comment line "disable_plugins = ["cri"]", see screen shot. add # before "disable_plugins"
@@ -170,8 +172,8 @@ if you did not have /etc/crictl.yaml  add this file and copy following line to t
 sudo vi /etc/crictl.yaml
 ```
 
-compy following content to crictl.yaml:
-```json
+copy following content to crictl.yaml:
+```script
 runtime-endpoint: unix:///run/containerd/containerd.sock
 image-endpoint: unix:///run/containerd/containerd.sock
 timeout: 2
@@ -189,8 +191,8 @@ sudo systemctl status containerd
 
 ### 3.3 Install Fornax Node Agent 
 
-#### 3.3.1 Install Golang (See 1.1.1)
-#### 3.3.2 Compile Source Code (See 1.1.2)
+#### 3.3.1 Install Golang (See 1.2.1)
+#### 3.3.2 Compile Source Code (See 1.2.2)
 #### 3.3.2 Start Node Agent (See ![get_start.md](get_start.md))
 
 

@@ -89,7 +89,7 @@ You are in your workplace folder: fornax-serverless
 ```script
 sudo make all
 ```
-Now, you can back to get_start.md ![get_start.md](get_start.md) and continue next step.
+Now, you can back to ![get_start.md](get_start.md) and continue next step.
 
 
 
@@ -153,7 +153,7 @@ sudo mkdir -p /etc/cni/net.d
 sudo vi /etc/cni/net.d/10-containerd-net.conflist
 sudo chmod 777 /etc/cni/net.d/10-containerd-net.conflist
 ```
-You can back to get_start.md ![get_start.md](get_start.md) and continue Add CNI config step.
+You can back to ![get_start.md](get_start.md) and continue Add CNI config step.
 
 
 ## 3. Verification

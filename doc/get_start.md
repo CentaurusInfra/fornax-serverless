@@ -58,7 +58,7 @@ edit /etc/containerd/config.toml, enable cri plugin
 ## Add CNI config
 
 ```json
-cat << EOF | tee /etc/cni/net.d/10-containerd-net.conflist
+cat << EOF | sudo tee /etc/cni/net.d/10-containerd-net.conflist
 {
   "cniVersion": "0.4.0",
     "name": "containerd-net",

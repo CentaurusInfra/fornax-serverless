@@ -62,7 +62,7 @@ Add following setting to machine ~/.bashrc (notes: ubuntu is yourself user login
 sudo vi ~/.bashrc
 ```
 
-```sh
+```script
 export GOPATH="/home/ubuntu/go"
 export GOROOT="/usr/local/go"
 export GOBIN="/home/ubuntu/go/bin"
@@ -87,7 +87,7 @@ cd fornax-serverless
 You are in your workplace folder: fornax-serverless
 
 ```script
-sudo make all
+make all
 ```
 Now, you can back to ![get_start.md](get_start.md) and continue next step.
 
@@ -120,7 +120,7 @@ Find containerd config.toml file
 ```script
 dpkg -L containerd.io | grep toml
 ```
-Using vi to open the file
+You can using vi or other tool to open the file
 ```script
 sudo chmod 777 /etc/containerd/config.toml
 sudo vi /etc/containerd/config.toml

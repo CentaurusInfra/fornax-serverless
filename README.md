@@ -30,7 +30,7 @@ Stateless application does not have states, so its instances can be on/off anyti
 * Function
 Function, in context of serverless, typically is specified as a body of source code for one specific function. Fornax-serverless does not support it for now.
 
-### Constraints
-The target cluster: 50 bare metal servers (each with >=16 CPU, >=32 GB memory) 
+### Get Started With Fornax-Serverless
+See our documentation on [Get Start](https://github.com/CentaurusInfra/fornax-serverless/blob/main/doc/get_start.md), You can setup and practice Fornax-Serverless application. 
 
  

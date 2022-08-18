@@ -1,3 +1,4 @@
+# Overview
 Fornax serverless has two components, Fornax Core and Node Agent.
 
 Fornax Core is a customised k8s api server and resource controller/scheduler, and it run a grpc service listen on 18001 port to accept Node Agent connection.
@@ -5,14 +6,14 @@ Only one Fornax Core server is required, but people can always run multiple Forn
 
 Node Agent is installed on each node which run containers, Node Agent use Containerd and CNI plugin to implement container.
 
-# Install Fornax Core
+# 1. Install Fornax Core
 
-## Install Etcd
+## 1.1 Install Etcd
 Fornax Core use etcd as data store, follow <https://etcd.io/docs/v3.4/install/> to install Etcd
 
-## Install Fornax Core
+## 1.2 Install Fornax Core
 
-### From source code
+### 1.2.1 From source code
 
 1. Install go
 
@@ -32,7 +33,7 @@ make install
 make run-apiserver-local
 ```
 
-### From binary
+### 1.2.2 From binary
 
 Install latest version from <https://github.com/CentaurusInfra/fornax-serverless/releases>, start it as
 
@@ -41,13 +42,13 @@ bin/apiserver --etcd-servers=http://localhost:2379 --secure-port=9443 --feature-
 
 ```
 
-# Install Node Agent
+# 2. Install Node Agent
 
-## Install containerd/cni/runc
+## 2.1 Install containerd/cni/runc
 
 follow <https://github.com/containerd/containerd/blob/main/docs/getting-started.md>
 
-## Enable containerd CRI plugin
+## 2.2 Enable containerd CRI plugin
 
 edit /etc/containerd/config.toml, enable cri plugin
 
@@ -55,7 +56,7 @@ edit /etc/containerd/config.toml, enable cri plugin
 #disabled_plugins = ["cri"]
 ```
 
-## Add CNI config
+## 2.3 Add CNI config
 
 ```json
 cat << EOF | sudo tee /etc/cni/net.d/10-containerd-net.conflist
@@ -93,19 +94,19 @@ cat << EOF | sudo tee /etc/cni/net.d/10-containerd-net.conflist
 EOF
 ```
 
-## Restart containerd
+## 2.4 Restart containerd
 
 ```sh
 sudo systemctl restart containerd
 ```
 
-## Verification
+## 2.5 Verification
 
-### Install crictl
+### 2.5.1 Install crictl
 
 follow <https://github.com/kubernetes-sigs/cri-tools/blob/master/docs/crictl.md>
 
-### Check containerd state
+### 2.5.2 Check containerd state
 
 ```
 crictl info
@@ -140,13 +141,13 @@ If there is any error, check containerd log,
 journalctl -u containerd -f
 ```
 
-## Install Fornax Node Agent
+## 2.6 Install Fornax Node Agent
 
   You can install node agent in same host as FornaxCore, currently Node agent does not support Windows.
   You need to provide Fornax Core server ip address and port to let node agent know to which FornaxCore server to connect.
   If you have multiple Fornax Core server, provide them in a list
 
-### From source code
+### 2.6.1 From source code
 
   1. Install go
   
@@ -163,21 +164,25 @@ journalctl -u containerd -f
   3. start Node Agent
 
   ```
-  sudo ./bin/nodeagent --fornaxcore-ip 192.168.0.45:18001 --disable-swap=false
+  sudo ./bin/nodeagent --fornaxcore-ip localhost:18001 --disable-swap=false
   ```
 
-### From binary
+### 2.6.2 From binary
 
   Install latest version from <https://github.com/CentaurusInfra/fornax-serverless/releases>, start it as
 
   ```
-  sudo ./bin/nodeagent --fornaxcore-ip 192.168.0.45:18001 --disable-swap=false
+  sudo ./bin/nodeagent --fornaxcore-ip localhost:18001 --disable-swap=false
 
   ```
+  Notes: You also can replace localhost with specific ip address (for example: 192.168.0.45)
 
-# Play Fornax serverless
+# 3. Play Fornax serverless
 
-## Operate Fornax serverless resources
+## 3.1 Install Kubectl In The VM Machine
+  Install and Set Up kubectl tool on Linux (https://kubernetes.io/docs/tasks/tools/install-kubectl-linux/)
+  
+## 3.2 Operate Fornax serverless resources
 
   Fornax serverless expose two resources to client, you can use kubectl to create and explore these resouces
 
@@ -199,7 +204,7 @@ journalctl -u containerd -f
   game2       nginx-mysql   2022-08-08T19:10:41Z
   ````
 
-## Run First Fornax Core serverless application
+## 3.3 Run First Fornax Core serverless application
 
 1. Create application spec yaml file
 

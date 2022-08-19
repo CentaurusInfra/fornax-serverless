@@ -4,7 +4,7 @@
 This doc is the detail steps which setting up, configuration and install component for Fornax Serverless Machine.
 
 ## Machine Prepare
-If you have a brand new machine, your should install following component to start the machine. (Following is detail steps for AWS EC2 virtual machine).
+If you have a brand new machine, you may need to install following component to start the machine. (Following is detail steps for AWS EC2 virtual machine).
 
 ```script
 sudo apt-get update
@@ -89,7 +89,7 @@ You are in your workplace folder: fornax-serverless
 ```script
 make all
 ```
-Now, you can back to ![get_start.md](get_start.md) and continue next step.
+Now, you can back to [get_start.md](https://github.com/CentaurusInfra/fornax-serverless/edit/main/doc/get_start.md) and continue next step.
 
 
 
@@ -114,7 +114,23 @@ sudo systemctl stop docker
 sudo systemctl status docker
 ```
 
-#### 2.1.2 Enable Containerd CRI Plugins
+#### 2.1.2 Install CNI 
+Run following command
+```script
+sudo mkdir -p /opt/cni/bin
+VERSION="v1.1.1"
+sudo wget https://github.com/containernetworking/plugins/releases/download/$VERSION/cni-plugins-linux-amd64-$VERSION.tgz
+sudo tar zxvf cni-plugins-linux-amd64-$VERSION.tgz -C /opt/cni/bin
+sudo rm -f cni-plugins-linux-amd64-$VERSION.tgz
+```
+
+#### 2.1.3 Install runc
+```script
+VERSION="v1.1.3"
+sudo wget https://github.com/opencontainers/runc/releases/download/$VERSION/runc.amd64 -P /usr/local/bin
+```
+
+### 2.2 Enable Containerd CRI Plugins
 
 Find containerd config.toml file
 ```script
@@ -129,43 +145,31 @@ sudo vi /etc/containerd/config.toml
 Comment line "disable_plugins = ["cri"]", see screen shot. add # before "disable_plugins"
 
 Save and exit file.
-
-#### 2.1.3 Install CNI 
-Run following command
-```script
-sudo mkdir -p /opt/cni/bin
-VERSION="v1.1.1"
-sudo wget https://github.com/containernetworking/plugins/releases/download/$VERSION/cni-plugins-linux-amd64-$VERSION.tgz
-sudo tar zxvf cni-plugins-linux-amd64-$VERSION.tgz -C /opt/cni/bin
-sudo rm -f cni-plugins-linux-amd64-$VERSION.tgz
-```
-
-#### 2.1.4 Install runc
-```script
-VERSION="v1.1.3"
-sudo wget https://github.com/opencontainers/runc/releases/download/$VERSION/runc.amd64 -P /usr/local/bin
-```
-
-#### 2.1.5 Add CNI config
+### 2.3 Add CNI config
 If there are no 10-containerd-net.conflist file exits, you need create one.
 ```script
 sudo mkdir -p /etc/cni/net.d
 sudo vi /etc/cni/net.d/10-containerd-net.conflist
 sudo chmod 777 /etc/cni/net.d/10-containerd-net.conflist
 ```
-You can back to ![get_start.md](get_start.md) and continue Add CNI config step.
+You can back to [get_start.md](https://github.com/CentaurusInfra/fornax-serverless/edit/main/doc/get_start.md) and continue Add CNI config step.
 
+### 2.4 Restart containerd and check containerd status
+```sh
+sudo systemctl restart containerd
+sudo systemctl status containerd
+```
 
-## 3. Verification
-### 3.1 Install crictl
-### 3.1.1 By using wget install
+### 2.5 Verification
+#### 2.5.1 Install crictl and update endpoints
+1. By using wget install
 ```script
 VERSION="v1.24.1"
 wget https://github.com/kubernetes-sigs/cri-tools/releases/download/$VERSION/crictl-$VERSION-linux-amd64.tar.gz
 sudo tar zxvf crictl-$VERSION-linux-amd64.tar.gz -C /usr/local/bin
 rm -f crictl-$VERSION-linux-amd64.tar.gz
 ```
-### 3.1.2 update default endpoints
+2. update default endpoints
 if you did not have /etc/crictl.yaml  add this file and copy following line to the file. 
 
 ```script
@@ -183,21 +187,26 @@ pull-image-on-create: false
 
 notes: Note: The default endpoints are now deprecated and the runtime endpoint should always be set instead.
 
-### 3.2 Check Containerd State
+#### 2.5.2 Check Containerd State
 ```script
-crictl info
+sudo crictl info
 sudo systemctl status containerd
 ```
-
-### 3.3 Install Fornax Node Agent 
-
-#### 3.3.1 Install Golang (See 1.2.1)
-#### 3.3.2 Compile Source Code (See 1.2.2)
-#### 3.3.2 Start Node Agent (See ![get_start.md](get_start.md))
+If there are any error, run and see log
+```sh
+journalctl -fu containerd
+```
 
 
-## 4. Play Fornax Serverless
-### 4.1 Install Kubectl In The VM Machine
+### 2.6 Install Fornax Node Agent 
+
+#### 2.6.1 Install Golang (See 1.2.1)
+#### 2.6.2 Compile Source Code (See 1.2.2)
+#### 2.6.2 Start Node Agent (See [get_start.md](https://github.com/CentaurusInfra/fornax-serverless/edit/main/doc/get_start.md)
+
+
+## 3. Play Fornax Serverless
+### 3.1 Install Kubectl In The VM Machine
 1. Update the apt package index and install packages needed to use the Kubernetes apt repository:
 ```script
 sudo apt-get update
@@ -227,7 +236,7 @@ or
 kubectl version --client --output=yaml
 ```
 
-### 4.2 Start Fornax Core API-Server And Node Agent
+### 3.2 Start Fornax Core API-Server And Node Agent
 1. Start API-Server
 ```script
 make run-apiserver-local
@@ -239,7 +248,7 @@ sudo ./bin/nodeagent --fornaxcore-ip localhost:18001 --disable-swap=false
 ```
 3. Notes: Based on your server machine, you maybe need update localhost to specific ip (for exmaple: 192.168.0.45:18001)
 
-### 4.3 Operate Fornax serverless resources
-See ![get_start.md](get_start.md)
-### 4.4 Run First Fornax Core serverless application
-See ![get_start.md](get_start.md)
+### 3.3 Operate Fornax serverless resources
+See [get_start.md](https://github.com/CentaurusInfra/fornax-serverless/edit/main/doc/get_start.md)
+### 3.4 Run First Fornax Core serverless application
+See [get_start.md](https://github.com/CentaurusInfra/fornax-serverless/edit/main/doc/get_start.md)

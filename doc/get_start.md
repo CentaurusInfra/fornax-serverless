@@ -266,6 +266,7 @@ kubectl apply --kubeconfig kubeconfig --namespace game2 application nginx -f ./h
 3. verify pods are created on Node
 
 ```sh
-crictl pods
+sudo crictl pods
 
 ```
+![Server-less pods sample](https://github.com/CentaurusInfra/fornax-serverless/blob/main/doc/serverless-pods.png)

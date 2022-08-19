@@ -6,6 +6,8 @@ Only one Fornax Core server is required, but people can always run multiple Forn
 
 Node Agent is installed on each node which run containers, Node Agent use Containerd and CNI plugin to implement container.
 
+If you are not familiar these third party software component when you install, you can reference [Setting Up Detail](https://github.com/CentaurusInfra/fornax-serverless/blob/main/doc/fornax_setup.md).
+
 # 1. Install Fornax Core
 
 ## 1.1 Install Etcd

@@ -182,7 +182,19 @@ journalctl -u containerd -f
 ## 3.1 Install Kubectl In The VM Machine
   Install and Set Up kubectl tool on Linux (https://kubernetes.io/docs/tasks/tools/install-kubectl-linux/)
   
-## 3.2 Operate Fornax serverless resources
+## 3.2 Start Fornax Core API-Server And Node Agent
+  If you have not started Fornax Core API-Server and Node Agent, you need start them in different terminal or put in background.
+  1. Fornax Core API-Server.
+  ```sh
+  make run-apiserver-local
+  ```
+  
+  2. Node Agent.
+  ```sh
+  sudo ./bin/nodeagent --fornaxcore-ip localhost:18001 --disable-swap=false
+  ```
+  
+## 3.3 Operate Fornax serverless resources
 
   Fornax serverless expose two resources to client, you can use kubectl to create and explore these resouces
 
@@ -204,7 +216,7 @@ journalctl -u containerd -f
   game2       nginx-mysql   2022-08-08T19:10:41Z
   ````
 
-## 3.3 Run First Fornax Core serverless application
+## 3.4 Run First Fornax Core serverless application
 
 1. Create application spec yaml file
 

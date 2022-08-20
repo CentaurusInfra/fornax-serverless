@@ -252,3 +252,17 @@ sudo ./bin/nodeagent --fornaxcore-ip localhost:18001 --disable-swap=false
 See [get_start.md](https://github.com/CentaurusInfra/fornax-serverless/edit/main/doc/get_start.md)
 ### 3.4 Run First Fornax Core serverless application
 See [get_start.md](https://github.com/CentaurusInfra/fornax-serverless/edit/main/doc/get_start.md)
+
+1. See [get_start.md](https://github.com/CentaurusInfra/fornax-serverless/edit/main/doc/get_start.md)
+2. Create First Application.
+```sh
+kubectl --kubeconfig kubeconfig proxy
+```
+```sh
+source ./hack/fornax_curl.zshrc
+```
+```sh
+fornax_post game2 applications ./hack/test-data/nginx-create-app.yaml
+kubectl --kubeconfig kubeconfig get applications --all-namespaces
+```
+

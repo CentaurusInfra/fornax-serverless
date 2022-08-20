@@ -45,14 +45,19 @@ type integtestNodeMonitor struct {
 	chQuit chan interface{}
 }
 
+// OnSessionUpdate implements server.NodeMonitor
+func (*integtestNodeMonitor) OnSessionUpdate(ctx context.Context, message *grpc.FornaxCoreMessage) (*grpc.FornaxCoreMessage, error) {
+	panic("unimplemented")
+}
+
 // OnPodUpdate implements server.NodeMonitor
 func (*integtestNodeMonitor) OnPodStateUpdate(ctx context.Context, message *grpc.FornaxCoreMessage) (*grpc.FornaxCoreMessage, error) {
 	podState := message.GetPodState()
-	klog.InfoS("Received a pod state", "pod", podutil.UniquePodName(podState.GetPod()), "state", podState.GetState())
+	klog.InfoS("Received a pod state", "pod", podutil.ResourceName(podState.GetPod()), "state", podState.GetState())
 
 	if podState.GetState() == grpc.PodState_Running {
 		// terminate test pod
-		podId := util.UniquePodName(podState.Pod)
+		podId := util.ResourceName(podState.Pod)
 		body := grpc.FornaxCoreMessage_PodTerminate{
 			PodTerminate: &grpc.PodTerminate{
 				PodIdentifier: &podId,

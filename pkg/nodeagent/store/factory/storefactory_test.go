@@ -29,13 +29,11 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-func NewATestSession(id string) *fornaxtypes.Session {
-	testSession := fornaxtypes.Session{
+func NewATestSession(id string) *fornaxtypes.FornaxSession {
+	testSession := fornaxtypes.FornaxSession{
 		Identifier:    id,
-		PodIdentifier: "",
-		Pod:           &v1.Pod{},
+		PodIdentifier: id,
 		Session:       &fornaxv1.ApplicationSession{},
-		SessionState:  "",
 	}
 	return &testSession
 }
@@ -220,7 +218,7 @@ func TestSessionStore_GetSession(t *testing.T) {
 	tests := []struct {
 		name       string
 		identifier string
-		want       *fornaxtypes.Session
+		want       *fornaxtypes.FornaxSession
 		wantErr    bool
 	}{
 		{
@@ -257,11 +255,11 @@ func TestSessionStore_PutSession(t *testing.T) {
 	defer os.Remove("./test.db")
 
 	testSession := NewATestSession("session1")
-	testSession2 := NewATestSession("session1")
-	testSession2.SessionState = "SessionStateClosed"
+	testSession2 := NewATestSession("session2")
+	testSession2.Session.Status.SessionStatus = fornaxv1.SessionStatusClosed
 	tests := []struct {
 		name    string
-		session *fornaxtypes.Session
+		session *fornaxtypes.FornaxSession
 		wantErr bool
 	}{
 		{

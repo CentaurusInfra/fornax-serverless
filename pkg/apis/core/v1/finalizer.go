@@ -20,4 +20,6 @@ package v1
 const (
 	FinalizerApplicationPod     = "pod.core.fornax-serverless.centaurusinfra.io"
 	FinalizerApplicationSession = "applicationsession.core.fornax-serverless.centaurusinfra.io"
+	FinalizerClientSession      = "clientsession.core.fornax-serverless.centaurusinfra.io"
+	FinalizerOpenSession        = "opensession.core.fornax-serverless.centaurusinfra.io"
 )

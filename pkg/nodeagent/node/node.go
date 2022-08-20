@@ -29,6 +29,7 @@ import (
 	"centaurusinfra.io/fornax-serverless/pkg/nodeagent/dependency"
 	"centaurusinfra.io/fornax-serverless/pkg/nodeagent/pod"
 	"centaurusinfra.io/fornax-serverless/pkg/nodeagent/runtime"
+	"centaurusinfra.io/fornax-serverless/pkg/nodeagent/session"
 	"centaurusinfra.io/fornax-serverless/pkg/nodeagent/store"
 	"centaurusinfra.io/fornax-serverless/pkg/nodeagent/store/factory"
 	fornaxtypes "centaurusinfra.io/fornax-serverless/pkg/nodeagent/types"
@@ -186,6 +187,13 @@ func LoadPodsFromContainerRuntime(runtimeService runtime.RuntimeService, db *fac
 	// check runtime status for each pod saved in pod store
 	for _, obj := range pods {
 		fornaxpod := obj.(*fornaxtypes.FornaxPod)
+		if fornaxpod.Sessions == nil {
+			fornaxpod.Sessions = map[string]*fornaxtypes.FornaxSession{}
+		}
+		if fornaxpod.Containers == nil {
+			fornaxpod.Containers = map[string]*fornaxtypes.FornaxContainer{}
+		}
+
 		if fornaxpod.RuntimePod == nil {
 			world.terminatedPods = append(world.terminatedPods, fornaxpod)
 		} else {
@@ -231,19 +239,19 @@ func LoadPodsFromContainerRuntime(runtimeService runtime.RuntimeService, db *fac
 
 	// runTimePods, err := runtimeService.GetPods(true)
 	// if err != nil {
-	// 	return world, err
+	//  return world, err
 	// }
 	// for _, runtimePod := range runTimePods {
-	// 	ophanPod := false
-	// 	for _, v := range world.runningPods {
-	// 		if v.RuntimePod.Id == runtimePod.Id {
-	// 			ophanPod = true
-	// 		}
-	// 	}
+	//  ophanPod := false
+	//  for _, v := range world.runningPods {
+	//    if v.RuntimePod.Id == runtimePod.Id {
+	//      ophanPod = true
+	//    }
+	//  }
 	//
-	// 	if ophanPod {
-	// 		runtimeService.TerminatePod(runtimePod.Id, []string{})
-	// 	}
+	//  if ophanPod {
+	//    runtimeService.TerminatePod(runtimePod.Id, []string{})
+	//  }
 	// }
 	return world, nil
 }
@@ -321,13 +329,13 @@ func NewFornaxNode(nodeConfig config.NodeConfiguration, dependencies *dependency
 	} else {
 		fornaxNode.V1Node = v1node
 	}
-	nodeWithRevision, err := dependencies.NodeStore.GetNode(util.UniqueNodeName(v1node))
+	nodeWithRevision, err := dependencies.NodeStore.GetNode(util.ResourceName(v1node))
 	if err != nil {
 		if err != store.StoreObjectNotFound {
 			return nil, err
 		}
 	} else {
-		if util.UniqueNodeName(nodeWithRevision.Node) != util.UniqueNodeName(v1node) {
+		if util.ResourceName(nodeWithRevision.Node) != util.ResourceName(v1node) {
 			// if node name changed, it's a new node
 			// TODO, check if spec changed, fornax core could send a completed spec back to node agent after it's registered
 			fornaxNode.Revision = 0
@@ -344,42 +352,82 @@ func NewFornaxNode(nodeConfig config.NodeConfiguration, dependencies *dependency
 	return &fornaxNode, nil
 }
 
+type SessionActorPool struct {
+	mu     sync.RWMutex
+	actors map[string]*session.SessionActor
+}
+
+func NewSessionActorPool() *SessionActorPool {
+	return &SessionActorPool{
+		mu:     sync.RWMutex{},
+		actors: map[string]*session.SessionActor{},
+	}
+}
+
+func (pool *SessionActorPool) Get(id string) *session.SessionActor {
+	pool.mu.RLock()
+	defer pool.mu.RUnlock()
+	return pool.actors[id]
+}
+
+func (pool *SessionActorPool) Add(id string, actor *session.SessionActor) {
+	pool.mu.Lock()
+	defer pool.mu.Unlock()
+	pool.actors[id] = actor
+}
+
+func (pool *SessionActorPool) Del(id string) {
+	pool.mu.Lock()
+	defer pool.mu.Unlock()
+	delete(pool.actors, id)
+}
+
+func (pool *SessionActorPool) List() []*session.SessionActor {
+	pool.mu.RLock()
+	defer pool.mu.RUnlock()
+	actors := []*session.SessionActor{}
+	for _, v := range pool.actors {
+		actors = append(actors, v)
+	}
+	return actors
+}
+
 type PodActorPool struct {
-	mu        sync.RWMutex
-	podActors map[string]*pod.PodActor
+	mu     sync.RWMutex
+	actors map[string]*pod.PodActor
 }
 
 func NewPodActorPool() *PodActorPool {
 	return &PodActorPool{
-		mu:        sync.RWMutex{},
-		podActors: map[string]*pod.PodActor{},
+		mu:     sync.RWMutex{},
+		actors: map[string]*pod.PodActor{},
 	}
 }
 
 func (pool *PodActorPool) Get(id string) *pod.PodActor {
 	pool.mu.RLock()
 	defer pool.mu.RUnlock()
-	return pool.podActors[id]
+	return pool.actors[id]
 }
 
 func (pool *PodActorPool) Add(id string, actor *pod.PodActor) {
 	pool.mu.Lock()
 	defer pool.mu.Unlock()
-	pool.podActors[id] = actor
+	pool.actors[id] = actor
 }
 
 func (pool *PodActorPool) Del(id string) {
 	pool.mu.Lock()
 	defer pool.mu.Unlock()
-	delete(pool.podActors, id)
+	delete(pool.actors, id)
 }
 
 func (pool *PodActorPool) List() []*pod.PodActor {
 	pool.mu.RLock()
 	defer pool.mu.RUnlock()
-	v1Pods := []*pod.PodActor{}
-	for _, v := range pool.podActors {
-		v1Pods = append(v1Pods, v)
+	actors := []*pod.PodActor{}
+	for _, v := range pool.actors {
+		actors = append(actors, v)
 	}
-	return v1Pods
+	return actors
 }

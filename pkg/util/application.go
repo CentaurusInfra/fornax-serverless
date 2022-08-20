@@ -17,27 +17,52 @@ limitations under the License.
 package util
 
 import (
+	"time"
+
 	fornaxv1 "centaurusinfra.io/fornax-serverless/pkg/apis/core/v1"
-	"k8s.io/client-go/tools/cache"
 )
 
 const (
-	DefaultApplicationPodBurst = 2
+	DefaultApplicationPodBurst                       = 2
+	DefaultApplicationSesionDeleteGracePeriodSeconds = int64(5)
 )
 
-func ApplicationKey(app *fornaxv1.Application) (string, error) {
-	// TODO, maybe validate application namespace
-	return cache.MetaNamespaceKeyFunc(app)
-}
-
-func ApplicationBurst(app *fornaxv1.Application) int {
+func ApplicationScalingBurst(app *fornaxv1.Application) int {
 	if app.Spec.ScalingPolicy.Burst == 0 {
 		return DefaultApplicationPodBurst
 	}
 	return int(app.Spec.ScalingPolicy.Burst)
 }
 
-func UniqueApplicationName(application *fornaxv1.Application) string {
-	a, _ := ApplicationKey(application)
-	return a
+func SessionIsOpen(session *fornaxv1.ApplicationSession) bool {
+	return session.Status.SessionStatus != fornaxv1.SessionStatusUnspecified &&
+		session.Status.SessionStatus != fornaxv1.SessionStatusPending &&
+		session.Status.SessionStatus != fornaxv1.SessionStatusClosed &&
+		session.Status.SessionStatus != fornaxv1.SessionStatusTimeout
+}
+
+func SessionIsClosed(session *fornaxv1.ApplicationSession) bool {
+	return session.Status.SessionStatus == fornaxv1.SessionStatusClosed
+}
+
+func SessionIsPending(session *fornaxv1.ApplicationSession) bool {
+	return session.DeletionTimestamp == nil && (session.Status.SessionStatus == fornaxv1.SessionStatusPending || session.Status.SessionStatus == fornaxv1.SessionStatusUnspecified)
+}
+
+func SessionIsStarting(session *fornaxv1.ApplicationSession) bool {
+	return session.Status.SessionStatus == fornaxv1.SessionStatusStarting
+}
+
+func SessionInTerminalState(session *fornaxv1.ApplicationSession) bool {
+	return session.Status.SessionStatus == fornaxv1.SessionStatusClosed || session.Status.SessionStatus == fornaxv1.SessionStatusTimeout
+}
+
+func SessionInGracePeriod(session *fornaxv1.ApplicationSession) bool {
+	gracefulseconds := DefaultApplicationSesionDeleteGracePeriodSeconds
+	if session.DeletionGracePeriodSeconds != nil {
+		gracefulseconds = *session.DeletionGracePeriodSeconds
+	}
+
+	cutoffTime := time.Now().Add(time.Duration(-1*gracefulseconds) * time.Second)
+	return session.DeletionTimestamp != nil && session.DeletionTimestamp.After(cutoffTime)
 }

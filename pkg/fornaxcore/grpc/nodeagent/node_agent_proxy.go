@@ -19,15 +19,19 @@ package nodeagent
 import (
 	"errors"
 
+	fornaxv1 "centaurusinfra.io/fornax-serverless/pkg/apis/core/v1"
 	"centaurusinfra.io/fornax-serverless/pkg/fornaxcore/grpc"
+
 	v1 "k8s.io/api/core/v1"
 )
 
 var (
-	NodeRevisionOutOfOrderError = errors.New("revision out of order between fornaxcore and node")
-	NodeNotFoundError           = errors.New("node not found")
-	NodeAlreadyExistError       = errors.New("node already exist")
-	PodMissingNodeLabelError    = errors.New("pod does not have fornax node label")
+	NodeRevisionOutOfOrderError        = errors.New("revision out of order between fornaxcore and node")
+	NodeNotFoundError                  = errors.New("node not found")
+	NodeAlreadyExistError              = errors.New("node already exist")
+	ObjectMissingNodeLabelError        = errors.New("does not have fornax node label")
+	ObjectMissingPodLabelError         = errors.New("does not have fornax pod label")
+	ObjectMissingApplicationLabelError = errors.New("does not have fornax application label")
 )
 
 type MessageDispatcher interface {
@@ -38,4 +42,6 @@ type NodeAgentProxy interface {
 	CreatePod(nodeIdentifier string, pod *v1.Pod) error
 	TerminatePod(nodeIdentifier string, pod *v1.Pod) error
 	FullSyncNode(nodeIdentifier string) error
+	OpenSession(nodeIdentifier string, pod *v1.Pod, session *fornaxv1.ApplicationSession) error
+	CloseSession(nodeIdentifier string, pod *v1.Pod, session *fornaxv1.ApplicationSession) error
 }

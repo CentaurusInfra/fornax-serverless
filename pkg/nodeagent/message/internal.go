@@ -19,6 +19,7 @@ package message
 import (
 	"time"
 
+	fornaxv1 "centaurusinfra.io/fornax-serverless/pkg/apis/core/v1"
 	"centaurusinfra.io/fornax-serverless/pkg/nodeagent/types"
 )
 
@@ -110,12 +111,22 @@ type PodOOM struct {
 	Pod *types.FornaxPod
 }
 
-type SessionStart struct {
-	sessionId   string
-	sessionData map[string]string
+type SessionOpen struct {
+	SessionId string
+	Session   *fornaxv1.ApplicationSession
 }
 
 type SessionClose struct {
-	sessionId   string
-	gracePeriod time.Duration
+	SessionId   string
+	GracePeriod time.Duration
+}
+
+type SessionState struct {
+	SessionId      string
+	SessionState   types.SessionState
+	ClientSessions []types.ClientSession
+}
+
+type SessionStatusChange struct {
+	Session *types.FornaxSession
 }

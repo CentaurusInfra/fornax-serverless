@@ -18,10 +18,12 @@ package server
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net"
 	"sync"
 
+	fornaxv1 "centaurusinfra.io/fornax-serverless/pkg/apis/core/v1"
 	fornaxcore_grpc "centaurusinfra.io/fornax-serverless/pkg/fornaxcore/grpc"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
@@ -48,9 +50,7 @@ type grpcServer struct {
 	sync.RWMutex
 	nodeGetMessageChans map[string]chan<- *fornaxcore_grpc.FornaxCoreMessage
 
-	nodeMonitor       NodeMonitor
-	podMonitor        PodMonitor
-	appSessionMonitor AppSessionMonitor
+	nodeMonitor NodeMonitor
 	fornaxcore_grpc.UnimplementedFornaxCoreServiceServer
 }
 
@@ -144,12 +144,8 @@ func (g *grpcServer) PutMessage(ctx context.Context, message *fornaxcore_grpc.Fo
 		msg, err = g.nodeMonitor.OnNodeStateUpdate(ctx, message)
 	case fornaxcore_grpc.MessageType_POD_STATE:
 		msg, err = g.nodeMonitor.OnPodStateUpdate(ctx, message)
-	case fornaxcore_grpc.MessageType_SESSION_START:
-		msg, err = g.appSessionMonitor.OnSessionStart(ctx, message)
 	case fornaxcore_grpc.MessageType_SESSION_STATE:
-		msg, err = g.appSessionMonitor.OnSessionUpdate(ctx, message)
-	case fornaxcore_grpc.MessageType_SESSION_CLOSE:
-		msg, err = g.appSessionMonitor.OnSessionClose(ctx, message)
+		msg, err = g.nodeMonitor.OnSessionUpdate(ctx, message)
 	default:
 		klog.Errorf(fmt.Sprintf("not supported message type %s, message %v", message.GetMessageType(), message))
 	}
@@ -175,8 +171,6 @@ func NewGrpcServer() *grpcServer {
 	return &grpcServer{
 		RWMutex:                              sync.RWMutex{},
 		nodeGetMessageChans:                  make(map[string]chan<- *fornaxcore_grpc.FornaxCoreMessage),
-		podMonitor:                           nil,
-		appSessionMonitor:                    nil,
 		UnimplementedFornaxCoreServiceServer: fornaxcore_grpc.UnimplementedFornaxCoreServiceServer{},
 	}
 }
@@ -184,7 +178,7 @@ func NewGrpcServer() *grpcServer {
 // CreatePod dispatch a PodCreate grpc message to node agent
 func (g *grpcServer) CreatePod(nodeIdentifier string, pod *v1.Pod) error {
 	mode := fornaxcore_grpc.PodCreate_Active
-	podIdentifier := util.UniquePodName(pod)
+	podIdentifier := util.ResourceName(pod)
 	messageType := fornaxcore_grpc.MessageType_POD_CREATE
 	podCreate := fornaxcore_grpc.FornaxCoreMessage_PodCreate{
 		PodCreate: &fornaxcore_grpc.PodCreate{
@@ -201,7 +195,7 @@ func (g *grpcServer) CreatePod(nodeIdentifier string, pod *v1.Pod) error {
 
 	err := g.DispatchMessage(nodeIdentifier, m)
 	if err != nil {
-		klog.ErrorS(err, "Failed to dispatch pod create message to node", "node", nodeIdentifier, "pod", pod)
+		klog.ErrorS(err, "Failed to dispatch pod create message to node", "node", nodeIdentifier, "pod", util.ResourceName(pod))
 		return err
 	}
 	return nil
@@ -209,7 +203,7 @@ func (g *grpcServer) CreatePod(nodeIdentifier string, pod *v1.Pod) error {
 
 // TerminatePod dispatch a PodTerminate grpc message to node agent
 func (g *grpcServer) TerminatePod(nodeIdentifier string, pod *v1.Pod) error {
-	podIdentifier := util.UniquePodName(pod)
+	podIdentifier := util.ResourceName(pod)
 	messageType := fornaxcore_grpc.MessageType_POD_TERMINATE
 	podTerminate := fornaxcore_grpc.FornaxCoreMessage_PodTerminate{
 		PodTerminate: &fornaxcore_grpc.PodTerminate{
@@ -223,10 +217,66 @@ func (g *grpcServer) TerminatePod(nodeIdentifier string, pod *v1.Pod) error {
 
 	err := g.DispatchMessage(nodeIdentifier, m)
 	if err != nil {
-		klog.ErrorS(err, "Failed to dispatch pod create message to node", "node", nodeIdentifier, "pod", pod)
+		klog.ErrorS(err, "Failed to dispatch pod terminate message to node", "node", nodeIdentifier, "pod", util.ResourceName(pod))
 		return err
 	}
 	return nil
+}
+
+// CloseSession dispatch a SessionClose event to node agent
+func (g *grpcServer) CloseSession(nodeIdentifier string, pod *v1.Pod, session *fornaxv1.ApplicationSession) error {
+	sessionIdentifier := util.ResourceName(session)
+	podIdentifier := util.ResourceName(pod)
+	messageType := fornaxcore_grpc.MessageType_SESSION_CLOSE
+	body := fornaxcore_grpc.FornaxCoreMessage_SessionClose{
+		SessionClose: &fornaxcore_grpc.SessionClose{
+			SessionIdentifier: &sessionIdentifier,
+			PodIdentifier:     &podIdentifier,
+		},
+	}
+	m := &fornaxcore_grpc.FornaxCoreMessage{
+		MessageType: &messageType,
+		MessageBody: &body,
+	}
+
+	err := g.DispatchMessage(nodeIdentifier, m)
+	if err != nil {
+		klog.ErrorS(err, "Failed to dispatch pod create message to node", "node", nodeIdentifier, "session", sessionIdentifier)
+		return err
+	}
+	return nil
+
+}
+
+// OpenSession implements FornaxCoreServer
+func (g *grpcServer) OpenSession(nodeIdentifier string, pod *v1.Pod, session *fornaxv1.ApplicationSession) error {
+	sessionData, err := json.Marshal(session)
+	if err != nil {
+		return err
+	}
+	// OpenSession dispatch a SessionOpen event to node agent
+	sessionIdentifier := util.ResourceName(session)
+	podIdentifier := util.ResourceName(pod)
+	messageType := fornaxcore_grpc.MessageType_SESSION_OPEN
+	body := fornaxcore_grpc.FornaxCoreMessage_SessionOpen{
+		SessionOpen: &fornaxcore_grpc.SessionOpen{
+			SessionIdentifier: &sessionIdentifier,
+			PodIdentifier:     &podIdentifier,
+			SessionData:       sessionData,
+		},
+	}
+	m := &fornaxcore_grpc.FornaxCoreMessage{
+		MessageType: &messageType,
+		MessageBody: &body,
+	}
+
+	err = g.DispatchMessage(nodeIdentifier, m)
+	if err != nil {
+		klog.ErrorS(err, "Failed to dispatch pod create message to node", "node", nodeIdentifier, "session", sessionIdentifier)
+		return err
+	}
+	return nil
+
 }
 
 // FullSyncNode dispatch a NodeFullSync request grpc message to node agent

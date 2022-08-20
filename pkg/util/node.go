@@ -20,10 +20,6 @@ import (
 	v1 "k8s.io/api/core/v1"
 )
 
-func UniqueNodeName(v1node *v1.Node) string {
-	return v1node.GetName()
-}
-
 func MergeNodeStatus(oldcopy *v1.Node, newnode *v1.Node) {
 	// keep existing node spec, and use new node status from node agent
 	// set node in unschedulable state since node start registration, wait for node

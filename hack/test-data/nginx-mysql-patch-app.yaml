@@ -1,8 +1,14 @@
 spec:
+  sessionConfig:
+    numOfSessionOfInstance: 1
   scalingPolicy:
-    minimumTarget: 0
-    maximumTarget: 0
+    minimumInstance: 0
+    maximumInstance: 30
     burst: 1
+    scalingPolicyType: idle_session_number
+    idleSessionNumThreshold:
+      highWaterMark: 5
+      lowWaterMark: 1
   containers:
     - image: nginx:latest
       name: nginx

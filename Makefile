@@ -130,10 +130,10 @@ undeploy: ## Undeploy controller from the K8s cluster specified in ~/.kube/confi
 
 APISERVER-BOOT = $(shell pwd)/bin/apiserver-boot
 .PHONY: run-apiserver-local
-run-apiserver-local: ## Download apiserver-boot cmd locally if necessary.
+run-apiserver-local: build ## Download apiserver-boot cmd locally if necessary.
 	$(call go-get-tool,$(APISERVER-BOOT),sigs.k8s.io/apiserver-builder-alpha/cmd/apiserver-boot@v1.23.0)
-	$(APISERVER-BOOT) run local --run etcd,apiserver
-	#@bin/apiserver --etcd-servers=http://localhost:2379 --secure-port=9443 --feature-gates=APIPriorityAndFairness=false --standalone-debug-mode --bind-address=127.0.0.1
+	#$(APISERVER-BOOT) run local --run etcd
+	@bin/apiserver --etcd-servers=http://localhost:2379 --secure-port=9443 --feature-gates=APIPriorityAndFairness=false --standalone-debug-mode --bind-address=127.0.0.1
 
 CONTROLLER_GEN = $(shell pwd)/bin/controller-gen
 .PHONY: controller-gen

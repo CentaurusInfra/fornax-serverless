@@ -40,6 +40,7 @@ import (
 	"centaurusinfra.io/fornax-serverless/pkg/fornaxcore/nodemonitor"
 	"centaurusinfra.io/fornax-serverless/pkg/fornaxcore/pod"
 	"centaurusinfra.io/fornax-serverless/pkg/fornaxcore/podscheduler"
+	"centaurusinfra.io/fornax-serverless/pkg/fornaxcore/session"
 )
 
 var (
@@ -63,13 +64,27 @@ func main() {
 		}
 	}
 
+	var kubeconfig *rest.Config
+	if root, err := os.Getwd(); err == nil {
+		kubeconfigPath := root + "/kubeconfig"
+		if kubeconfig, err = clientcmd.BuildConfigFromFlags("", kubeconfigPath); err != nil {
+			klog.ErrorS(err, "Failed to construct kube rest config")
+			os.Exit(-1)
+		}
+	} else {
+		klog.ErrorS(err, "Failed to get working dir")
+		os.Exit(-1)
+	}
+	apiServerClient := fornaxclient.NewForConfigOrDie(kubeconfig)
+
 	// new fornaxcore grpc grpcServer which implement node agent proxy
 	grpcServer := grpc_server.NewGrpcServer()
 
-	podManager := pod.NewPodManager(context.Background(), grpcServer)
+	sessionManager := session.NewSessionManager(context.Background(), grpcServer, apiServerClient)
 
-	// start node manager
-	nodeManager := node.NewNodeManager(context.Background(), node.DefaultStaleNodeTimeout, grpcServer, podManager)
+	// start node and pod manager
+	podManager := pod.NewPodManager(context.Background(), grpcServer)
+	nodeManager := node.NewNodeManager(context.Background(), node.DefaultStaleNodeTimeout, grpcServer, podManager, sessionManager)
 	klog.Info("starting node manager")
 	nodeManager.Run()
 
@@ -84,27 +99,14 @@ func main() {
 	certFile := ""
 	keyFile := ""
 	err := grpcServer.RunGrpcServer(context.Background(), nodemonitor.NewNodeMonitor(nodeManager), port, certFile, keyFile)
-	// err := app.RunIntegTestGrpcServer(context.Background(), port, certFile, keyFile)
 	if err != nil {
 		klog.Fatal(err)
 	}
 	klog.Info("Fornaxcore grpc server started")
 
 	// start application manager at last as it require api server
-	var kubeconfig *rest.Config
-	if root, err := os.Getwd(); err == nil {
-		kubeconfigPath := root + "/kubeconfig"
-		if kubeconfig, err = clientcmd.BuildConfigFromFlags("", kubeconfigPath); err != nil {
-			klog.ErrorS(err, "Failed to construct kube rest config")
-			os.Exit(-1)
-		}
-	} else {
-		klog.ErrorS(err, "Failed to get working dir")
-		os.Exit(-1)
-	}
-	apiserverClient := fornaxclient.NewForConfigOrDie(kubeconfig)
-	appManager := application.NewApplicationManager(context.Background(), podManager, nodeManager, apiserverClient)
-	appManager.Run(context.Background())
+	appManager := application.NewApplicationManager(context.Background(), podManager, sessionManager, apiServerClient)
+	go appManager.Run(context.Background())
 
 	// start api server
 	klog.Info("starting fornaxcore k8s.io rest api server")
@@ -113,18 +115,19 @@ func main() {
 		WithLocalDebugExtension().
 		WithResource(&fornaxv1.Application{}).
 		WithResource(&fornaxv1.ApplicationSession{})
-	// WithResourceAndStorage(&fornaxv1.ApplicationInstance{}, storageFunc).
-	// WithResourceAndStorage(&fornaxv1.ClientSession{}, storageFunc).
-	// WithResourceAndStorage(&fornaxv1.IngressEndpoint{}, storageFunc).
-	// WithConfigFns(func(config *apiserver.RecommendedConfig) *apiserver.RecommendedConfig {
-	//  fmt.Printf("%T\n", config.Authentication.Authenticator)
-	//  fmt.Println(config.Authentication.APIAudiences)
-	//  return config
-	// })
+		// WithResourceAndStorage(&fornaxv1.ApplicationInstance{}, storageFunc).
+		// WithResourceAndStorage(&fornaxv1.ClientSession{}, storageFunc).
+		// WithResourceAndStorage(&fornaxv1.IngressEndpoint{}, storageFunc).
+		// WithConfigFns(func(config *apiserver.RecommendedConfig) *apiserver.RecommendedConfig {
+		//  fmt.Printf("%T\n", config.Authentication.Authenticator)
+		//  fmt.Println(config.Authentication.APIAudiences)
+		//  return config
+		// })
 
 	err = apiserver.Execute()
 	if err != nil {
 		klog.Fatal(err)
 		os.Exit(-1)
 	}
+
 }

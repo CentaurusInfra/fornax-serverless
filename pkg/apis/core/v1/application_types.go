@@ -64,56 +64,57 @@ type ApplicationSpec struct {
 	// +optional
 	ConfigData map[string]string `json:"configData,omitempty"`
 
-	// The application working mode, control how ingress port is created
-	// +optional
-	WorkingMode WorkingMode `json:"workingMode,omitempty"`
-
-	// application session config
-	// +optional
-	SessionConfig SessionConfig `json:"sessionConfig,omitempty"`
-
 	// application scaling policy
-	// +optional
 	ScalingPolicy ScalingPolicy `json:"scalingPolicy,omitempty"`
 }
 
-// +enum
-type WorkingMode string
+type ScalingPolicyType string
 
 const (
-	// instances of application exposed independently
-	Standlone WorkingMode = "Standlone"
+	// scaling according idle session number
+	ScalingPolicyTypeIdleSessionPercent ScalingPolicyType = "idle_session_percent"
 
-	// instances of application exposed as a service
-	Service WorkingMode = "Service"
+	// scaling according idle session percent
+	ScalingPolicyTypeIdleSessionNum ScalingPolicyType = "idle_session_number"
 )
 
-// Spec to control the application ingress endpoints
-type SessionConfig struct {
-	// The minimum number of application instances that must keep running
-	// +optional, default 0, MinSessions should be times of NumOfSessionOfInstance
-	MinSessions int `json:"minSessions,omitempty"`
+type ScalingPolicy struct {
+	MinimumInstance uint32 `json:"minimumInstance,omitempty"`
+	MaximumInstance uint32 `json:"maximumInstance,omitempty"`
+	Burst           uint32 `json:"burst,omitempty"`
 
-	// how many sessions can a application instance hold
-	// +optional, MaxSessions should be times of NumOfSessionOfInstance
-	MaxSessions int `json:"maxSessions,omitempty"`
-
-	// The maximum number of application session that can be scheduled above the desired number
-	// +optional, default 1
-	MaxSurge int `json:"maxSurge,omitempty"`
-
-	// scaling when idle session less than this number
-	// +optional, default 0
-	MinOfIdleSessions int `json:"minOfIdleSessions,omitempty"`
-
-	// how many sessions can a application instance hold
-	NumOfSessionOfInstance int `json:"numOfSessionOfInstance,omitempty"`
-
+	// what session scaling policy to use, absolute num or percent
 	ScalingPolicyType ScalingPolicyType `json:"scalingPolicyType,omitempty"`
 
-	IdleSessionNumThreshold uint16 `json:"idleSessionNumThreshold,omitempty"`
+	// +optional, must set if ScalingPolicyType == "idle_session_number"
+	IdleSessionNumThreshold *IdelSessionNumThreshold `json:"idleSessionNumThreshold,omitempty"`
 
-	IdleSessionPercentThreshold uint16 `json:"idleSessionPercentThreshold,omitempty"`
+	// +optional, must set if ScalingPolicyType == "idle_session_percent"
+	IdleSessionPercentThreshold *IdelSessionPercentThreshold `json:"idleSessionPercentThreshold,omitempty"`
+}
+
+// high watermark should > low watermark, if both are 0, then no auto scaling for idle buffer,
+// application instance are created on demand when there is no instance to hold a comming session
+type IdelSessionNumThreshold struct {
+	// scaling down when idle session more than this number
+	// +optional, default 0
+	HighWaterMark uint32 `json:"highWaterMark,omitempty"`
+
+	// scaling up when idle session less than this number
+	// +optional, default 0
+	LowWaterMark uint32 `json:"lowWaterMark,omitempty"`
+}
+
+// high watermark should > low watermark, if both are 0, then no auto scaling for idle buffer,
+// application instance are created on demand when there is no instance to hold a comming session
+type IdelSessionPercentThreshold struct {
+	// scaling down when idle session percent more than this number
+	// +optional, default 0, must less than 100
+	HighWaterMark uint32 `json:"idleSessionNumThresholdHighWaterMark,omitempty"`
+
+	// scaling up when idle session percent less than this number
+	// +optional, default 0, must less than 100
+	LowWaterMark uint32 `json:"idleSessionNumThresholdLowWaterMark,omitempty"`
 }
 
 type DeploymentAction string
@@ -157,10 +158,6 @@ type DeploymentHistory struct {
 
 // ApplicationStatus defines the observed state of Application
 type ApplicationStatus struct {
-	// lifecycle state of application
-	// +optional
-	State ApplicationState `json:"state,omitempty"`
-
 	// Total number of non-terminated pods targeted
 	DesiredInstances int32 `json:"desiredInstances,omitempty"`
 
@@ -197,25 +194,6 @@ type ApplicationStatus struct {
 	// +patchStrategy=merge
 	// +listType=set
 	History []DeploymentHistory `json:"history,omitempty" patchStrategy:"merge" patchMergeKey:"updateTime"`
-}
-
-type ApplicationState string
-
-const (
-	AppTerminating ApplicationState = "terminating"
-)
-
-type ScalingPolicyType string
-
-const (
-	ScalingPolicyTypeIdleSessionPercent ScalingPolicyType = "idle_session_percent"
-	ScalingPolicyTypeIdleSessionNum     ScalingPolicyType = "idle_session_number"
-)
-
-type ScalingPolicy struct {
-	MinimumTarget uint32 `json:"minimumTarget,omitempty"`
-	MaximumTarget uint32 `json:"maximumTarget,omitempty"`
-	Burst         uint16 `json:"burst,omitempty"`
 }
 
 var _ resource.Object = &Application{}
@@ -256,6 +234,72 @@ func (in *Application) Validate(ctx context.Context) field.ErrorList {
 		err := field.Error{
 			Type:  field.ErrorTypeRequired,
 			Field: "Spec.Containers",
+		}
+		errorList = append(errorList, &err)
+	}
+
+	if in.Spec.ScalingPolicy.MaximumInstance == 0 {
+		err := field.Error{
+			Type:   field.ErrorTypeInvalid,
+			Field:  "Spec.ScalingPolicy.MaximumInstance",
+			Detail: "Value should be greater than 0",
+		}
+		errorList = append(errorList, &err)
+	}
+
+	if in.Spec.ScalingPolicy.MaximumInstance < in.Spec.ScalingPolicy.MinimumInstance {
+		err := field.Error{
+			Type:   field.ErrorTypeInvalid,
+			Field:  "Spec.ScalingPolicy.MaximumInstance",
+			Detail: "Value should not be less than Spec.ScalingPolicy.MaximumInstance",
+		}
+		errorList = append(errorList, &err)
+	}
+
+	if in.Spec.ScalingPolicy.ScalingPolicyType == ScalingPolicyTypeIdleSessionNum && in.Spec.ScalingPolicy.IdleSessionNumThreshold == nil {
+		err := field.Error{
+			Type:   field.ErrorTypeNotFound,
+			Field:  "Spec.IdleSessionNumThreshold",
+			Detail: "Spec.ScalingPolicy.ScalingPolicyType is idle_session_number, but Spec.ScalingPolicy.IdleSessionNumThreshold not found",
+		}
+		errorList = append(errorList, &err)
+	}
+
+	if in.Spec.ScalingPolicy.ScalingPolicyType == ScalingPolicyTypeIdleSessionPercent && in.Spec.ScalingPolicy.IdleSessionPercentThreshold == nil {
+		err := field.Error{
+			Type:   field.ErrorTypeNotFound,
+			Field:  "Spec.IdleSessionPercentThreshold",
+			Detail: "Spec.ScalingPolicy.ScalingPolicyType is idle_session_percent, but Spec.ScalingPolicy.IdleSessionPercentThreshold not found",
+		}
+		errorList = append(errorList, &err)
+	}
+
+	if in.Spec.ScalingPolicy.IdleSessionPercentThreshold != nil &&
+		in.Spec.ScalingPolicy.IdleSessionPercentThreshold.HighWaterMark < in.Spec.ScalingPolicy.IdleSessionPercentThreshold.LowWaterMark {
+		err := field.Error{
+			Type:   field.ErrorTypeInvalid,
+			Field:  "Spec.IdleSessionPercentThreshold",
+			Detail: "HighWaterMark must be greater than LowWaterMark",
+		}
+		errorList = append(errorList, &err)
+	}
+
+	if in.Spec.ScalingPolicy.IdleSessionPercentThreshold != nil &&
+		in.Spec.ScalingPolicy.IdleSessionPercentThreshold.HighWaterMark > 100 {
+		err := field.Error{
+			Type:   field.ErrorTypeInvalid,
+			Field:  "Spec.IdleSessionPercentThreshold",
+			Detail: "HighWaterMark must be less than 100",
+		}
+		errorList = append(errorList, &err)
+	}
+
+	if in.Spec.ScalingPolicy.IdleSessionNumThreshold != nil &&
+		in.Spec.ScalingPolicy.IdleSessionNumThreshold.HighWaterMark < in.Spec.ScalingPolicy.IdleSessionNumThreshold.LowWaterMark {
+		err := field.Error{
+			Type:   field.ErrorTypeInvalid,
+			Field:  "Spec.IdleSessionNumThreshold",
+			Detail: "HighWaterMark must be greater than LowWaterMark",
 		}
 		errorList = append(errorList, &err)
 	}

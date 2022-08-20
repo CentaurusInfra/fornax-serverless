@@ -98,23 +98,24 @@ type MessageProcessFunc func(ActorMessage) (interface{}, error)
 
 // Start implements Actor
 func (a *LocalChannelActor) Start() {
-	a.stop = false
 	if a.channel == nil {
 		a.channel = make(chan ActorMessage)
 	}
 
 	go func() {
 		for {
-			if a.stop {
-				close(a.channel)
-				break
-			}
-
 			select {
 			case msg, ok := <-a.channel:
 				if ok {
-					if err := a.OnReceive(msg); err != nil {
-						klog.ErrorS(err, "Failed to process message", "message", msg.Body, "actor", a.Identifier)
+					switch msg.Body.(type) {
+					case ActorStop:
+						klog.InfoS("Actor stopped", "message", msg.Body, "actor", a.Identifier)
+						close(a.channel)
+						break
+					default:
+						if err := a.OnReceive(msg); err != nil {
+							klog.ErrorS(err, "Failed to process message", "message", msg.Body, "actor", a.Identifier)
+						}
 					}
 				}
 			}
@@ -124,7 +125,10 @@ func (a *LocalChannelActor) Start() {
 
 // Stop implements Actor
 func (a *LocalChannelActor) Stop() {
-	a.stop = true
+	a.channel <- ActorMessage{
+		Sender: nil,
+		Body:   ActorStop{},
+	}
 }
 
 // OnReceive implements Actor

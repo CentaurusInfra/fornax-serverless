@@ -151,7 +151,7 @@ func (a *PodActor) CreatePod() (err error) {
 		klog.InfoS("New pod container actor", "pod", types.UniquePodName(a.pod), "container", container.ContainerSpec.Name)
 		// start container actor, container actor will start runtime container, and start to probe it
 		containerActor := podcontainer.NewPodContainerActor(a.Reference(), a.pod, container, a.dependencies)
-		a.ContainerActors[v1InitContainer.Name] = containerActor
+		a.containerActors[v1InitContainer.Name] = containerActor
 		containerActor.Start()
 	}
 
@@ -174,7 +174,7 @@ func (a *PodActor) CreatePod() (err error) {
 
 		// start container actor, container actor will start runtime container, and start to probe it
 		containerActor := podcontainer.NewPodContainerActor(a.Reference(), a.pod, container, a.dependencies)
-		a.ContainerActors[v1Container.Name] = containerActor
+		a.containerActors[v1Container.Name] = containerActor
 		containerActor.Start()
 	}
 
@@ -186,38 +186,27 @@ func (a *PodActor) CreatePod() (err error) {
 func (a *PodActor) TerminatePod(gracefulPeriod time.Duration, force bool) (bool, error) {
 	pod := a.pod
 	if pod.FornaxPodState != types.PodStateTerminating && pod.FornaxPodState != types.PodStateFailed {
-		return false, fmt.Errorf("Pod %s is not terminatable since it's still in state %s", types.UniquePodName(a.pod), a.pod.FornaxPodState)
+		return false, fmt.Errorf("Pod %s is in not terminatable state %s", types.UniquePodName(a.pod), a.pod.FornaxPodState)
 	}
 
-	terminatedContainers := []string{}
 	allContainerTerminated := true
 	for n, c := range pod.Containers {
 		if podcontainer.ContainerExit(c.ContainerStatus) || force {
 			klog.InfoS("Terminating stopped container", "pod", types.UniquePodName(pod), "container", n)
 			if err := a.terminateContainer(c); err == nil {
-				terminatedContainers = append(terminatedContainers, c.ContainerSpec.Name)
 			} else {
+				allContainerTerminated = false
 				return false, err
 			}
 		} else {
+			allContainerTerminated = false
 			klog.InfoS("Notify running container to stop", "pod", types.UniquePodName(pod), "container", n)
 			a.notifyContainer(c.ContainerSpec.Name, internal.PodContainerStopping{
 				Pod:         pod,
 				Container:   c,
 				GracePeriod: gracefulPeriod,
 			})
-			allContainerTerminated = false
 		}
-	}
-
-	// remove terminated container and actor
-	for _, v := range terminatedContainers {
-		actor, found := a.ContainerActors[v]
-		if found {
-			actor.Stop()
-			delete(a.ContainerActors, v)
-		}
-		delete(pod.Containers, v)
 	}
 
 	return allContainerTerminated, nil

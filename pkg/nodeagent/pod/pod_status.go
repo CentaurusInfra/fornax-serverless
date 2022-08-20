@@ -239,11 +239,3 @@ func GetPodConditions(fppod *types.FornaxPod) []v1.PodCondition {
 
 	return newConditions
 }
-
-func PodInTerminating(fppod *types.FornaxPod) bool {
-	return len(fppod.FornaxPodState) != 0 && (fppod.FornaxPodState == types.PodStateTerminating || fppod.FornaxPodState == types.PodStateTerminated)
-}
-
-func PodCreated(fppod *types.FornaxPod) bool {
-	return (len(fppod.FornaxPodState) != 0 && fppod.FornaxPodState != types.PodStateCreating) || fppod.RuntimePod != nil
-}

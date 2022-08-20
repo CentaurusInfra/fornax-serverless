@@ -12,7 +12,13 @@ spec:
       ports:
         - containerPort: 80
           name: nginx
+  sessionConfig:
+    numOfSessionOfInstance: 4
   scalingPolicy:
-    minimumTarget: 0
-    maximumTarget: 3
+    minimumInstance: 0
+    maximumInstance: 3
     burst: 1
+    scalingPolicyType: idle_session_number
+    idleSessionNumThreshold:
+      highWaterMark: 0
+      lowWaterMark: 0

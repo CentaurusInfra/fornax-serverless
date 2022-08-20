@@ -38,7 +38,6 @@ const (
 
 type FornaxNodeWithState struct {
 	Node       *v1.Node
-	Revision   int64
 	State      NodeWorkingState
 	Pods       *collection.ConcurrentStringSet
 	DaemonPods map[string]*v1.Pod
@@ -85,8 +84,8 @@ type StaleNodeBucket struct {
 func (snb *StaleNodeBucket) refreshNode(node *FornaxNodeWithState) {
 	snb.Lock()
 	defer snb.Unlock()
-	snb.bucketRefresh[fornaxutil.UniqueNodeName(node.Node)] = node
-	delete(snb.bucketStale, fornaxutil.UniqueNodeName(node.Node))
+	snb.bucketRefresh[fornaxutil.ResourceName(node.Node)] = node
+	delete(snb.bucketStale, fornaxutil.ResourceName(node.Node))
 }
 
 func (snb *StaleNodeBucket) getStaleNodes() []*FornaxNodeWithState {
@@ -102,4 +101,47 @@ func (snb *StaleNodeBucket) getStaleNodes() []*FornaxNodeWithState {
 	snb.bucketStale = snb.bucketRefresh
 	snb.bucketRefresh = newBucket
 	return stales
+}
+
+type NodePool struct {
+	mu    sync.RWMutex
+	nodes map[string]*FornaxNodeWithState
+}
+
+func (pool *NodePool) add(name string, pod *FornaxNodeWithState) {
+	pool.mu.Lock()
+	defer pool.mu.Unlock()
+	pool.nodes[name] = pod
+}
+
+func (pool *NodePool) delete(name string) {
+	pool.mu.Lock()
+	defer pool.mu.Unlock()
+	delete(pool.nodes, name)
+}
+
+func (pool *NodePool) get(name string) *FornaxNodeWithState {
+	pool.mu.Lock()
+	defer pool.mu.Unlock()
+	if n, found := pool.nodes[name]; found {
+		return n
+	}
+
+	return nil
+}
+
+func (pool *NodePool) length() int {
+	pool.mu.RLock()
+	defer pool.mu.RUnlock()
+	return len(pool.nodes)
+}
+
+func (pool *NodePool) list() []*FornaxNodeWithState {
+	pool.mu.RLock()
+	defer pool.mu.RUnlock()
+	nodes := []*FornaxNodeWithState{}
+	for _, v := range pool.nodes {
+		nodes = append(nodes, v)
+	}
+	return nodes
 }

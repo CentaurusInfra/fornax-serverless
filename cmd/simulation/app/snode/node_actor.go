@@ -112,14 +112,9 @@ func (n *SimulationNodeActor) actorMessageProcess(msg message.ActorMessage) (int
 		fppod.Pod.DeletionTimestamp = util.NewCurrentMetaTime()
 		n.incrementNodeRevision()
 		n.notify(n.fornoxCoreRef, pod.BuildFornaxcoreGrpcPodState(n.node.Revision, fppod))
-	case internal.PodCleanup:
-		fppod := msg.Body.(internal.PodCleanup).Pod
-		klog.InfoS("Cleanup pod actor and store", "pod", fornaxtypes.UniquePodName(fppod), "state", fppod.FornaxPodState)
-		if fppod.FornaxPodState != fornaxtypes.PodStateTerminated && fppod.FornaxPodState != fornaxtypes.PodStateFailed {
-			klog.Warning("Received cleanup when pod is not in terminated or failed state", "pod", fornaxtypes.UniquePodName(fppod))
-			return nil, fmt.Errorf("Pod is not in terminated state, pod: %s", fornaxtypes.UniquePodName(fppod))
+		if fppod.FornaxPodState == fornaxtypes.PodStateTerminated {
+			n.node.Pods.Del(fppod.Identifier)
 		}
-		n.node.Pods.Del(fppod.Identifier)
 	default:
 		klog.InfoS("Received unknown message", "from", msg.Sender, "msg", msg.Body)
 	}
@@ -142,8 +137,8 @@ func (n *SimulationNodeActor) processFornaxCoreMessage(msg *fornaxgrpc.FornaxCor
 		err = n.onPodTerminateCommand(msg.GetPodTerminate())
 	case fornaxgrpc.MessageType_POD_ACTIVE:
 		err = n.onPodActiveCommand(msg.GetPodActive())
-	case fornaxgrpc.MessageType_SESSION_START:
-		err = n.onSessionStartCommand(msg.GetSessionStart())
+	case fornaxgrpc.MessageType_SESSION_OPEN:
+		err = n.onSessionOpenCommand(msg.GetSessionOpen())
 	case fornaxgrpc.MessageType_SESSION_CLOSE:
 		err = n.onSessionCloseCommand(msg.GetSessionClose())
 	case fornaxgrpc.MessageType_SESSION_STATE, fornaxgrpc.MessageType_POD_STATE, fornaxgrpc.MessageType_NODE_STATE:
@@ -223,7 +218,7 @@ func (n *SimulationNodeActor) initializeNodeDaemons(pods []*v1.Pod) error {
 			return errors.Errorf("Daemon pod must use host network")
 		}
 
-		v := n.node.Pods.Get(util.UniquePodName(p))
+		v := n.node.Pods.Get(util.ResourceName(p))
 		if v == nil {
 			_, err := n.createPodAndActor(fornaxtypes.PodStateRunning, p.DeepCopy(), nil, true)
 			if err != nil {
@@ -243,7 +238,7 @@ func (n *SimulationNodeActor) buildAFornaxPod(state fornaxtypes.PodState,
 		return nil, errors.New("Pod spec is invalid")
 	}
 	fornaxPod := &fornaxtypes.FornaxPod{
-		Identifier:              util.UniquePodName(v1pod),
+		Identifier:              util.ResourceName(v1pod),
 		FornaxPodState:          state,
 		Daemon:                  isDaemon,
 		Pod:                     v1pod.DeepCopy(),
@@ -252,7 +247,7 @@ func (n *SimulationNodeActor) buildAFornaxPod(state fornaxtypes.PodState,
 		LastStateTransitionTime: time.Now(),
 	}
 	pod.SetPodStatus(fornaxPod, n.node.V1Node)
-	fornaxPod.Pod.Labels[fornaxv1.LabelFornaxCoreNode] = util.UniqueNodeName(n.node.V1Node)
+	fornaxPod.Pod.Labels[fornaxv1.LabelFornaxCoreNode] = util.ResourceName(n.node.V1Node)
 
 	if configMap != nil {
 		errs = pod.ValidateConfigMapSpec(configMap)
@@ -364,8 +359,8 @@ func (n *SimulationNodeActor) onPodActiveCommand(msg *fornaxgrpc.PodActive) erro
 	panic("not implemented")
 }
 
-// find pod actor to let it start a session, if pod actor does not exist, return failure
-func (n *SimulationNodeActor) onSessionStartCommand(msg *fornaxgrpc.SessionStart) error {
+// find pod actor to let it open a session, if pod actor does not exist, return failure
+func (n *SimulationNodeActor) onSessionOpenCommand(msg *fornaxgrpc.SessionOpen) error {
 	panic("not implemented")
 }
 
@@ -400,7 +395,7 @@ func NewNodeActor(hostIp, hostName string, fpnode *node.FornaxNode) (*Simulation
 	actor.innerActor = message.NewLocalChannelActor(fpnode.V1Node.GetName(), actor.actorMessageProcess)
 
 	klog.Info("Starting FornaxCore actor")
-	fornaxCoreActor := fornaxcore.NewFornaxCoreActor(fpnode.NodeConfig.NodeIP, fpnode.V1Node.Name, fpnode.NodeConfig.FornaxCoreIPs)
+	fornaxCoreActor := fornaxcore.NewFornaxCoreActor(fpnode.NodeConfig.NodeIP, util.ResourceName(fpnode.V1Node), fpnode.NodeConfig.FornaxCoreIPs)
 	actor.fornoxCoreRef = fornaxCoreActor.Reference()
 	err := fornaxCoreActor.Start(actor.innerActor.Reference())
 	if err != nil {

@@ -20,6 +20,7 @@ import (
 	"time"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/client-go/tools/cache"
 )
 
 // NewCurrentMetaTime return a metav1.Time initilized with time.Now
@@ -53,4 +54,9 @@ func RemoveFinalizer(ometa *metav1.ObjectMeta, finalizer string) {
 		}
 	}
 	ometa.Finalizers = finalizers
+}
+
+func ResourceName(obj interface{}) string {
+	name, _ := cache.MetaNamespaceKeyFunc(obj)
+	return name
 }

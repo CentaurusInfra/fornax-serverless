@@ -76,23 +76,37 @@ type FornaxNodeWithRevision struct {
 type FornaxPod struct {
 	Identifier              string                      `json:"identifier,omitempty"`
 	ApplicationId           types.UID                   `json:"applicationId,omitempty"`
-	FornaxPodState          PodState                    `json:"podState,omitempty"`
-	NodeRevision            int64                       `json:"nodeRevision,omitempty"`
+	FornaxPodState          PodState                    `json:"fornaxPodState,omitempty"`
 	Daemon                  bool                        `json:"daemon,omitempty"`
 	Pod                     *v1.Pod                     `json:"pod,omitempty"`
 	ConfigMap               *v1.ConfigMap               `json:"configMap,omitempty"`
 	RuntimePod              *runtime.Pod                `json:"runtimePod,omitempty"`
-	Containers              map[string]*FornaxContainer `json:"containers,omitempty"`
+	Containers              map[string]*FornaxContainer `json:"containers"`
+	Sessions                map[string]*FornaxSession   `json:"sessions"`
 	LastStateTransitionTime time.Time                   `json:"lastStateTransitionTime,omitempty"`
 }
 
-type Session struct {
-	Identifier    string                       `json:"identifier,omitempty"`
-	PodIdentifier string                       `json:"podIdentifier,omitempty"`
-	Pod           *v1.Pod                      `json:"pod,omitempty"`
-	Session       *fornaxv1.ApplicationSession `json:"session,omitempty"`
+// +enum
+type SessionState string
 
-	SessionState string `json:"sessionState,omitempty"`
+const (
+	SessionStateStarting             SessionState = "Starting"
+	SessionStateFailed               SessionState = "Failed"
+	SessionStateReady                SessionState = "Ready"
+	SessionStateClosed               SessionState = "Closed"
+	SessionStateInsufficientResource SessionState = "InsufficientResource"
+)
+
+type ClientSession struct {
+	Identifier  string
+	SessionData map[string]string
+}
+
+type FornaxSession struct {
+	Identifier     string                       `json:"identifier,omitempty"`
+	PodIdentifier  string                       `json:"podIdentifier,omitempty"`
+	Session        *fornaxv1.ApplicationSession `json:"session,omitempty"`
+	ClientSessions map[string]*ClientSession    `json:"clientSessions,omitempty"`
 }
 
 func UniquePodName(pod *FornaxPod) string {
@@ -102,4 +116,25 @@ func UniquePodName(pod *FornaxPod) string {
 func PodIsNotStandBy(pod *FornaxPod) bool {
 	//TODO if not standby pod
 	return true
+}
+
+func PodHasOpenSessions(pod *FornaxPod) bool {
+	for _, v := range pod.Sessions {
+		if v.Session.Status.SessionStatus != fornaxv1.SessionStatusClosed || len(v.ClientSessions) > 0 {
+			return true
+		}
+	}
+	return false
+}
+
+func PodInTerminating(fppod *FornaxPod) bool {
+	return len(fppod.FornaxPodState) != 0 && (fppod.FornaxPodState == PodStateTerminating || fppod.FornaxPodState == PodStateTerminated)
+}
+
+func PodCreated(fppod *FornaxPod) bool {
+	return (len(fppod.FornaxPodState) != 0 && fppod.FornaxPodState != PodStateCreating) || fppod.RuntimePod != nil
+}
+
+func PodInTransitState(fppod *FornaxPod) bool {
+	return len(fppod.FornaxPodState) == 0 || fppod.FornaxPodState == PodStateCreating || fppod.FornaxPodState == PodStateEvacuating || fppod.FornaxPodState == PodStateTerminating || fppod.FornaxPodState == PodStateCreated
 }

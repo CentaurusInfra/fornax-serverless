@@ -14,9 +14,10 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package internalevent
+package internal
 
 import (
+	fornaxv1 "centaurusinfra.io/fornax-serverless/pkg/apis/core/v1"
 	v1 "k8s.io/api/core/v1"
 )
 
@@ -28,6 +29,11 @@ const (
 	NodeEventTypeDelete NodeEventType = "delete"
 )
 
+type NodeEvent struct {
+	Node *v1.Node
+	Type NodeEventType
+}
+
 type PodEventType string
 
 const (
@@ -37,22 +43,33 @@ const (
 	PodEventTypeTerminate PodEventType = "terminate"
 )
 
-type NodeEvent struct {
-	Node *v1.Node
-	Type NodeEventType
-}
-
 type PodEvent struct {
 	NodeName string
 	Pod      *v1.Pod
 	Type     PodEventType
 }
 
+type SessionEventType string
+
+const (
+	SessionEventTypeCreate    SessionEventType = "create"
+	SessionEventTypeUpdate    SessionEventType = "update"
+	SessionEventTypeDelete    SessionEventType = "delete"
+	SessionEventTypeTerminate SessionEventType = "terminate"
+)
+
+type SessionEvent struct {
+	NodeName string
+	Pod      *v1.Pod
+	Session  *fornaxv1.ApplicationSession
+	Type     SessionEventType
+}
+
 type NodeInfoProvider interface {
 	List() []*v1.Node
-	Watch(watcher chan<- interface{}) error
+	Watch(watcher chan<- interface{})
 }
 
 type PodInfoProvider interface {
-	Watch(watcher chan<- interface{}) error
+	Watch(watcher chan<- interface{})
 }

@@ -93,8 +93,8 @@ func (ps *podScheduler) selectNode(pod *v1.Pod, nodes []*SchedulableNode) *Sched
 
 // add pod into node resource list, and send pod to node via grpc channel, if it channel failed, reschedule
 func (ps *podScheduler) bindNode(snode *SchedulableNode, pod *v1.Pod) error {
-	podName := util.UniquePodName(pod)
-	nodeName := util.UniqueNodeName(snode.Node)
+	podName := util.ResourceName(pod)
+	nodeName := util.ResourceName(snode.Node)
 	klog.InfoS("Bind pod to node", "pod", podName, "node", nodeName)
 
 	resourceList := util.GetPodResourceList(pod)
@@ -128,7 +128,7 @@ func (ps *podScheduler) unbindNode(node *SchedulableNode, pod *v1.Pod) {
 }
 
 func (ps *podScheduler) schedulePod(pod *v1.Pod) {
-	podName := util.UniquePodName(pod)
+	podName := util.ResourceName(pod)
 	klog.InfoS("Schedule a pod", "pod", podName)
 	if pod.DeletionTimestamp != nil {
 		// pod has been requested to delete, skip
@@ -176,7 +176,7 @@ func (ps *podScheduler) schedulePod(pod *v1.Pod) {
 }
 
 func (ps *podScheduler) updateNodePool(v1node *v1.Node, updateType ie.NodeEventType) *SchedulableNode {
-	nodeName := util.UniqueNodeName(v1node)
+	nodeName := util.ResourceName(v1node)
 	if updateType == ie.NodeEventTypeDelete {
 		ps.nodePool.deleteNode(nodeName)
 		return nil

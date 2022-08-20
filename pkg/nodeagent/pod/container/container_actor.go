@@ -79,7 +79,7 @@ func (a *PodContainerActor) notify(msg interface{}) {
 	message.Send(a.innerActor.Reference(), a.supervisor, msg)
 }
 
-func (a *PodContainerActor) messageProcess(msg message.ActorMessage) (interface{}, error) {
+func (a *PodContainerActor) containerHandler(msg message.ActorMessage) (interface{}, error) {
 	var err error
 	var reply interface{}
 	switch msg.Body.(type) {
@@ -398,6 +398,6 @@ func NewPodContainerActor(supervisor message.ActorRef, pod *types.FornaxPod, con
 		supervisor:   supervisor,
 		probers:      map[ProbeType]*ContainerProber{},
 	}
-	pca.innerActor = *message.NewLocalChannelActor(id, pca.messageProcess)
+	pca.innerActor = *message.NewLocalChannelActor(id, pca.containerHandler)
 	return pca
 }

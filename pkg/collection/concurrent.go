@@ -27,19 +27,19 @@ type ConcurrentStringSet struct {
 	items sets.String
 }
 
-func (pool *ConcurrentStringSet) AddItem(identifier string) {
+func (pool *ConcurrentStringSet) Add(identifier string) {
 	pool.mu.Lock()
 	defer pool.mu.Unlock()
 	pool.items[identifier] = sets.Empty{}
 }
 
-func (pool *ConcurrentStringSet) DeleteItem(identifier string) {
+func (pool *ConcurrentStringSet) Delete(identifier string) {
 	pool.mu.Lock()
 	defer pool.mu.Unlock()
 	delete(pool.items, identifier)
 }
 
-func (pool *ConcurrentStringSet) HasItem(identifier string) bool {
+func (pool *ConcurrentStringSet) Has(identifier string) bool {
 	pool.mu.RLock()
 	defer pool.mu.RUnlock()
 	_, found := pool.items[identifier]

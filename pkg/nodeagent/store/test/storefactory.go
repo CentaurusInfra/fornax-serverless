@@ -33,7 +33,7 @@ func main() {
 		podstore.PutPod(&fornaxtypes.FornaxPod{Identifier: id, Pod: &v1.Pod{}, ConfigMap: &v1.ConfigMap{}})
 		podstore.GetPod(id)
 
-		sessionstore.PutSession(&fornaxtypes.Session{Identifier: id})
+		sessionstore.PutSession(&fornaxtypes.FornaxSession{Identifier: id})
 		sessionstore.GetSession(id)
 
 		fmt.Println("get no 99 pod,session")
@@ -49,7 +49,7 @@ func main() {
 
 		list, _ = sessionstore.ListObject()
 		for _, v := range list {
-			f, ok := v.(*fornaxtypes.Session)
+			f, ok := v.(*fornaxtypes.FornaxSession)
 			fmt.Printf("Got session no %s, correct? %v\n", f.Identifier, ok)
 		}
 

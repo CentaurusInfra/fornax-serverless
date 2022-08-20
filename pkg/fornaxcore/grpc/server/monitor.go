@@ -27,14 +27,5 @@ type NodeMonitor interface {
 	OnNodeReady(ctx context.Context, message *grpc.FornaxCoreMessage) (*grpc.FornaxCoreMessage, error)
 	OnNodeStateUpdate(ctx context.Context, message *grpc.FornaxCoreMessage) (*grpc.FornaxCoreMessage, error)
 	OnPodStateUpdate(ctx context.Context, message *grpc.FornaxCoreMessage) (*grpc.FornaxCoreMessage, error)
-}
-
-type PodMonitor interface {
-	OnPodUpdate(ctx context.Context, message *grpc.FornaxCoreMessage) (*grpc.FornaxCoreMessage, error)
-}
-
-type AppSessionMonitor interface {
-	OnSessionStart(ctx context.Context, message *grpc.FornaxCoreMessage) (*grpc.FornaxCoreMessage, error)
-	OnSessionClose(ctx context.Context, message *grpc.FornaxCoreMessage) (*grpc.FornaxCoreMessage, error)
 	OnSessionUpdate(ctx context.Context, message *grpc.FornaxCoreMessage) (*grpc.FornaxCoreMessage, error)
 }

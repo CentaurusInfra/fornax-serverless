@@ -70,15 +70,15 @@ func JsonFromNode(obj *types.FornaxNodeWithRevision) (string, error) {
 	return string(bytes), nil
 }
 
-func JsonToSession(str string) (*types.Session, error) {
-	res := types.Session{}
+func JsonToSession(str string) (*types.FornaxSession, error) {
+	res := types.FornaxSession{}
 	if err := json.Unmarshal([]byte(str), &res); err != nil {
 		return nil, err
 	}
 	return &res, nil
 }
 
-func JsonFromSession(obj *types.Session) (string, error) {
+func JsonFromSession(obj *types.FornaxSession) (string, error) {
 	var bytes []byte
 	var err error
 	if bytes, err = json.Marshal(obj); err != nil {

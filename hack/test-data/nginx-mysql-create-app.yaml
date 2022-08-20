@@ -7,14 +7,14 @@ metadata:
 spec:
   sessionConfig:
     numOfSessionOfInstance: 1
-    minSessions: 1
-    maxSessions: 10
-    maxSurge: 1
-    minOfIdleSessions: 0
   scalingPolicy:
-    minimumTarget: 0
-    maximumTarget: 1
+    minimumInstance: 0
+    maximumInstance: 3
     burst: 1
+    scalingPolicyType: idle_session_number
+    idleSessionNumThreshold:
+      highWaterMark: 10
+      lowWaterMark: 3
   containers:
     - image: nginx:latest
       name: nginx

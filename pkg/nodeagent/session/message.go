@@ -16,6 +16,14 @@ limitations under the License.
 
 package session
 
+import (
+	"encoding/json"
+
+	"centaurusinfra.io/fornax-serverless/pkg/fornaxcore/grpc"
+	"centaurusinfra.io/fornax-serverless/pkg/nodeagent/types"
+	"k8s.io/klog/v2"
+)
+
 type SessionStatusChange struct{}
 type SessionCreated struct{}
 type SessionTerminated struct{}
@@ -24,3 +32,37 @@ type SessionLive struct{}
 type SessionStandby struct{}
 type ClientSessionJoin struct{}
 type ClientSessionExit struct{}
+
+func BuildFornaxcoreGrpcSessionState(revision int64, session *types.FornaxSession) *grpc.FornaxCoreMessage {
+	sessionData, err := json.Marshal(session.Session)
+	if err != nil {
+		// not supposed to happen, mostly is program OOM, session data should be good, ignore
+		klog.ErrorS(err, "Failed to marshar session object", "session", session.Identifier)
+		return nil
+	}
+
+	clientSessionData := [][]byte{}
+	for _, v := range session.ClientSessions {
+		data, err := json.Marshal(v)
+		if err != nil {
+			// not supposed to happen, mostly is program OOM, session data should be good, ignore
+			klog.ErrorS(err, "Failed to marshar session object", "session", session.Identifier)
+			return nil
+		}
+		clientSessionData = append(clientSessionData, data)
+	}
+
+	ns := grpc.SessionState{
+		NodeRevision:      &revision,
+		SessionData:       sessionData,
+		ClientSessionData: clientSessionData,
+	}
+
+	messageType := grpc.MessageType_SESSION_STATE
+	return &grpc.FornaxCoreMessage{
+		MessageType: &messageType,
+		MessageBody: &grpc.FornaxCoreMessage_SessionState{
+			SessionState: &ns,
+		},
+	}
+}

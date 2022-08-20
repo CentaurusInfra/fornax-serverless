@@ -27,11 +27,11 @@ func BuildFornaxGrpcNodeState(node *FornaxNode, revision int64) *grpc.FornaxCore
 		s := pod.BuildFornaxcoreGrpcPodState(node.Revision, v)
 		podStates = append(podStates, s.GetPodState())
 	}
+
 	ns := grpc.NodeState{
-		NodeRevision:  &revision,
-		Node:          node.V1Node,
-		PodStates:     podStates,
-		SessionStates: []*grpc.SessionState{},
+		NodeRevision: &revision,
+		Node:         node.V1Node,
+		PodStates:    podStates,
 	}
 
 	messageType := grpc.MessageType_NODE_STATE

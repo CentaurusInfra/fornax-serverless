@@ -20,25 +20,25 @@ import (
 	"centaurusinfra.io/fornax-serverless/pkg/nodeagent/types"
 )
 
-func (n *PodActor) startSession(session *types.Session) error {
+func (n *PodActor) startSession(session *types.FornaxSession) error {
 	// find pod actor and send a message to it
 	// if pod actor does not exist, create one
 	return nil
 }
 
-func (n *PodActor) closeSession(session *types.Session) error {
+func (n *PodActor) closeSession(session *types.FornaxSession) error {
 	// find pod actor and send a message to it
 	// if pod actor does not exist, create one
 	return nil
 }
 
-func (n *PodActor) OnSessionStarted(session *types.Session) error {
+func (n *PodActor) OnSessionStarted(session *types.FornaxSession) error {
 	// find pod actor and send a message to it
 	// if pod actor does not exist, create one
 	return nil
 }
 
-func (n *PodActor) OnSessionClosed(session *types.Session) error {
+func (n *PodActor) OnSessionClosed(session *types.FornaxSession) error {
 	// find pod actor and send a message to it
 	// if pod actor does not exist, create one
 	return nil

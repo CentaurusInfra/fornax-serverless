@@ -23,6 +23,7 @@ import (
 	"centaurusinfra.io/fornax-serverless/pkg/nodeagent/qos"
 	resourcemanager "centaurusinfra.io/fornax-serverless/pkg/nodeagent/resource"
 	"centaurusinfra.io/fornax-serverless/pkg/nodeagent/runtime"
+	"centaurusinfra.io/fornax-serverless/pkg/nodeagent/sessionservice"
 	"centaurusinfra.io/fornax-serverless/pkg/nodeagent/store/factory"
 	"centaurusinfra.io/fornax-serverless/pkg/nodeagent/store/sqlite"
 	v1 "k8s.io/api/core/v1"
@@ -44,6 +45,7 @@ type Dependencies struct {
 	VolumeManager     resourcemanager.VolumeManager
 	NodeStore         *factory.NodeStore
 	PodStore          *factory.PodStore
+	SessionService    sessionservice.SessionService
 }
 
 func InitBasicDependencies(nodeConfig config.NodeConfiguration) (*Dependencies, error) {
@@ -57,6 +59,7 @@ func InitBasicDependencies(nodeConfig config.NodeConfiguration) (*Dependencies, 
 		VolumeManager:     resourcemanager.VolumeManager{},
 		PodStore:          &factory.PodStore{},
 		NodeStore:         &factory.NodeStore{},
+		SessionService:    sessionservice.NewFakeSessionService(),
 	}
 
 	// SqliteStore

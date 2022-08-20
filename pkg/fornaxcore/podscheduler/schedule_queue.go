@@ -39,7 +39,7 @@ func PodRequestTimeLess(pi, pj interface{}) bool {
 }
 
 func PodName(pj interface{}) string {
-	return podutil.UniquePodName(pj.(*PodScheduleItem).pod)
+	return podutil.ResourceName(pj.(*PodScheduleItem).pod)
 }
 
 // A schedulePriorityQueue implements heap.Interface and holds Items.
@@ -51,7 +51,7 @@ type schedulePriorityQueue struct {
 func (pq *schedulePriorityQueue) AddPod(v1pod *v1.Pod, duration time.Duration) {
 	pq.mu.Lock()
 	defer pq.mu.Unlock()
-	if _, item := pq.queue.Get(podutil.UniquePodName(v1pod)); item == nil {
+	if _, item := pq.queue.Get(podutil.ResourceName(v1pod)); item == nil {
 		item := &PodScheduleItem{
 			pod:         v1pod,
 			requestTime: time.Now().Add(duration),
@@ -66,7 +66,7 @@ func (pq *schedulePriorityQueue) AddPod(v1pod *v1.Pod, duration time.Duration) {
 func (pq *schedulePriorityQueue) RemovePod(v1pod *v1.Pod) *v1.Pod {
 	pq.mu.Lock()
 	defer pq.mu.Unlock()
-	if index, item := pq.queue.Get(podutil.UniquePodName(v1pod)); item != nil {
+	if index, item := pq.queue.Get(podutil.ResourceName(v1pod)); item != nil {
 		heap.Remove(pq.queue, index)
 		return item.(*PodScheduleItem).pod
 	}

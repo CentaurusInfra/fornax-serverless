@@ -39,7 +39,7 @@ enum MessageType {
     POD_TERMINATE = 301;
     POD_ACTIVE = 302;
     POD_STATE = 303;
-    SESSION_START = 400;
+    SESSION_OPEN = 400;
     SESSION_CLOSE = 401;
     SESSION_STATE = 402;
 }
@@ -59,7 +59,7 @@ message FornaxCoreMessage {
     PodTerminate podTerminate = 301;
     PodActive podActive = 302;
     PodState podState = 303;
-    SessionStart sessionStart = 400;
+    SessionOpen sessionOpen = 400;
     SessionClose sessionClose = 401;
     SessionState sessionState = 402;
   }
@@ -106,7 +106,6 @@ message NodeState {
   required int64 nodeRevision = 1;
   required k8s.io.api.core.v1.Node node = 2;
   repeated PodState podStates = 3;
-  repeated SessionState sessionStates = 4;
 }
 
 /* fornax core ask node to send its full state if node revision are not same between fornax core and node*/
@@ -126,6 +125,7 @@ message PodState {
   required State state = 2;
   required k8s.io.api.core.v1.Pod pod = 3;
   optional PodResource resource = 4;
+  repeated SessionState sessionStates = 5;
 }
 
 message PodResource {
@@ -153,29 +153,18 @@ message  PodActive {
 }
 
 message SessionState {
-  required string sessionIdentifier = 1;
-  required string podIdentifier = 2;
-  required string appIdentifier = 3;
-  enum State {
-    Starting = 0;
-    Ready = 10;
-    Live = 20;
-    Evacuating = 30;
-    Terminating = 40;
-    Terminated = 50;
-  }
-  required State state = 4;
+  required int64 nodeRevision = 1;
+  required bytes sessionData = 2;
+  repeated bytes clientSessionData = 3;
 }
 
-message SessionStart {
+message SessionOpen {
   required string sessionIdentifier = 1;
   required string podIdentifier = 2;
-  required string appIdentifier = 3;
-  required string sessionData = 4;
+  required bytes sessionData = 3;
 }
 
 message SessionClose {
   required string sessionIdentifier = 1;
   required string podIdentifier = 2;
-  required string appIdentifier = 3;
 }

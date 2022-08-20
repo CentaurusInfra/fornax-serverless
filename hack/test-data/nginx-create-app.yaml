@@ -5,16 +5,14 @@ metadata:
   labels:
     name: nginx
 spec:
-  sessionConfig:
-    numOfSessionOfInstance: 1
-    minSessions: 1
-    maxSessions: 10
-    maxSurge: 1
-    minOfIdleSessions: 0
   scalingPolicy:
-    minimumTarget: 0
-    maximumTarget: 3
+    minimumInstance: 0
+    maximumInstance: 30
     burst: 1
+    scalingPolicyType: idle_session_number
+    idleSessionNumThreshold:
+      highWaterMark: 3
+      lowWaterMark: 0
   containers:
     - image: nginx:latest
       name: nginx
@@ -28,7 +26,6 @@ spec:
       ports:
         - containerPort: 80
           name: nginx
-  workingMode: Standlone
   configData:
     config1: data1
     config2: data2

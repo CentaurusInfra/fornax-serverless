@@ -105,26 +105,26 @@ func (s *PodStore) PutPod(pod *types.FornaxPod) error {
 func NewSessionSqliteStore(options *sqlite.SQLiteStoreOptions) (*SessionStore, error) {
 	if store, err := sqlite.NewSqliteStore("Session", options,
 		func(text string) (interface{}, error) { return store.JsonToSession(text) },
-		func(obj interface{}) (string, error) { return store.JsonFromSession(obj.(*types.Session)) }); err != nil {
+		func(obj interface{}) (string, error) { return store.JsonFromSession(obj.(*types.FornaxSession)) }); err != nil {
 		return nil, err
 	} else {
 		return &SessionStore{store}, nil
 	}
 }
 
-func (s *SessionStore) GetSession(identifier string) (*types.Session, error) {
+func (s *SessionStore) GetSession(identifier string) (*types.FornaxSession, error) {
 	obj, err := s.GetObject(identifier)
 	if err != nil {
 		return nil, err
 	}
-	if v, ok := obj.(*types.Session); !ok {
+	if v, ok := obj.(*types.FornaxSession); !ok {
 		return nil, fmt.Errorf("%v not a Session object", obj)
 	} else {
 		return v, nil
 	}
 }
 
-func (s *SessionStore) PutSession(session *types.Session) error {
+func (s *SessionStore) PutSession(session *types.FornaxSession) error {
 	if session == nil {
 		return fmt.Errorf("nil session is passed")
 	}

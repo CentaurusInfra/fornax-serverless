@@ -130,11 +130,6 @@ func BuildContainer(name, image string, hostPort int32, containerPort int32, env
 	return container
 }
 
-func UniquePodName(pod *v1.Pod) string {
-	name, _ := cache.MetaNamespaceKeyFunc(pod)
-	return name
-}
-
 func GetPodResourceList(v1pod *v1.Pod) *v1.ResourceList {
 	resourceList := v1.ResourceList{}
 	for _, v := range v1pod.Spec.Containers {
@@ -197,19 +192,23 @@ func MergePodStatus(oldPod, newPod *v1.Pod) {
 	}
 }
 
-func IsPodNotTerminated(pod *v1.Pod) bool {
-	return !IsPodTerminated(pod)
+func PodIsRunning(pod *v1.Pod) bool {
+	return pod.Status.Phase == v1.PodRunning
 }
 
-func IsPodTerminated(pod *v1.Pod) bool {
+func PodNotTerminated(pod *v1.Pod) bool {
+	return !PodTerminated(pod)
+}
+
+func PodTerminated(pod *v1.Pod) bool {
 	return (pod.Status.Phase == v1.PodSucceeded || pod.Status.Phase == v1.PodFailed)
 }
 
-func IsNotInGracePeriod(pod *v1.Pod) bool {
-	return !IsInGracePeriod(pod)
+func PodNotInGracePeriod(pod *v1.Pod) bool {
+	return !PodInGracePeriod(pod)
 }
 
-func IsInGracePeriod(pod *v1.Pod) bool {
+func PodInGracePeriod(pod *v1.Pod) bool {
 	graceSeconds := pod.GetDeletionGracePeriodSeconds()
 	deleteTimeStamp := pod.GetDeletionTimestamp()
 	return graceSeconds != nil && deleteTimeStamp != nil && deleteTimeStamp.Add((time.Duration(*graceSeconds) * time.Second)).After(time.Now())

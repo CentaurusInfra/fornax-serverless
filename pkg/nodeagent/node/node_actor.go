@@ -94,7 +94,7 @@ func (n *FornaxNodeActor) Start() error {
 	}
 
 	n.state = NodeStateRegistering
-	// register with fornax core
+	// register with Fornax core
 	for {
 		if n.state != NodeStateRegistering {
 			// if node has received node configuration from fornaxcore
@@ -199,7 +199,7 @@ func (n *FornaxNodeActor) nodeHandler(msg message.ActorMessage) (interface{}, er
 	return nil, nil
 }
 
-// TODO, notify fornax core fatal error
+// TODO, notify Fornax core fatal error
 func (n *FornaxNodeActor) processFornaxCoreMessage(msg *fornaxgrpc.FornaxCoreMessage) (interface{}, error) {
 	var err error
 	msgType := msg.GetMessageType()
@@ -225,7 +225,7 @@ func (n *FornaxNodeActor) processFornaxCoreMessage(msg *fornaxgrpc.FornaxCoreMes
 	default:
 		klog.Warningf("FornaxCoreMessage of type %s is not handled by actor", msgType)
 	}
-	// TODO, handle error, define reply message to fornax core
+	// TODO, handle error, define reply message to Fornax core
 	return nil, err
 }
 
@@ -276,8 +276,8 @@ func (n *FornaxNodeActor) onNodeConfigurationCommand(msg *fornaxgrpc.NodeConfigu
 			// check node runtime dependencies, send node ready message if node is ready for new pod
 			SetNodeStatus(n.node)
 			if IsNodeStatusReady(n.node) {
-				klog.InfoS("Node is ready, tell fornax core")
-				// bump revision to let fornax core to update node status
+				klog.InfoS("Node is ready, tell Fornax core")
+				// bump revision to let Fornax core to update node status
 				revision := n.incrementNodeRevision()
 				n.node.V1Node.ResourceVersion = fmt.Sprint(revision)
 				n.node.V1Node.Status.Phase = v1.NodeRunning
@@ -436,7 +436,7 @@ func (n *FornaxNodeActor) onPodCreateCommand(msg *fornaxgrpc.PodCreate) error {
 func (n *FornaxNodeActor) onPodTerminateCommand(msg *fornaxgrpc.PodTerminate) error {
 	podActor := n.podActors.Get(*msg.PodIdentifier)
 	if podActor == nil {
-		return fmt.Errorf("Pod: %s does not exist, fornax core is not in sync", *msg.PodIdentifier)
+		return fmt.Errorf("Pod: %s does not exist, Fornax core is not in sync", *msg.PodIdentifier)
 	} else {
 		n.notify(podActor.Reference(), internal.PodTerminate{})
 	}
@@ -450,7 +450,7 @@ func (n *FornaxNodeActor) onPodActiveCommand(msg *fornaxgrpc.PodActive) error {
 	}
 	podActor := n.podActors.Get(*msg.PodIdentifier)
 	if podActor == nil {
-		return fmt.Errorf("Pod: %s does not exist, fornax core is not in sync", *msg.PodIdentifier)
+		return fmt.Errorf("Pod: %s does not exist, Fornax core is not in sync", *msg.PodIdentifier)
 	} else {
 		n.notify(podActor.Reference(), internal.PodActive{})
 	}
@@ -483,7 +483,7 @@ func (n *FornaxNodeActor) onSessionOpenCommand(msg *fornaxgrpc.SessionOpen) erro
 func (n *FornaxNodeActor) onSessionCloseCommand(msg *fornaxgrpc.SessionClose) error {
 	podActor := n.podActors.Get(msg.GetPodIdentifier())
 	if podActor == nil {
-		return fmt.Errorf("Pod: %s does not exist, fornax core is not in sync, can not close session", msg.GetPodIdentifier())
+		return fmt.Errorf("Pod: %s does not exist, Fornax core is not in sync, can not close session", msg.GetPodIdentifier())
 	} else {
 		n.notify(podActor.Reference(), internal.SessionClose{
 			SessionId: msg.GetSessionIdentifier(),
@@ -509,12 +509,12 @@ func NewNodeActor(node *FornaxNode) (*FornaxNodeActor, error) {
 	}
 	actor.innerActor = message.NewLocalChannelActor(node.V1Node.GetName(), actor.nodeHandler)
 
-	klog.Info("Starting FornaxCore actor")
+	klog.Info("Starting Fornax core actor")
 	fornaxCoreActor := fornaxcore.NewFornaxCoreActor(node.NodeConfig.NodeIP, util.ResourceName(node.V1Node), node.NodeConfig.FornaxCoreIPs)
 	actor.fornoxCoreRef = fornaxCoreActor.Reference()
 	err := fornaxCoreActor.Start(actor.innerActor.Reference())
 	if err != nil {
-		klog.ErrorS(err, "Can not start fornax core actor")
+		klog.ErrorS(err, "Can not start Fornax core actor")
 		return nil, err
 	}
 	klog.Info("Fornax core actor started")

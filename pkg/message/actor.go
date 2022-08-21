@@ -111,7 +111,7 @@ func (a *LocalChannelActor) Start() {
 					case ActorStop:
 						klog.InfoS("Actor stopped", "message", msg.Body, "actor", a.Identifier)
 						close(a.channel)
-						break
+						return
 					default:
 						if err := a.OnReceive(msg); err != nil {
 							klog.ErrorS(err, "Failed to process message", "message", msg.Body, "actor", a.Identifier)

@@ -262,6 +262,9 @@ func (nm *nodeManager) UpdateNode(node *v1.Node) (*FornaxNodeWithState, error) {
 		}
 		nodeWS.LastSeen = time.Now()
 
+		if node.ResourceVersion == nodeWS.Node.ResourceVersion {
+			return nodeWS, nil
+		}
 		fornaxutil.MergeNodeStatus(nodeWS.Node, node)
 		nm.nodeUpdates <- &ie.NodeEvent{
 			Node: nodeWS.Node.DeepCopy(),

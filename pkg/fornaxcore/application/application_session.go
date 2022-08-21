@@ -45,6 +45,7 @@ const (
 
 type ApplicationSessionSummary struct {
 	pendingCount  int32
+	startingCount int32
 	idleCount     int32
 	inUseCount    int32
 	timeoutCount  int32
@@ -74,10 +75,12 @@ func (pool *ApplicationPool) summarySessions() ApplicationSessionSummary {
 	summary := ApplicationSessionSummary{}
 	for _, v := range pool.sessionList() {
 		if v.DeletionTimestamp == nil {
-			if v.Status.SessionStatus == fornaxv1.SessionStatusUnspecified || v.Status.SessionStatus == fornaxv1.SessionStatusPending || v.Status.SessionStatus == fornaxv1.SessionStatusStarting {
+			if v.Status.SessionStatus == fornaxv1.SessionStatusUnspecified || v.Status.SessionStatus == fornaxv1.SessionStatusPending {
 				summary.pendingCount += 1
 			} else if v.Status.SessionStatus == fornaxv1.SessionStatusAvailable {
 				summary.idleCount += 1
+			} else if v.Status.SessionStatus == fornaxv1.SessionStatusStarting {
+				summary.startingCount += 1
 			} else if v.Status.SessionStatus == fornaxv1.SessionStatusOccupied {
 				summary.inUseCount += 1
 			} else if v.Status.SessionStatus == fornaxv1.SessionStatusClosed {
@@ -247,14 +250,15 @@ func (appc *ApplicationManager) onApplicationSessionUpdateEvent(old, cur interfa
 		return
 	}
 
-	klog.InfoS("Application session updated", "session", sessionKey, "status", newCopy.Status)
 	appc.updateSessionPool(applicationKey, sessionKey, newCopy)
-	appc.enqueueApplication(applicationKey)
+	// do not need to sync application session unless deleting or status change
+	if (newCopy.DeletionTimestamp != nil && oldCopy.DeletionTimestamp == nil) || !reflect.DeepEqual(oldCopy.Status, newCopy.Status) {
+		klog.InfoS("Updating application session", "session", sessionKey, "status", newCopy.Status, "deleting", newCopy.DeletionTimestamp != nil)
+		appc.enqueueApplication(applicationKey)
+	}
 }
 
-// callback from Application informer when ApplicationSession is deleted
-// if session in terminal state, remove this session from pool,
-// else add new copy into pool
+// callback from Application informer when ApplicationSession is physically deleted
 func (appc *ApplicationManager) onApplicationSessionDeleteEvent(obj interface{}) {
 	session := obj.(*fornaxv1.ApplicationSession)
 	if session.DeletionTimestamp != nil {
@@ -271,7 +275,7 @@ func (appc *ApplicationManager) onApplicationSessionDeleteEvent(obj interface{})
 		return
 	}
 
-	klog.InfoS("Application session deleted", "session", sessionKey, "status", session.Status)
+	klog.InfoS("Deleting application session", "session", sessionKey, "status", session.Status)
 	appc.updateSessionPool(applicationKey, sessionKey, session)
 	appc.enqueueApplication(applicationKey)
 }
@@ -280,7 +284,7 @@ func (appc *ApplicationManager) onApplicationSessionDeleteEvent(obj interface{})
 func (appc *ApplicationManager) getTotalAndPendingSessionNum(applicationKey string) (int, int) {
 	if pool := appc.getApplicationPool(applicationKey); pool != nil {
 		summary := pool.summarySessions()
-		return int(summary.idleCount + summary.pendingCount + summary.inUseCount), int(summary.pendingCount)
+		return int(summary.idleCount + summary.inUseCount + summary.pendingCount + summary.startingCount), int(summary.pendingCount)
 	}
 	return 0, 0
 }
@@ -298,15 +302,15 @@ func (appc *ApplicationManager) syncApplicationSessions(application *fornaxv1.Ap
 	if pool == nil {
 		return nil
 	}
-	idlePods := appc.getIdleApplicationPods(applicationKey)
+	_, _, idleRunningPods := appc.groupApplicationPods(applicationKey)
 	pendingSessions, deletingSessions, timeoutSessions, _ := pool.groupSessionsByState()
+	klog.InfoS("Syncing application session", "application", applicationKey, "#pending", len(pendingSessions), "#deleting", len(deletingSessions), "#timeout", len(timeoutSessions))
 
 	sessionErrors := []error{}
 	// 1/ assign pending sessions to idle pod
 	si := 0
-	for _, rp := range idlePods {
+	for _, rp := range idleRunningPods {
 		pod := appc.podManager.FindPod(rp.podName)
-		fmt.Println(rp)
 		if pod != nil {
 			// allow only one sssion for one pod for now
 			if rp.sessions.Len() == 0 {
@@ -316,7 +320,7 @@ func (appc *ApplicationManager) syncApplicationSessions(application *fornaxv1.Ap
 				}
 
 				// update session status and set access point of session
-				session := pendingSessions[si].DeepCopy()
+				session := pendingSessions[si]
 				newStatus := session.Status.DeepCopy()
 				newStatus.SessionStatus = fornaxv1.SessionStatusStarting
 				for _, cont := range pod.Spec.Containers {
@@ -337,17 +341,17 @@ func (appc *ApplicationManager) syncApplicationSessions(application *fornaxv1.Ap
 					// move to next pod, it could fail to accept other session also
 					klog.ErrorS(err, "Failed to open session", "app", applicationKey, "session", session.Name, "pod", util.ResourceName(pod))
 					sessionErrors = append(sessionErrors, err)
-					break
+					continue
 				} else {
 					rp.sessions.Add(util.ResourceName(session))
+					si += 1
 					// appc.sessionManager.UpdateSessionStatus(session, newStatus)
 				}
-				si += 1
 			}
 		}
 	}
 
-	// 2, cleanup timeout session
+	// 2, cleanup timeout session, set session status to timeout and delete it from list
 	for _, v := range timeoutSessions {
 		if err := appc.changeSessionStatus(v, fornaxv1.SessionStatusTimeout); err == nil {
 			pool.deleteSession(util.ResourceName(v))
@@ -356,8 +360,10 @@ func (appc *ApplicationManager) syncApplicationSessions(application *fornaxv1.Ap
 		}
 	}
 
-	// 3, cleanup deleting session, if session is open, close it and wait for node report back,
-	// if session is not open yet, change status to closed and delete it from list
+	// 3, cleanup deleting session,
+	// if session is open, close it and wait for node report back
+	// if session is still in pending, change status to closed and delete it from session list
+	// if session is not open or pending, just delete since it's already in a terminal state
 	for _, v := range deletingSessions {
 		if util.SessionIsOpen(v) {
 			err := appc.closeApplicationSession(v)
@@ -369,7 +375,6 @@ func (appc *ApplicationManager) syncApplicationSessions(application *fornaxv1.Ap
 				pool.deleteSession(util.ResourceName(v))
 			}
 		} else {
-			// deleting session is not in open or pending, it's already in a terminal state, remove it from memory
 			pool.deleteSession(util.ResourceName(v))
 		}
 	}

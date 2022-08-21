@@ -102,7 +102,6 @@ func (ps *podScheduler) bindNode(snode *SchedulableNode, pod *v1.Pod) error {
 
 	// set pod status
 	pod.Status.HostIP = snode.Node.Status.Addresses[0].Address
-	pod.Status.Phase = v1.PodPending
 	pod.Status.Message = "Scheduled"
 	pod.Status.Reason = "Scheduled"
 
@@ -111,7 +110,6 @@ func (ps *podScheduler) bindNode(snode *SchedulableNode, pod *v1.Pod) error {
 	if err != nil {
 		klog.ErrorS(err, "Failed to bind pod, reschedule", "node", nodeName, "pod", podName)
 		ps.unbindNode(snode, pod)
-		pod.Status.Phase = v1.PodPending
 		pod.Status.Message = "Schedule failed"
 		pod.Status.Reason = "Schedule failed"
 		return err

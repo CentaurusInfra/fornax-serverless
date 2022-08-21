@@ -296,7 +296,7 @@ func (pm *podManager) TerminatePod(pod *v1.Pod) (*v1.Pod, error) {
 func (pm *podManager) createPod(nodeName string, pod *v1.Pod, podState FornaxPodState) {
 	var eType ie.PodEventType
 	switch {
-	case util.PodTerminated(pod):
+	case util.PodIsTerminated(pod):
 		eType = ie.PodEventTypeTerminate
 	default:
 		eType = ie.PodEventTypeCreate
@@ -325,7 +325,7 @@ func (pm *podManager) updatePod(nodeName string, pod *v1.Pod, oldPodState *PodWi
 
 	var eType ie.PodEventType
 	switch {
-	case util.PodTerminated(pod):
+	case util.PodIsTerminated(pod):
 		eType = ie.PodEventTypeTerminate
 	default:
 		eType = ie.PodEventTypeUpdate
@@ -345,7 +345,7 @@ func (pm *podManager) AddPod(pod *v1.Pod, nodeName string) (*v1.Pod, error) {
 		newPod := pod.DeepCopy()
 		// pod does not exist in pod manager, add it into map and delete it
 		// even it's terminating, still add it, and will delete next time when node does not report again
-		if util.PodTerminated(newPod) {
+		if util.PodIsTerminated(newPod) {
 			// pod is reported back by node agent as a terminated or failed pod
 			if newPod.DeletionTimestamp == nil {
 				newPod.DeletionTimestamp = util.NewCurrentMetaTime()
@@ -364,18 +364,22 @@ func (pm *podManager) AddPod(pod *v1.Pod, nodeName string) (*v1.Pod, error) {
 		return newPod, nil
 	} else {
 		existPod := oldPodState.v1pod
+		// no change, node agent probably just send a full list again
+		if existPod.ResourceVersion == pod.ResourceVersion {
+			return existPod, nil
+		}
 		existPodState := oldPodState.podState
-		util.MergePodStatus(existPod, pod)
+		util.MergePod(existPod, pod)
 		oldPodState.nodeName = nodeName
-		if util.PodTerminated(pod) {
-			// pod is reported back by node agent as a terminated or failed pod
+		if util.PodIsTerminated(pod) {
+			// pod is reported back by node agent as a terminated or failed pod, delete it
 			if existPod.DeletionTimestamp == nil {
 				existPod.DeletionTimestamp = util.NewCurrentMetaTime()
 			}
 			pm.updatePod(nodeName, existPod, oldPodState, PodStateTerminating)
 		} else if len(nodeName) > 0 {
+			// pod is reported back by node agent while pod owner determinted pod should be deleted, send node terminate message
 			if existPod.DeletionTimestamp != nil && pod.DeletionTimestamp == nil {
-				// pod is reported back by node agent while pod owner determinted pod should be deleted, send node terminate message
 				klog.InfoS("Terminate a running pod which has delete timestamp", "pod", util.ResourceName(pod))
 				err := pm.nodeAgentProxy.TerminatePod(nodeName, pod)
 				if err != nil {
@@ -402,7 +406,7 @@ func (pm *podManager) AddPod(pod *v1.Pod, nodeName string) (*v1.Pod, error) {
 func (pm *podManager) pruneTerminatingPods() {
 	terminatingPods := pm.podStatePool.terminatingPods.copyMap()
 	for name, pod := range terminatingPods {
-		if util.PodTerminated(pod.v1pod) || (len(pod.nodeName) == 0 && util.PodNotInGracePeriod(pod.v1pod)) {
+		if util.PodIsTerminated(pod.v1pod) || (len(pod.nodeName) == 0 && util.PodNotInGracePeriod(pod.v1pod)) {
 			pm.podStatePool.terminatingPods.deleteItem(name)
 			pm.podUpdates <- &ie.PodEvent{
 				NodeName: pod.nodeName,

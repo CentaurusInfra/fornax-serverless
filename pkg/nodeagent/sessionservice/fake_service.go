@@ -29,12 +29,13 @@ type FakeSessionService struct {
 
 // CloseSession implements SessionService
 func (f *FakeSessionService) CloseSession(sessionId string) error {
-	if c, f := f.stateCallbackFuncs[sessionId]; f {
+	if c, found := f.stateCallbackFuncs[sessionId]; found {
 		c(internal.SessionState{
 			SessionId:      sessionId,
 			SessionState:   types.SessionStateClosed,
 			ClientSessions: []types.ClientSession{},
 		})
+		delete(f.stateCallbackFuncs, sessionId)
 	} else {
 		return SessionNotFoundError
 	}
@@ -54,11 +55,19 @@ func (f *FakeSessionService) OpenSession(podId string, sessionId string, session
 
 // Ping implements SessionService
 func (f *FakeSessionService) Ping(sessionId string) (internal.SessionState, error) {
-	return internal.SessionState{
-		SessionId:      sessionId,
-		SessionState:   types.SessionStateReady,
-		ClientSessions: []types.ClientSession{},
-	}, nil
+	if _, found := f.stateCallbackFuncs[sessionId]; found {
+		return internal.SessionState{
+			SessionId:      sessionId,
+			SessionState:   types.SessionStateReady,
+			ClientSessions: []types.ClientSession{},
+		}, nil
+	} else {
+		return internal.SessionState{
+			SessionId:      sessionId,
+			SessionState:   types.SessionStateClosed,
+			ClientSessions: []types.ClientSession{},
+		}, SessionNotFoundError
+	}
 }
 
 func NewFakeSessionService() *FakeSessionService {

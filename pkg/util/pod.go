@@ -43,7 +43,7 @@ func BuildADummyTerminatedPod(metaNamespaceName string) *v1.Pod {
 			Namespace:       namespace,
 			SelfLink:        "",
 			UID:             "",
-			ResourceVersion: "1",
+			ResourceVersion: "0",
 			Generation:      0,
 			CreationTimestamp: metav1.Time{
 				Time: time.Now(),
@@ -167,8 +167,10 @@ func GetPodResourceList(v1pod *v1.Pod) *v1.ResourceList {
 	return &resourceList
 }
 
-func MergePodStatus(oldPod, newPod *v1.Pod) {
+func MergePod(oldPod, newPod *v1.Pod) {
 	oldPod.Status = *newPod.Status.DeepCopy()
+	oldPod.ResourceVersion = newPod.ResourceVersion
+
 	for k, v := range newPod.GetLabels() {
 		oldPod.Labels[k] = v
 	}
@@ -185,9 +187,8 @@ func MergePodStatus(oldPod, newPod *v1.Pod) {
 		oldPod.DeletionGracePeriodSeconds = newPod.DeletionGracePeriodSeconds
 	}
 
+	// pod spec could be modified by NodeAgent, especially container port mapping
 	if !reflect.DeepEqual(oldPod.Spec, newPod.Spec) {
-		// pod spec could be modified by NodeAgent, especially container port mapping
-		// we just horner newPod, and replace oldPod's spec
 		oldPod.Spec = newPod.Spec
 	}
 }
@@ -196,11 +197,15 @@ func PodIsRunning(pod *v1.Pod) bool {
 	return pod.Status.Phase == v1.PodRunning
 }
 
-func PodNotTerminated(pod *v1.Pod) bool {
-	return !PodTerminated(pod)
+func PodIsPending(pod *v1.Pod) bool {
+	return pod.Status.Phase == v1.PodPending
 }
 
-func PodTerminated(pod *v1.Pod) bool {
+func PodNotTerminated(pod *v1.Pod) bool {
+	return !PodIsTerminated(pod)
+}
+
+func PodIsTerminated(pod *v1.Pod) bool {
 	return (pod.Status.Phase == v1.PodSucceeded || pod.Status.Phase == v1.PodFailed)
 }
 

@@ -61,29 +61,33 @@ type ApplicationPodSummary struct {
 	deletingCount int32
 	idleCount     int32
 	readyCount    int32
-	deletedCount  int32
 }
 
 func (pool *ApplicationPool) summaryPod(podManager pod.PodManager) ApplicationPodSummary {
 	summary := ApplicationPodSummary{}
 	pods := pool.podList()
 	for _, k := range pods {
+		summary.totalCount += 1
 		pod := podManager.FindPod(k.podName)
 		if pod != nil {
-			summary.totalCount += 1
 			if pod.DeletionTimestamp == nil {
 				if k8spodutil.IsPodReady(pod) {
 					summary.readyCount += 1
-					// TODO, change this logic after session management is added
-					summary.idleCount += 1
 				} else {
 					summary.pendingCount += 1
+				}
+				if k.sessions.Len() == 0 {
+					summary.idleCount += 1
 				}
 			} else {
 				summary.deletingCount += 1
 			}
 		} else {
-			summary.deletedCount += 1
+			// when node have not sync its pod state, let's assume pod come from session pod reference holders are ready
+			summary.readyCount += 1
+			if k.sessions.Len() == 0 {
+				summary.idleCount += 1
+			}
 		}
 	}
 
@@ -155,6 +159,10 @@ func (appc *ApplicationManager) onPodAddEventFromNode(pod *v1.Pod) {
 		return
 	} else {
 		pool := appc.getOrCreateApplicationPool(applicationKey)
+		if pool.getPod(podName) != nil && pod.Status.Phase == v1.PodPending {
+			// this pod is just created by application itself, waiting for pod scheduled, no need to sync
+			return
+		}
 		pool.addPod(podName, NewApplicationPod(podName))
 	}
 	appc.enqueueApplication(applicationKey)
@@ -239,7 +247,7 @@ func (appc *ApplicationManager) getPodApplicationPodTemplate(uid uuid.UUID, name
 			GenerateName:    name,
 			UID:             types.UID(uid.String()),
 			Namespace:       application.Namespace,
-			ResourceVersion: "1",
+			ResourceVersion: "0",
 			Generation:      1,
 			CreationTimestamp: metav1.Time{
 				Time: time.Now(),
@@ -397,25 +405,30 @@ func (pool *ApplicationPool) getPod(podName string) *ApplicationPod {
 	return nil
 }
 
-func (appc *ApplicationManager) getIdleApplicationPods(applicationKey string) (idlePods []*ApplicationPod) {
+func (appc *ApplicationManager) groupApplicationPods(applicationKey string) (occupiedPods, idlePendingPods, idleRunningPods []*ApplicationPod) {
 	if pool := appc.getApplicationPool(applicationKey); pool != nil {
 		pods := pool.podList()
 		for _, v := range pods {
+			if v.sessions.Len() > 0 {
+				occupiedPods = append(occupiedPods, v)
+				continue
+			}
 			pod := appc.podManager.FindPod(v.podName)
-			if pod != nil && pod.DeletionTimestamp == nil && util.PodIsRunning(pod) {
+			if pod != nil && pod.DeletionTimestamp == nil {
 				// exclude pods have been requested to delete from active pods to avoid double count
-				if v.sessions.Len() > 0 {
-					continue
+				if util.PodIsRunning(pod) {
+					idleRunningPods = append(idleRunningPods, v)
+				} else if util.PodIsPending(pod) {
+					idlePendingPods = append(idlePendingPods, v)
 				}
-				idlePods = append(idlePods, v)
 			}
 		}
 	}
-	return idlePods
+	return occupiedPods, idlePendingPods, idleRunningPods
 }
 
-func (appc *ApplicationManager) syncApplicationPods(application *fornaxv1.Application, numOfDesiredPod int, idlePods []*ApplicationPod) error {
-	desiredAddition := int(numOfDesiredPod) - len(idlePods)
+func (appc *ApplicationManager) syncApplicationPods(application *fornaxv1.Application, numOfDesiredPod, numOfIdlePod int, idlePods []*ApplicationPod) error {
+	desiredAddition := numOfDesiredPod - numOfIdlePod
 	applicationKey, err := cache.MetaNamespaceKeyFunc(application)
 	if err != nil {
 		klog.ErrorS(err, "Couldn't get key for application", "application", application)
@@ -428,7 +441,7 @@ func (appc *ApplicationManager) syncApplicationPods(application *fornaxv1.Applic
 			desiredAddition = applicationBurst
 		}
 
-		klog.InfoS("Creating pods", "application", applicationKey, "desired", numOfDesiredPod, "active", len(idlePods))
+		klog.InfoS("Creating pods", "application", applicationKey, "addition", desiredAddition)
 		appPool := appc.getOrCreateApplicationPool(applicationKey)
 		createdPods := []*v1.Pod{}
 		createErrors := []error{}
@@ -455,7 +468,7 @@ func (appc *ApplicationManager) syncApplicationPods(application *fornaxv1.Applic
 		if desiredSubstraction > applicationBurst {
 			desiredSubstraction = applicationBurst
 		}
-		klog.InfoS("Deleting pods", "application", applicationKey, "desired", numOfDesiredPod, "active", len(idlePods))
+		klog.InfoS("Deleting pods", "application", applicationKey, "substraction", desiredSubstraction)
 
 		// Choose which Pods to delete, preferring those in earlier phases of startup.
 		deleteErrors := []error{}

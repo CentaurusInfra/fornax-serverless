@@ -1,7 +1,7 @@
 apiVersion: core.fornax-serverless.centaurusinfra.io/v1
 kind: ApplicationSession
 metadata:
-  name: nginx-session-6
+  name: nginx-session-9
   labels:
     application: nginx
 spec:

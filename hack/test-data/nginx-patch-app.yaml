@@ -20,5 +20,5 @@ spec:
     burst: 1
     scalingPolicyType: idle_session_number
     idleSessionNumThreshold:
-      highWaterMark: 0
+      highWaterMark: 3
       lowWaterMark: 0

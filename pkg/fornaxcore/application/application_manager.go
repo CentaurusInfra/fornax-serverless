@@ -273,10 +273,12 @@ func (appc *ApplicationManager) onApplicationUpdateEvent(old, cur interface{}) {
 		})
 	}
 
-	if reflect.DeepEqual(oldCopy, newCopy) {
-		return
+	// application status are update when session or pod changed, its own status change does not need sync,
+	// only sync when deleting or spec change
+	if (newCopy.DeletionTimestamp != nil && oldCopy.DeletionTimestamp == nil) || !reflect.DeepEqual(oldCopy.Spec, newCopy.Spec) {
+		klog.Infof("Updating application %s", applicationKey)
+		appc.enqueueApplication(applicationKey)
 	}
-	appc.enqueueApplication(applicationKey)
 }
 
 // callback from application informer when Application is deleted
@@ -387,16 +389,18 @@ func (appc *ApplicationManager) syncApplication(ctx context.Context, application
 			syncErr = appc.syncApplicationSessions(application, applicationKey)
 			// determine how many pods required for remaining sessions
 			if syncErr == nil {
-				idlePods := appc.getIdleApplicationPods(applicationKey)
-				totalSessionNum, pendingSessionNum := appc.getTotalAndPendingSessionNum(applicationKey)
-				numOfDesiredPod = appc.CalculateDesiredPods(application, len(idlePods), pendingSessionNum)
-				klog.InfoS("Application summary", "total sessions", totalSessionNum, "pending sessions", pendingSessionNum, "idle pods", len(idlePods), "desired idle pods", numOfDesiredPod)
-				if numOfDesiredPod > len(idlePods) {
+				occupiedPods, idlePendingPods, idleRunningPods := appc.groupApplicationPods(applicationKey)
+				numOfIdlePod := len(idleRunningPods) + len(idlePendingPods)
+				numOfTotalSession, numOfPendingSession := appc.getTotalAndPendingSessionNum(applicationKey)
+				numOfDesiredIdlePod := appc.CalculateDesiredIdlePods(application, numOfIdlePod, numOfPendingSession)
+				numOfDesiredPod = len(occupiedPods) + numOfDesiredIdlePod
+				klog.InfoS("Sync application pod", "total sessions", numOfTotalSession, "pending sessions", numOfPendingSession, "total pods", len(occupiedPods)+numOfIdlePod, "idle pods", numOfIdlePod, "desired idle pods", numOfDesiredIdlePod)
+				if numOfDesiredIdlePod > numOfIdlePod {
 					action = fornaxv1.DeploymentActionCreateInstance
-				} else if numOfDesiredPod < len(idlePods) {
+				} else if numOfDesiredIdlePod < numOfIdlePod {
 					action = fornaxv1.DeploymentActionDeleteInstance
 				}
-				syncErr = appc.syncApplicationPods(application, numOfDesiredPod, idlePods)
+				syncErr = appc.syncApplicationPods(application, numOfDesiredIdlePod, numOfIdlePod, append(idlePendingPods, idleRunningPods...))
 			}
 		} else {
 			klog.InfoS("Application is deleted", "application", applicationKey, "deletionTime", application.DeletionTimestamp)
@@ -431,7 +435,7 @@ func (appc *ApplicationManager) syncApplication(ctx context.Context, application
 	return syncErr
 }
 
-func (appc *ApplicationManager) CalculateDesiredPods(application *fornaxv1.Application, idlePodNum int, sessionNum int) int {
+func (appc *ApplicationManager) CalculateDesiredIdlePods(application *fornaxv1.Application, idlePodNum int, sessionNum int) int {
 	desiredCount := idlePodNum
 	sessionSupported := idlePodNum
 	idleSessionNum := int(sessionSupported) - sessionNum

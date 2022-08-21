@@ -272,11 +272,6 @@ func (nm *nodeMonitor) updateOrCreateNode(v1node *v1.Node, revision int64, podSt
 			return nodeagent.NodeRevisionOutOfOrderError
 		}
 
-		if revision == nodeWS.Revision {
-			// klog.Infof("Received a same revision from node agent, revision: %d, skip", revision)
-			return nil
-		}
-
 		nodeWS.Revision = revision
 		newNode, err := nm.nodeManager.UpdateNode(v1node)
 		if err != nil {

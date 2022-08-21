@@ -107,7 +107,7 @@ func (n *FornaxNode) initV1Node() (*v1.Node, error) {
 			Name:            hostname,
 			Namespace:       default_config.DefaultFornaxCoreNodeNameSpace,
 			UID:             uuid.NewUUID(),
-			ResourceVersion: "1",
+			ResourceVersion: "0",
 			Generation:      0,
 			CreationTimestamp: metav1.Time{
 				Time: time.Now(),

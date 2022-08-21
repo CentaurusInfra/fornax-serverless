@@ -41,7 +41,7 @@ func InitV1Node(hostIp, hostName string) (*v1.Node, error) {
 			Name:            hostName,
 			Namespace:       default_config.DefaultFornaxCoreNodeNameSpace,
 			UID:             uuid.NewUUID(),
-			ResourceVersion: "1",
+			ResourceVersion: "0",
 			Generation:      0,
 			CreationTimestamp: metav1.Time{
 				Time: time.Now(),

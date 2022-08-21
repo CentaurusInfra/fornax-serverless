@@ -39,8 +39,8 @@ func (appc *ApplicationManager) updateApplicationStatus(application *fornaxv1.Ap
 	client := appc.apiServerClient.CoreV1().Applications(application.Namespace)
 
 	klog.Infof(fmt.Sprintf("Updating application status for %s, ", util.ResourceName(application)) +
+		fmt.Sprintf("totalInstances %d->%d, ", application.Status.TotalInstances, newStatus.TotalInstances) +
 		fmt.Sprintf("desiredInstances %d->%d, ", application.Status.DesiredInstances, newStatus.DesiredInstances) +
-		fmt.Sprintf("availableInstances %d->%d, ", application.Status.TotalInstances, newStatus.TotalInstances) +
 		fmt.Sprintf("pendingInstances %d->%d, ", application.Status.PendingInstances, newStatus.PendingInstances) +
 		fmt.Sprintf("deletingInstances %d->%d, ", application.Status.DeletingInstances, newStatus.DeletingInstances) +
 		fmt.Sprintf("readyInstances %d->%d, ", application.Status.ReadyInstances, newStatus.ReadyInstances) +
@@ -102,8 +102,7 @@ func (appc *ApplicationManager) calculateStatus(application *fornaxv1.Applicatio
 		application.Status.DeletingInstances == poolSummary.deletingCount &&
 		application.Status.PendingInstances == poolSummary.pendingCount &&
 		application.Status.ReadyInstances == poolSummary.readyCount {
-		// no change, return old status
-		return application.Status.DeepCopy()
+		return nil
 	}
 
 	newStatus := application.Status.DeepCopy()
@@ -121,7 +120,7 @@ func (appc *ApplicationManager) calculateStatus(application *fornaxv1.Applicatio
 			newStatus.DeploymentStatus = fornaxv1.DeploymentStatusSuccess
 		}
 
-		message := fmt.Sprintf("sync application, total: %d, desired: %d, pending: %d, deleting: %d, ready: %d, idle: %d",
+		message := fmt.Sprintf("deploy application instance, total: %d, desired: %d, pending: %d, deleting: %d, ready: %d, idle: %d",
 			newStatus.TotalInstances,
 			newStatus.DesiredInstances,
 			newStatus.PendingInstances,

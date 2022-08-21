@@ -142,7 +142,7 @@ func BuildV1Pod(uid types.UID, namespace, name string, isDaemon, hostnetwork boo
 			Name:            name,
 			Namespace:       namespace,
 			UID:             uid,
-			ResourceVersion: "1",
+			ResourceVersion: "0",
 			CreationTimestamp: metav1.Time{
 				Time: time.Now(),
 			},

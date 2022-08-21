@@ -163,6 +163,7 @@ func (a *PodActor) podHandler(msg message.ActorMessage) (interface{}, error) {
 		err = a.onSessionCloseCommand(msg.Body.(internal.SessionClose))
 	case internal.SessionState:
 		err = a.handleSessionState(msg.Body.(internal.SessionState))
+		fmt.Println("gwj, received session event when pod is in state", a.pod.FornaxPodState)
 		if err == nil && a.pod.FornaxPodState == types.PodStateTerminating {
 			// recheck if pod can be finally terminated
 			err = a.terminate(false)
@@ -452,7 +453,7 @@ func (a *PodActor) onSessionCloseCommand(msg internal.SessionClose) error {
 
 // simply update application session status and copy client session
 func (a *PodActor) handleSessionState(s internal.SessionState) error {
-	klog.Warningf("Received session state from session service", "state", s)
+	klog.InfoS("Received session state from session service", "state", s)
 	session, found := a.pod.Sessions[s.SessionId]
 	if !found {
 		klog.Warningf("Received session state from unknown session %s", s.SessionId)

@@ -70,7 +70,7 @@ export PATH="$PATH:/usr/local/go/bin:/home/ubuntu/go/bin"
 ```
 Take effetive
 ```script
-sudo source ~/.bashrc
+source ~/.bashrc
 ```
 
 #### 1.2.2 Download and Compile Source Code

@@ -263,13 +263,13 @@ kubectl --kubeconfig kubeconfig proxy
 source ./hack/fornax_curl.zshrc
 ```
 ```sh
-post_app  game2  ./hack/test-data/nginx-create-app.yaml
+post_app  game1  ./hack/test-data/nginx-create-app.yaml
 kubectl --kubeconfig kubeconfig get applications --all-namespaces
 ```
 
 3. Create First ApplicationSession
 ```sh
-post_session game2  ./hack/test-data/nginx-create-session.yaml
+post_session game1  ./hack/test-data/nginx-create-session.yaml
 kubectl --kubeconfig kubeconfig get applicationsession --all-namespaces
 ```
 

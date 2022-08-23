@@ -276,6 +276,7 @@ spec:
     numOfSessionOfInstance: 1
     sessionOpenTimeoutSeconds: 30
     sessionCloseGracePeriodSeconds: 30
+EOF
 ```
 
 create application session using created yaml file

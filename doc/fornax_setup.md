@@ -254,6 +254,7 @@ See [get_start.md](https://github.com/CentaurusInfra/fornax-serverless/edit/main
 See [get_start.md](https://github.com/CentaurusInfra/fornax-serverless/edit/main/doc/get_start.md)
 
 1. See [get_start.md](https://github.com/CentaurusInfra/fornax-serverless/edit/main/doc/get_start.md)
+
 2. Create First Application.
 ```sh
 kubectl --kubeconfig kubeconfig proxy
@@ -262,7 +263,13 @@ kubectl --kubeconfig kubeconfig proxy
 source ./hack/fornax_curl.zshrc
 ```
 ```sh
-fornax_post game2 applications ./hack/test-data/nginx-create-app.yaml
+post_app  game2  ./hack/test-data/nginx-create-app.yaml
 kubectl --kubeconfig kubeconfig get applications --all-namespaces
+```
+
+3. Create First ApplicationSession
+```sh
+post_session game2  ./hack/test-data/nginx-create-session.yaml
+kubectl --kubeconfig kubeconfig get applicationsession --all-namespaces
 ```
 

@@ -223,7 +223,7 @@ journalctl -u containerd -f
 1. Create application
 
  ```yaml
-cat << EOF | sudo tee ./nginx-create-app.yaml
+cat << EOF | sudo tee ./hack/test-data/nginx-create-app.yaml
 apiVersion: core.fornax-serverless.centaurusinfra.io/v1
 kind: Application
 metadata:
@@ -262,7 +262,7 @@ kubectl apply --kubeconfig kubeconfig --namespace game1 application nginx -f ./n
 
 2. Create application session
  ```yaml
-cat << EOF | sudo tee ./nginx-create-session.yaml
+cat << EOF | sudo tee ./hack/test-data/nginx-create-session.yaml
 apiVersion: core.fornax-serverless.centaurusinfra.io/v1
 kind: ApplicationSession
 metadata:
@@ -282,7 +282,7 @@ EOF
 create application session using created yaml file
 
 ```sh
-kubectl apply --kubeconfig kubeconfig --namespace game1 application nginx -f ./nginx-create-session.yaml
+kubectl apply --kubeconfig kubeconfig --namespace game1 application nginx -f ./hack/test-data/nginx-create-session.yaml
 ```
 3. describe session and find session ingress endpoint
 ```sh

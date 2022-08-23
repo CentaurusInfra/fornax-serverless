@@ -220,10 +220,10 @@ journalctl -u containerd -f
 
 ## 3.4 Run First Fornax Core serverless application
 
-1. Create application spec yaml file
+1. Create application
 
  ```yaml
-cat << EOF | sudo tee ./hack/test-data/nginx-create-app.yaml
+cat << EOF | sudo tee ./nginx-create-app.yaml
 apiVersion: core.fornax-serverless.centaurusinfra.io/v1
 kind: Application
 metadata:
@@ -231,16 +231,14 @@ metadata:
   labels:
     name: nginx
 spec:
-  sessionConfig:
-    numOfSessionOfInstance: 1
-    minSessions: 1
-    maxSessions: 10
-    maxSurge: 1
-    minOfIdleSessions: 0
   scalingPolicy:
-    minimumTarget: 1
-    maximumTarget: 3
+    minimumInstance: 0
+    maximumInstance: 30
     burst: 1
+    scalingPolicyType: idle_session_number
+    idleSessionNumThreshold:
+      highWaterMark: 3
+      lowWaterMark: 0
   containers:
     - image: nginx:latest
       name: nginx
@@ -254,21 +252,75 @@ spec:
       ports:
         - containerPort: 80
           name: nginx
-  configData:
-    config1: data1
 EOF
 ```
 
-2. Create application
-
+create application use created yaml file
 ```sh
-kubectl apply --kubeconfig kubeconfig --namespace game2 application nginx -f ./hack/test-data/nginx-create-app.yaml
+kubectl apply --kubeconfig kubeconfig --namespace game1 application nginx -f ./nginx-create-app.yaml
 ```
 
-3. verify pods are created on Node
+2. Create application session
+ ```yaml
+cat << EOF | sudo tee ./nginx-create-session.yaml
+apiVersion: core.fornax-serverless.centaurusinfra.io/v1
+kind: ApplicationSession
+metadata:
+  name: nginx-session-1
+  labels:
+    application: nginx
+spec:
+  applicationName: game1/nginx
+  sessionData: my-nginx1-session-data
+  sessionConfig:
+    numOfSessionOfInstance: 1
+    sessionOpenTimeoutSeconds: 30
+    sessionCloseGracePeriodSeconds: 30
+```
+
+create application session using created yaml file
 
 ```sh
-sudo crictl pods
+kubectl apply --kubeconfig kubeconfig --namespace game1 application nginx -f ./nginx-create-session.yaml
+```
+3. describe session and find session ingress endpoint
+```sh
+kubectl get applicationsessions --kubeconfig kubeconfig --namespace game1 -o yaml
+```
+you should get below output
+```yaml
+apiVersion: v1
+items:
+- apiVersion: core.fornax-serverless.centaurusinfra.io/v1
+  kind: ApplicationSession
+  metadata:
+    creationTimestamp: "2022-08-21T04:52:01Z"
+    finalizers:
+    - opensession.core.fornax-serverless.centaurusinfra.io
+    labels:
+      application: nginx
+    name: nginx-session-1
+    namespace: game1
+    resourceVersion: "1261"
+    uid: 0e8b5463-90e6-4e9e-9720-cbfd74480e50
+  spec:
+    applicationName: game1/nginx
+    sessionData: my-nginx1-session-data
+  status:
+    accessEndPoints:
+    - ipAddress: 192.168.0.45
+      port: 1024
+    podReference:
+      name: game1/nginx-9q8plr7mtlld49gr-12883
+    sessionStatus: Available
+```
+4. verify accessEndPoints in above session status are reachable
+```sh
+sudo nc -zv 192.168.0.45 1024
+```
 
+5. verify a pod is created on node
+```sh
+sudo crictl pods
 ```
 ![Server-less pods sample](https://github.com/CentaurusInfra/fornax-serverless/blob/main/doc/serverless-pods.png)

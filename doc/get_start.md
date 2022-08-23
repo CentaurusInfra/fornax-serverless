@@ -257,7 +257,7 @@ EOF
 
 create application use created yaml file
 ```sh
-kubectl apply --kubeconfig kubeconfig --namespace game1 application nginx -f ./nginx-create-app.yaml
+kubectl apply --kubeconfig kubeconfig --namespace game1 application nginx -f ./hack/test-data/nginx-create-app.yaml
 ```
 
 2. Create application session

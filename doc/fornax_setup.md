@@ -28,11 +28,6 @@ sudo systemctl enable etcd
 sudo systemctl restart etcd
 ```
 
-Stop etcd.service. (note: we use the local etcd by default fornax serverless, so we need stop etcd.service)
-```script
-sudo systemctl stop etcd.service
-```
-
 ### 1.2 Install Fornax Core From Source Code
 #### 1.2.1 Install Golang
 ```script

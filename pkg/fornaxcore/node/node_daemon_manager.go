@@ -17,11 +17,12 @@ limitations under the License.
 package node
 
 import (
+	ie "centaurusinfra.io/fornax-serverless/pkg/fornaxcore/internal"
 	v1 "k8s.io/api/core/v1"
 )
 
 type NodeDaemonManager interface {
-	GetDaemons(node *FornaxNodeWithState) map[string]*v1.Pod
+	GetDaemons(node *ie.FornaxNodeWithState) map[string]*v1.Pod
 }
 
 var _ NodeDaemonManager = &nodeDaemonManager{}
@@ -30,7 +31,7 @@ type nodeDaemonManager struct {
 }
 
 // GetDaemons implements NodeDaemonManager
-func (*nodeDaemonManager) GetDaemons(node *FornaxNodeWithState) map[string]*v1.Pod {
+func (*nodeDaemonManager) GetDaemons(node *ie.FornaxNodeWithState) map[string]*v1.Pod {
 	// TODO manage real daemon pods
 	return map[string]*v1.Pod{}
 }

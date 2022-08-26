@@ -26,6 +26,7 @@ import (
 
 type SchedulableNode struct {
 	mu                         sync.Mutex
+	NodeId                     string
 	Node                       *v1.Node
 	LastSeen                   time.Time
 	LastUsed                   *time.Time

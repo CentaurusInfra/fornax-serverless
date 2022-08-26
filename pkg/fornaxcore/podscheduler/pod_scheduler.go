@@ -50,7 +50,7 @@ type podScheduler struct {
 	ctx                       context.Context
 	updateCh                  chan interface{}
 	nodeInfoP                 ie.NodeInfoProvider
-	nodeAgent                 nodeagent.NodeAgentProxy
+	nodeAgentClient           nodeagent.NodeAgentClient
 	scheduleQueue             *PodScheduleQueue
 	nodePool                  *SchedulableNodePool
 	ScheduleConditionBuilders []ConditionBuildFunc
@@ -93,9 +93,9 @@ func (ps *podScheduler) selectNode(pod *v1.Pod, nodes []*SchedulableNode) *Sched
 
 // add pod into node resource list, and send pod to node via grpc channel, if it channel failed, reschedule
 func (ps *podScheduler) bindNode(snode *SchedulableNode, pod *v1.Pod) error {
-	podName := util.ResourceName(pod)
-	nodeName := util.ResourceName(snode.Node)
-	klog.InfoS("Bind pod to node", "pod", podName, "node", nodeName)
+	podName := util.Name(pod)
+	nodeId := snode.NodeId
+	klog.InfoS("Bind pod to node", "pod", podName, "node", nodeId)
 
 	resourceList := util.GetPodResourceList(pod)
 	snode.AdmitPodOccupiedResourceList(resourceList)
@@ -106,9 +106,9 @@ func (ps *podScheduler) bindNode(snode *SchedulableNode, pod *v1.Pod) error {
 	pod.Status.Reason = "Scheduled"
 
 	// call nodeagent to start pod
-	err := ps.nodeAgent.CreatePod(nodeName, pod)
+	err := ps.nodeAgentClient.CreatePod(nodeId, pod)
 	if err != nil {
-		klog.ErrorS(err, "Failed to bind pod, reschedule", "node", nodeName, "pod", podName)
+		klog.ErrorS(err, "Failed to bind pod, reschedule", "node", nodeId, "pod", podName)
 		ps.unbindNode(snode, pod)
 		pod.Status.Message = "Schedule failed"
 		pod.Status.Reason = "Schedule failed"
@@ -126,7 +126,7 @@ func (ps *podScheduler) unbindNode(node *SchedulableNode, pod *v1.Pod) {
 }
 
 func (ps *podScheduler) schedulePod(pod *v1.Pod) {
-	podName := util.ResourceName(pod)
+	podName := util.Name(pod)
 	klog.InfoS("Schedule a pod", "pod", podName)
 	if pod.DeletionTimestamp != nil {
 		// pod has been requested to delete, skip
@@ -173,8 +173,8 @@ func (ps *podScheduler) schedulePod(pod *v1.Pod) {
 	}
 }
 
-func (ps *podScheduler) updateNodePool(v1node *v1.Node, updateType ie.NodeEventType) *SchedulableNode {
-	nodeName := util.ResourceName(v1node)
+func (ps *podScheduler) updateNodePool(nodeId string, v1node *v1.Node, updateType ie.NodeEventType) *SchedulableNode {
+	nodeName := util.Name(v1node)
 	if updateType == ie.NodeEventTypeDelete {
 		ps.nodePool.deleteNode(nodeName)
 		return nil
@@ -190,6 +190,7 @@ func (ps *podScheduler) updateNodePool(v1node *v1.Node, updateType ie.NodeEventT
 			if util.IsNodeRunning(v1node) {
 				snode := &SchedulableNode{
 					mu:                         sync.Mutex{},
+					NodeId:                     nodeId,
 					Node:                       v1node.DeepCopy(),
 					LastSeen:                   time.Now(),
 					LastUsed:                   nil,
@@ -226,6 +227,7 @@ func (ps *podScheduler) printScheduleSummary() {
 }
 
 func (ps *podScheduler) Run() {
+	klog.Info("starting pod scheduler")
 	// check active qeueue item, and schedule pod
 	go func() {
 		for {
@@ -245,7 +247,7 @@ func (ps *podScheduler) Run() {
 		ticker := time.NewTicker(DefaultBackoffRetryDuration)
 		nodes := ps.nodeInfoP.List()
 		for _, n := range nodes {
-			ps.updateNodePool(n, ie.NodeEventTypeCreate)
+			ps.updateNodePool(n.NodeId, n.Node, ie.NodeEventTypeCreate)
 		}
 		for {
 			select {
@@ -256,8 +258,8 @@ func (ps *podScheduler) Run() {
 				switch t := update.(type) {
 				case *ie.PodEvent:
 					if u, ok := update.(*ie.PodEvent); ok {
-						if len(u.NodeName) != 0 {
-							snode := ps.nodePool.getNode(u.NodeName)
+						if len(u.NodeId) != 0 {
+							snode := ps.nodePool.getNode(u.NodeId)
 							if snode != nil {
 								ps.updatePodOccupiedResourceList(snode, u.Pod, u.Type)
 							}
@@ -265,7 +267,7 @@ func (ps *podScheduler) Run() {
 					}
 				case *ie.NodeEvent:
 					if u, ok := update.(*ie.NodeEvent); ok {
-						ps.updateNodePool(u.Node, u.Type)
+						ps.updateNodePool(u.NodeId, u.Node.DeepCopy(), u.Type)
 					}
 					ps.scheduleQueue.ReviveBackoffItem()
 				default:
@@ -283,14 +285,14 @@ func (ps *podScheduler) Run() {
 	}()
 }
 
-func NewPodScheduler(ctx context.Context, nodeAgent nodeagent.NodeAgentProxy, nodeInfoP ie.NodeInfoProvider, podInfoP ie.PodInfoProvider) *podScheduler {
+func NewPodScheduler(ctx context.Context, nodeAgent nodeagent.NodeAgentClient, nodeInfoP ie.NodeInfoProvider, podInfoP ie.PodInfoProvider) *podScheduler {
 	ps := &podScheduler{
-		ctx:           ctx,
-		stop:          false,
-		updateCh:      make(chan interface{}, 100),
-		nodeInfoP:     nodeInfoP,
-		nodeAgent:     nodeAgent,
-		scheduleQueue: NewScheduleQueue(),
+		ctx:             ctx,
+		stop:            false,
+		updateCh:        make(chan interface{}, 100),
+		nodeInfoP:       nodeInfoP,
+		nodeAgentClient: nodeAgent,
+		scheduleQueue:   NewScheduleQueue(),
 		nodePool: &SchedulableNodePool{
 			mu:          sync.Mutex{},
 			nodes:       map[string]*SchedulableNode{},

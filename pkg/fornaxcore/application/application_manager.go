@@ -29,8 +29,6 @@ import (
 	"centaurusinfra.io/fornax-serverless/pkg/client/informers/externalversions"
 	listerv1 "centaurusinfra.io/fornax-serverless/pkg/client/listers/core/v1"
 	ie "centaurusinfra.io/fornax-serverless/pkg/fornaxcore/internal"
-	fornaxpod "centaurusinfra.io/fornax-serverless/pkg/fornaxcore/pod"
-	fornaxsession "centaurusinfra.io/fornax-serverless/pkg/fornaxcore/session"
 	"centaurusinfra.io/fornax-serverless/pkg/util"
 
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -88,15 +86,15 @@ type ApplicationManager struct {
 	applicationPools map[string]*ApplicationPool
 	apiServerClient  fornaxclient.Interface
 	watcher          chan interface{}
-	podManager       fornaxpod.PodManager
-	sessionManager   fornaxsession.SessionManager
+	podManager       ie.PodManager
+	sessionManager   ie.SessionInterface
 
 	syncHandler func(ctx context.Context, appKey string) error
 }
 
 // NewApplicationManager init ApplicationInformer and ApplicationSessionInformer,
 // and start to listen to pod event from node
-func NewApplicationManager(ctx context.Context, podManager fornaxpod.PodManager, sessionManager fornaxsession.SessionManager, apiServerClient fornaxclient.Interface) *ApplicationManager {
+func NewApplicationManager(ctx context.Context, podManager ie.PodManager, sessionManager ie.SessionInterface, apiServerClient fornaxclient.Interface) *ApplicationManager {
 	appc := &ApplicationManager{
 		applicationQueue: workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "fornaxv1.Application"),
 		applicationPools: map[string]*ApplicationPool{},
@@ -253,7 +251,7 @@ func (appc *ApplicationManager) enqueueApplication(applicationKey string) {
 // callback from Application informer when Application is created
 func (appc *ApplicationManager) onApplicationAddEvent(obj interface{}) {
 	application := obj.(*fornaxv1.Application)
-	applicationKey := util.ResourceName(application)
+	applicationKey := util.Name(application)
 	klog.Infof("Adding application %s", applicationKey)
 
 	appc.getOrCreateApplicationPool(applicationKey)
@@ -265,7 +263,7 @@ func (appc *ApplicationManager) onApplicationUpdateEvent(old, cur interface{}) {
 	oldCopy := old.(*fornaxv1.Application)
 	newCopy := cur.(*fornaxv1.Application)
 
-	applicationKey := util.ResourceName(newCopy)
+	applicationKey := util.Name(newCopy)
 	if newCopy.UID != oldCopy.UID {
 		appc.onApplicationDeleteEvent(cache.DeletedFinalStateUnknown{
 			Key: applicationKey,
@@ -301,7 +299,7 @@ func (appc *ApplicationManager) onApplicationDeleteEvent(obj interface{}) {
 		appliation.DeletionTimestamp = util.NewCurrentMetaTime()
 	}
 
-	applicationKey := util.ResourceName(appliation)
+	applicationKey := util.Name(appliation)
 
 	klog.Infof("Deleting application %s", applicationKey)
 
@@ -421,7 +419,7 @@ func (appc *ApplicationManager) syncApplication(ctx context.Context, application
 
 	// Resync the Application if there is error or does not meet desired number
 	if syncErr != nil {
-		klog.ErrorS(syncErr, "Failed to sync application, requeue", "application", applicationKey, "next")
+		klog.ErrorS(syncErr, "Failed to sync application, requeue", "application", applicationKey)
 		appc.applicationQueue.AddAfter(applicationKey, DefaultApplicationSyncErrorRecycleDuration)
 	} else {
 		// if a application does not have any pod or session, remove it from application pool to save memory

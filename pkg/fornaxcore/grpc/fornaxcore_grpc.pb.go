@@ -2,7 +2,7 @@
 // versions:
 // - protoc-gen-go-grpc v1.2.0
 // - protoc             v3.12.1
-// source: pkg/fornaxcore/fornaxcore.proto
+// source: pkg/fornaxcore/grpc/fornaxcore.proto
 
 package grpc
 
@@ -166,5 +166,5 @@ var FornaxCoreService_ServiceDesc = grpc.ServiceDesc{
 			ServerStreams: true,
 		},
 	},
-	Metadata: "pkg/fornaxcore/fornaxcore.proto",
+	Metadata: "pkg/fornaxcore/grpc/fornaxcore.proto",
 }

@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-syntax = "proto2";
+syntax = "proto3";
 package centaurusinfra.io.fornaxcore.service;
 
 option go_package = "centaurusinfra.io/fornax-serverless/pkg/fornaxcore/grpc";
@@ -45,9 +45,9 @@ enum MessageType {
 }
  
 message FornaxCoreMessage {
-  required string messageIdentifier = 1;
-  required NodeIdentifier nodeIdentifier = 2;
-  required MessageType messageType = 3;
+  string messageIdentifier = 1;
+  NodeIdentifier nodeIdentifier = 2;
+  MessageType messageType = 3;
   oneof MessageBody {
     FornaxCoreConfiguration fornaxCoreConfiguration = 100;
     NodeConfiguration nodeConfiguration = 200;
@@ -66,45 +66,45 @@ message FornaxCoreMessage {
 }
 
 message FornaxCore {
-  required string ip = 1;
-  required string identifier = 2;
+  string ip = 1;
+  string identifier = 2;
 }
 
 message FornaxCoreConfiguration {
-  required FornaxCore primary = 1;
+  FornaxCore primary = 1;
   repeated FornaxCore standbys = 2;
 }
 
 message NodeIdentifier {
-  required string ip = 1;
-  required string identifier = 2;
+  string ip = 1;
+  string identifier = 2;
 }
 
 /* node register with fornax core, wait for a configuration message to initialize it*/
 message NodeRegistry {
-  required int64 nodeRevision = 1;
-  required k8s.io.api.core.v1.Node node = 2;
+  int64 nodeRevision = 1;
+  k8s.io.api.core.v1.Node node = 2;
 }
 
 /* fornax core send node configuration to node to initialize using this configuration before tell fornax it's ready*/
 message NodeConfiguration {
-  required string clusterDomain = 1;
-  required k8s.io.api.core.v1.Node node = 2;
+  string clusterDomain = 1;
+  k8s.io.api.core.v1.Node node = 2;
   repeated k8s.io.api.core.v1.Pod daemonPods = 3;
 }
 
 /* node report back to fornax core, it's ready for take pod*/
 message NodeReady {
-  required int64 nodeRevision = 1;
-  required k8s.io.api.core.v1.Node node = 2;
+  int64 nodeRevision = 1;
+  k8s.io.api.core.v1.Node node = 2;
   repeated PodState podStates = 3;
   repeated SessionState sessionStates = 4;
 }
 
 /* node report back full state to fornax core*/
 message NodeState {
-  required int64 nodeRevision = 1;
-  required k8s.io.api.core.v1.Node node = 2;
+  int64 nodeRevision = 1;
+  k8s.io.api.core.v1.Node node = 2;
   repeated PodState podStates = 3;
 }
 
@@ -112,7 +112,7 @@ message NodeState {
 message NodeFullSync {}
 
 message PodState {
-  required int64 nodeRevision = 1;
+  int64 nodeRevision = 1;
   enum State {
     Creating = 0;
     Standby = 10;
@@ -122,49 +122,49 @@ message PodState {
     Terminating = 50;
     Terminated = 60;
   }
-  required State state = 2;
-  required k8s.io.api.core.v1.Pod pod = 3;
-  optional PodResource resource = 4;
+  State state = 2;
+  k8s.io.api.core.v1.Pod pod = 3;
+  PodResource resource = 4;
   repeated SessionState sessionStates = 5;
 }
 
 message PodResource {
-  optional k8s.io.api.core.v1.ResourceQuotaStatus resourceQuotaStatus = 1;
+  k8s.io.api.core.v1.ResourceQuotaStatus resourceQuotaStatus = 1;
   repeated k8s.io.api.core.v1.AttachedVolume volumes = 2;
 }
 
 message PodCreate {
-  required string podIdentifier = 1;
+  string podIdentifier = 1;
   enum CreateMode {
     Active = 0;
     Standby = 10;
   }
-  required CreateMode mode = 2;
-  required k8s.io.api.core.v1.Pod pod = 3;
-  optional k8s.io.api.core.v1.ConfigMap configMap = 4;
+  CreateMode mode = 2;
+  k8s.io.api.core.v1.Pod pod = 3;
+  k8s.io.api.core.v1.ConfigMap configMap = 4;
 }
 
 message  PodTerminate {
-  required string podIdentifier = 1;
+  string podIdentifier = 1;
 }
 
 message  PodActive {
-  required string podIdentifier = 1;
+  string podIdentifier = 1;
 }
 
 message SessionState {
-  required int64 nodeRevision = 1;
-  required bytes sessionData = 2;
+  int64 nodeRevision = 1;
+  bytes sessionData = 2;
   repeated bytes clientSessionData = 3;
 }
 
 message SessionOpen {
-  required string sessionIdentifier = 1;
-  required string podIdentifier = 2;
-  required bytes sessionData = 3;
+  string sessionIdentifier = 1;
+  string podIdentifier = 2;
+  bytes sessionData = 3;
 }
 
 message SessionClose {
-  required string sessionIdentifier = 1;
-  required string podIdentifier = 2;
+  string sessionIdentifier = 1;
+  string podIdentifier = 2;
 }

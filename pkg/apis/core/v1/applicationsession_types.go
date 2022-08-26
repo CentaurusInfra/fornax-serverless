@@ -62,16 +62,14 @@ type ApplicationSessionSpec struct {
 	// +optional
 	SessionData string `json:"sessionData,omitempty"`
 
-	// if a application instance evacuated all session, kill it, default false
+	// if a application instance evacuated all session, kill it, default true
 	KillInstanceWhenSessionClosed bool `json:"killInstanceWhenSessionClosed,omitempty"`
 
-	SessionCloseGracePeriodSeconds uint16 `json:"sessionCloseGracePeriodSeconds,omitempty"`
+	// how long to wait for before close session, default 60
+	CloseGracePeriodSeconds *uint16 `json:"closeGracePeriodSeconds,omitempty"`
 
+	// how long to wait for session status from Starting to Available
 	OpenTimeoutSeconds uint16 `json:"openTimeoutSeconds,omitempty"`
-}
-
-// Spec to control the application ingress endpoints
-type SessionConfig struct {
 }
 
 // +enum
@@ -87,10 +85,10 @@ const (
 	// session is allocated to instance, not yet started
 	SessionStatusStarting SessionStatus = "Starting"
 
-	// session is started on instance, no client session yet
+	// session is started on instance, not used yet
 	SessionStatusAvailable SessionStatus = "Available"
 
-	// session is started on instance, client session has join
+	// session is started on instance, session is being used
 	SessionStatusOccupied SessionStatus = "Occupied"
 
 	// session is closed on instance
@@ -100,27 +98,7 @@ const (
 	SessionStatusTimeout SessionStatus = "Timeout"
 )
 
-// +enum
-type SessionAction string
-
-const (
-	// client session exit
-	SessionStart SessionAction = "SessionStart"
-
-	// client session exit
-	SessionClose SessionAction = "SessionClose"
-
-	// client session join
-	ClientJoin SessionAction = "ClientJoin"
-
-	// client session exit
-	ClientExit SessionAction = "ClientExit"
-)
-
 type SessionHistory struct {
-	// The last time this deployment was updated.
-	Action SessionAction `json:"action,omitempty"`
-
 	// The last time this deployment was updated.
 	UpdateTime metav1.Time `json:"updateTime,omitempty"`
 

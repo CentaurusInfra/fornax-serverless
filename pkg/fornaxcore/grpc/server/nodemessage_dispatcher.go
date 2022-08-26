@@ -1,4 +1,5 @@
 /*
+
 Copyright 2022.
 
 Licensed under the Apache License, Version 2.0 (the "License");
@@ -17,15 +18,29 @@ limitations under the License.
 package server
 
 import (
-	"context"
+	"fmt"
 
 	"centaurusinfra.io/fornax-serverless/pkg/fornaxcore/grpc"
 )
 
-type NodeMonitor interface {
-	OnRegistry(ctx context.Context, message *grpc.FornaxCoreMessage) (*grpc.FornaxCoreMessage, error)
-	OnNodeReady(ctx context.Context, message *grpc.FornaxCoreMessage) (*grpc.FornaxCoreMessage, error)
-	OnNodeStateUpdate(ctx context.Context, message *grpc.FornaxCoreMessage) (*grpc.FornaxCoreMessage, error)
-	OnPodStateUpdate(ctx context.Context, message *grpc.FornaxCoreMessage) (*grpc.FornaxCoreMessage, error)
-	OnSessionUpdate(ctx context.Context, message *grpc.FornaxCoreMessage) (*grpc.FornaxCoreMessage, error)
+func (g *grpcServer) getNodeChan(node string) (chan<- *grpc.FornaxCoreMessage, error) {
+	g.RLock()
+	defer g.RUnlock()
+
+	ch, ok := g.nodeGetMessageChans[node]
+	if !ok {
+		return nil, fmt.Errorf("unknown destination")
+	}
+
+	return ch, nil
+}
+
+func (g *grpcServer) DispatchNodeMessage(nodeIdentifier string, message *grpc.FornaxCoreMessage) error {
+	ch, err := g.getNodeChan(nodeIdentifier)
+	if err != nil {
+		return err
+	}
+
+	ch <- message
+	return nil
 }

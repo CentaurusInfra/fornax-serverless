@@ -38,7 +38,7 @@ const (
 func (appc *ApplicationManager) updateApplicationStatus(application *fornaxv1.Application, newStatus *fornaxv1.ApplicationStatus) (*fornaxv1.Application, error) {
 	client := appc.apiServerClient.CoreV1().Applications(application.Namespace)
 
-	klog.Infof(fmt.Sprintf("Updating application status for %s, ", util.ResourceName(application)) +
+	klog.Infof(fmt.Sprintf("Updating application status for %s, ", util.Name(application)) +
 		fmt.Sprintf("totalInstances %d->%d, ", application.Status.TotalInstances, newStatus.TotalInstances) +
 		fmt.Sprintf("desiredInstances %d->%d, ", application.Status.DesiredInstances, newStatus.DesiredInstances) +
 		fmt.Sprintf("pendingInstances %d->%d, ", application.Status.PendingInstances, newStatus.PendingInstances) +

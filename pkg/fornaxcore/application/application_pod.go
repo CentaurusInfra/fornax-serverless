@@ -23,8 +23,7 @@ import (
 	fornaxv1 "centaurusinfra.io/fornax-serverless/pkg/apis/core/v1"
 	"centaurusinfra.io/fornax-serverless/pkg/collection"
 	default_config "centaurusinfra.io/fornax-serverless/pkg/config"
-	"centaurusinfra.io/fornax-serverless/pkg/fornaxcore/internal"
-	"centaurusinfra.io/fornax-serverless/pkg/fornaxcore/pod"
+	ie "centaurusinfra.io/fornax-serverless/pkg/fornaxcore/internal"
 	fornaxpod "centaurusinfra.io/fornax-serverless/pkg/fornaxcore/pod"
 	"centaurusinfra.io/fornax-serverless/pkg/util"
 	fornaxutil "centaurusinfra.io/fornax-serverless/pkg/util"
@@ -63,7 +62,7 @@ type ApplicationPodSummary struct {
 	readyCount    int32
 }
 
-func (pool *ApplicationPool) summaryPod(podManager pod.PodManager) ApplicationPodSummary {
+func (pool *ApplicationPool) summaryPod(podManager ie.PodManager) ApplicationPodSummary {
 	summary := ApplicationPodSummary{}
 	pods := pool.podList()
 	for _, k := range pods {
@@ -127,17 +126,17 @@ func (pool *ApplicationPool) podList() []*ApplicationPod {
 	return keys
 }
 
-func (appc *ApplicationManager) onPodEventFromNode(podEvent *internal.PodEvent) {
-	klog.InfoS("Received a pod event", "pod", util.ResourceName(podEvent.Pod), "type", podEvent.Type, "phase", podEvent.Pod.Status.Phase, "condition", k8spodutil.IsPodReady(podEvent.Pod))
+func (appc *ApplicationManager) onPodEventFromNode(podEvent *ie.PodEvent) {
+	klog.InfoS("Received a pod event", "pod", util.Name(podEvent.Pod), "type", podEvent.Type, "phase", podEvent.Pod.Status.Phase, "condition", k8spodutil.IsPodReady(podEvent.Pod))
 	if _, found := podEvent.Pod.Labels[fornaxv1.LabelFornaxCoreNodeDaemon]; !found {
 		switch podEvent.Type {
-		case internal.PodEventTypeCreate:
+		case ie.PodEventTypeCreate:
 			appc.onPodAddEventFromNode(podEvent.Pod)
-		case internal.PodEventTypeDelete:
+		case ie.PodEventTypeDelete:
 			appc.onPodDeleteEventFromNode(podEvent.Pod)
-		case internal.PodEventTypeUpdate:
+		case ie.PodEventTypeUpdate:
 			appc.onPodAddEventFromNode(podEvent.Pod)
-		case internal.PodEventTypeTerminate:
+		case ie.PodEventTypeTerminate:
 			appc.onPodDeleteEventFromNode(podEvent.Pod)
 		}
 	}
@@ -145,7 +144,7 @@ func (appc *ApplicationManager) onPodEventFromNode(podEvent *internal.PodEvent) 
 
 // When a pod is created or updated, add this pod reference to app pods pool
 func (appc *ApplicationManager) onPodAddEventFromNode(pod *v1.Pod) {
-	podName := fornaxutil.ResourceName(pod)
+	podName := fornaxutil.Name(pod)
 	applicationKey, err := appc.getPodApplicationKey(pod)
 	if err != nil {
 		klog.ErrorS(err, "Can not find application for pod, try best to use label", "pod", podName)
@@ -170,7 +169,7 @@ func (appc *ApplicationManager) onPodAddEventFromNode(pod *v1.Pod) {
 
 // When a pod is deleted, find application that manages it and remove pod reference from its pod pool
 func (appc *ApplicationManager) onPodDeleteEventFromNode(pod *v1.Pod) {
-	podName := fornaxutil.ResourceName(pod)
+	podName := fornaxutil.Name(pod)
 	if pod.DeletionTimestamp == nil {
 		klog.InfoS("Pod does not have deletion timestamp, or pod is still alive, should add it", "pod", podName)
 		appc.onPodAddEventFromNode(pod)
@@ -198,7 +197,7 @@ func (appc *ApplicationManager) onPodDeleteEventFromNode(pod *v1.Pod) {
 }
 
 func (appc *ApplicationManager) deleteApplicationPod(applicationKey string, pod *v1.Pod) error {
-	podName := fornaxutil.ResourceName(pod)
+	podName := fornaxutil.Name(pod)
 	klog.InfoS("Delete a application pod", "application", applicationKey, "pod", podName)
 	_, err := appc.podManager.TerminatePod(pod)
 	if err != nil {
@@ -220,7 +219,7 @@ func (appc *ApplicationManager) createApplicationPod(application *fornaxv1.Appli
 	uid := uuid.New()
 	name := fmt.Sprintf("%s-%s-%d", application.Name, rand.String(16), uid.ClockSequence())
 	podTemplate := appc.getPodApplicationPodTemplate(uid, name, application)
-	pod, err := appc.podManager.AddPod(podTemplate, "")
+	pod, err := appc.podManager.AddPod("", podTemplate)
 	if err != nil {
 		return nil, err
 	}
@@ -255,7 +254,7 @@ func (appc *ApplicationManager) getPodApplicationPodTemplate(uid uuid.UUID, name
 			DeletionTimestamp:          nil,
 			DeletionGracePeriodSeconds: application.DeletionGracePeriodSeconds,
 			Labels: map[string]string{
-				fornaxv1.LabelFornaxCoreApplication: util.ResourceName(application),
+				fornaxv1.LabelFornaxCoreApplication: util.Name(application),
 			},
 			Annotations: map[string]string{},
 			OwnerReferences: []metav1.OwnerReference{
@@ -331,11 +330,20 @@ func (appc *ApplicationManager) getPodApplicationPodTemplate(uid uuid.UUID, name
 		cont := v.DeepCopy()
 		cont.Env = append(cont.Env, v1.EnvVar{
 			Name:  fornaxv1.LabelFornaxCorePod,
-			Value: util.ResourceName(pod),
+			Value: util.Name(pod),
 		})
 		cont.Env = append(cont.Env, v1.EnvVar{
 			Name:  fornaxv1.LabelFornaxCoreApplication,
-			Value: util.ResourceName(application),
+			Value: util.Name(application),
+		})
+		cont.Env = append(cont.Env, v1.EnvVar{
+			Name: fornaxv1.LabelFornaxCoreSessionService,
+			ValueFrom: &v1.EnvVarSource{
+				FieldRef: &v1.ObjectFieldSelector{
+					APIVersion: "v1",
+					FieldPath:  "status.hostIP",
+				},
+			},
 		})
 		containers = append(containers, *cont)
 	}
@@ -455,7 +463,7 @@ func (appc *ApplicationManager) syncApplicationPods(application *fornaxv1.Applic
 				createErrors = append(createErrors, err)
 				continue
 			}
-			appPool.addPod(util.ResourceName(pod), NewApplicationPod(util.ResourceName(pod)))
+			appPool.addPod(util.Name(pod), NewApplicationPod(util.Name(pod)))
 			createdPods = append(createdPods, pod)
 		}
 
@@ -492,7 +500,7 @@ func (appc *ApplicationManager) syncApplicationPods(application *fornaxv1.Applic
 // getPodApplicationKey returns Application Key of pod using LabelFornaxCoreApplication
 func (appc *ApplicationManager) getPodApplicationKey(pod *v1.Pod) (string, error) {
 	if applicationLabel, found := pod.GetLabels()[fornaxv1.LabelFornaxCoreApplication]; !found {
-		klog.Warningf("Pod %s does not have fornaxv1 application label:%s", fornaxutil.ResourceName(pod), fornaxv1.LabelFornaxCoreApplication)
+		klog.Warningf("Pod %s does not have fornaxv1 application label:%s", fornaxutil.Name(pod), fornaxv1.LabelFornaxCoreApplication)
 		return "", nil
 	} else {
 		namespace, name, err := cache.SplitMetaNamespaceKey(applicationLabel)
@@ -523,7 +531,7 @@ func (appc *ApplicationManager) getPodApplicationKey(pod *v1.Pod) (string, error
 				klog.Warning("More than one fornax application have same application label: %s", applicationLabel)
 				// check pod ownerreferences
 				if len(pod.GetOwnerReferences()) == 0 {
-					klog.Warning("Pod %s does not have a valid owner reference, treat it as a orphan pod", fornaxutil.ResourceName(pod))
+					klog.Warning("Pod %s does not have a valid owner reference, treat it as a orphan pod", fornaxutil.Name(pod))
 					return "", nil
 				}
 

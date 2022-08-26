@@ -24,7 +24,7 @@ import (
 	"time"
 
 	fornax "centaurusinfra.io/fornax-serverless/pkg/fornaxcore/grpc"
-	"centaurusinfra.io/fornax-serverless/pkg/nodeagent/retry"
+	"centaurusinfra.io/fornax-serverless/pkg/util"
 	grpc_retry "github.com/grpc-ecosystem/go-grpc-middleware/retry"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -129,7 +129,7 @@ func (f *fornaxCoreClient) connect() error {
 		return nil
 	}
 
-	err := retry.BackoffExec(2*time.Second, 1*time.Minute, 3*time.Minute, 1.7, connect)
+	err := util.BackoffExec(2*time.Second, 1*time.Minute, 3*time.Minute, 1.7, connect)
 	return err
 }
 
@@ -163,7 +163,7 @@ func (f *fornaxCoreClient) recvMessage() {
 		if f.getMessageClient == nil {
 			err := f.initGetMessageClient(ctx, f.identifier)
 			if err != nil {
-				klog.ErrorS(err, "Failed to init fornax core get message client", "endpoint", f.config.endpoint)
+				klog.ErrorS(err, "Failed to init FornaxCore GetMessage client", "endpoint", f.config.endpoint)
 				time.Sleep(2 * time.Second)
 				continue
 			}
@@ -178,13 +178,11 @@ func (f *fornaxCoreClient) recvMessage() {
 
 		if err != nil {
 			klog.ErrorS(err, "Receive message failed with unexpected error, reset to get a new stream client")
-			if err != nil {
-				f.getMessageClient = nil
-				continue
-			}
+			f.getMessageClient = nil
+			continue
 		}
 
-		klog.InfoS("Received a message from FornaxCore", "fornax", f.config.endpoint, "msgType", msg.GetMessageType())
+		klog.InfoS("Received a message from FornaxCore", "msgType", msg.GetMessageType())
 		panicReceivers := []string{}
 		for n, v := range f.receivers {
 			func() {
@@ -205,13 +203,13 @@ func (f *fornaxCoreClient) recvMessage() {
 	}
 }
 
-// Stop implements FornaxCore
+// Stop disconnect from fornac core
 func (f *fornaxCoreClient) Stop() {
 	f.done = true
 	f.disconnect()
 }
 
-// Start implements FornaxCore
+// Start recive message from fornax core
 func (f *fornaxCoreClient) Start() {
 	go f.recvMessage()
 }

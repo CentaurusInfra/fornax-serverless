@@ -90,11 +90,11 @@ type FornaxPod struct {
 type SessionState string
 
 const (
-	SessionStateStarting             SessionState = "Starting"
-	SessionStateFailed               SessionState = "Failed"
-	SessionStateReady                SessionState = "Ready"
-	SessionStateClosed               SessionState = "Closed"
-	SessionStateInsufficientResource SessionState = "InsufficientResource"
+	SessionStateStarting    SessionState = "Starting"
+	SessionStateReady       SessionState = "Ready"
+	SessionStateClosed      SessionState = "Closed"
+	SessionStateClosing     SessionState = "Closing"
+	SessionStateNoHeartbeat SessionState = "NoHeartbeat"
 )
 
 type ClientSession struct {

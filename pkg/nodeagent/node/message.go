@@ -29,14 +29,14 @@ func BuildFornaxGrpcNodeState(node *FornaxNode, revision int64) *grpc.FornaxCore
 	}
 
 	ns := grpc.NodeState{
-		NodeRevision: &revision,
+		NodeRevision: revision,
 		Node:         node.V1Node,
 		PodStates:    podStates,
 	}
 
 	messageType := grpc.MessageType_NODE_STATE
 	return &grpc.FornaxCoreMessage{
-		MessageType: &messageType,
+		MessageType: messageType,
 		MessageBody: &grpc.FornaxCoreMessage_NodeState{
 			NodeState: &ns,
 		},
@@ -50,7 +50,7 @@ func BuildFornaxGrpcNodeReady(node *FornaxNode, revision int64) *grpc.FornaxCore
 		podStates = append(podStates, s.GetPodState())
 	}
 	ns := grpc.NodeReady{
-		NodeRevision:  &revision,
+		NodeRevision:  revision,
 		Node:          node.V1Node,
 		PodStates:     podStates,
 		SessionStates: []*grpc.SessionState{},
@@ -58,7 +58,7 @@ func BuildFornaxGrpcNodeReady(node *FornaxNode, revision int64) *grpc.FornaxCore
 
 	messageType := grpc.MessageType_NODE_READY
 	return &grpc.FornaxCoreMessage{
-		MessageType: &messageType,
+		MessageType: messageType,
 		MessageBody: &grpc.FornaxCoreMessage_NodeReady{
 			NodeReady: &ns,
 		},

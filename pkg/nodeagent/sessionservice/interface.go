@@ -23,12 +23,14 @@ import (
 )
 
 var (
-	SessionNotFoundError = errors.New("Session not found")
-	SessionAlreadyExist  = errors.New("Session is already open")
+	SessionNotFound                 = errors.New("Session not found")
+	SessionAlreadyExist             = errors.New("Session is already open")
+	SessionStreamDisconnected       = errors.New("Session stream not connected")
+	SessionStreamAlreadyEstablished = errors.New("only one stream connection is allowed from one instance")
 )
 
 type SessionService interface {
 	OpenSession(podId, sessionId string, sessionData string, stateCallbackFunc func(internal.SessionState)) error
-	CloseSession(sessionId string) error
-	Ping(sessionId string) (internal.SessionState, error)
+	CloseSession(podId, sessionId string, graceSeconds uint16) error
+	PingSession(podId, sessionId string, stateCallbackFunc func(internal.SessionState)) error
 }

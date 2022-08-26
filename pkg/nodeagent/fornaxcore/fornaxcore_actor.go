@@ -67,7 +67,7 @@ func (n *FornaxCoreActor) Start(nodeActor message.ActorRef) error {
 			select {
 			case msg, ok := <-n.fornaxChannel:
 				if ok {
-					if *msg.GetNodeIdentifier().Identifier != n.identifier {
+					if msg.GetNodeIdentifier().GetIdentifier() != n.identifier {
 						klog.Warningf("Received a message meant to send to different node %s, skip it", msg.GetMessageIdentifier)
 					}
 
@@ -112,10 +112,10 @@ func (n *FornaxCoreActor) actorMessageProcess(msg message.ActorMessage) (interfa
 	messageSeq := fmt.Sprintf("%d", n.messageSeq)
 	for _, v := range n.fornaxcores {
 		msgBody := msg.Body.(*fornax.FornaxCoreMessage)
-		msgBody.MessageIdentifier = &messageSeq
+		msgBody.MessageIdentifier = messageSeq
 		msgBody.NodeIdentifier = &fornax.NodeIdentifier{
-			Ip:         &n.nodeIP,
-			Identifier: &n.identifier,
+			Ip:         n.nodeIP,
+			Identifier: n.identifier,
 		}
 		if err := v.PutMessage(msgBody); err != nil {
 			klog.ErrorS(err, "failed to send message to fornax core")
@@ -182,8 +182,8 @@ func InitFornaxCoreClients(nodeIp, nodeName string, fornaxCoreIps []string) map[
 	fornaxcores := map[string]FornaxCoreClient{}
 	for _, v := range configs {
 		f := NewFornaxCoreClient(&fornax.NodeIdentifier{
-			Ip:         &nodeIp,
-			Identifier: &nodeName,
+			Ip:         nodeIp,
+			Identifier: nodeName,
 		}, v)
 		f.Start()
 		fornaxcores[v.endpoint] = f

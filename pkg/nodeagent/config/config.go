@@ -48,7 +48,7 @@ const (
 	DefaultRootPath                   = "/var/lib/nodeagent"
 	DefaultDBName                     = "nodeagent.sqlite"
 	DefaultContainerRuntimeEndpoint   = "unix:///run/containerd/containerd.sock"
-	DefaultMaxPods                    = 100
+	DefaultMaxPods                    = 1000
 	DefaultPodPidLimits               = -1
 	DefaultCgroupRoot                 = "/"
 	DefaultCgroupDriver               = "cgroupfs"
@@ -68,6 +68,8 @@ const (
 	DefaultPluginContainersDirName    = "plugin-containers"
 	DefaultPodResourcesDirName        = "pod-resources"
 	DefaultMemoryThrottlingFactor     = 0.8
+	DefaultSessionServicePort         = 1022
+	DefaultNodePortStartingNum        = 1024
 	KubeletPluginsDirSELinuxLabel     = "system_u:object_r:container_file_t:s0"
 	DefaultPodCgroupName              = "containers"
 )
@@ -105,6 +107,8 @@ type NodeConfiguration struct {
 	SystemReserved           v1.ResourceList
 	SeccompProfileRoot       string
 	SeccompDefault           bool
+	NodePortStartingNo       int32
+	SessionServicePort       int32
 }
 
 func DefaultNodeConfiguration() (*NodeConfiguration, error) {
@@ -142,6 +146,8 @@ func DefaultNodeConfiguration() (*NodeConfiguration, error) {
 		PodCgroupName:            DefaultPodCgroupName,
 		RootPath:                 DefaultRootPath,
 		SeccompProfileRoot:       filepath.Join(DefaultRootPath, "seccomp"),
+		NodePortStartingNo:       DefaultNodePortStartingNum,
+		SessionServicePort:       DefaultSessionServicePort,
 		SeccompDefault:           false,
 		ProtectKernelDefaults:    false,
 		SystemCgroupName:         DefaultSystemCgroupName,

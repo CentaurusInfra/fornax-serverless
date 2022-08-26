@@ -23,6 +23,7 @@ const (
 	LabelFornaxCoreNodeDaemon         = "daemon.fornax-serverless.centaurusinfra.io"
 	LabelFornaxCoreApplication        = "application.core.fornax-serverless.centaurusinfra.io"
 	LabelFornaxCoreApplicationSession = "applicationsession.core.fornax-serverless.centaurusinfra.io"
+	LabelFornaxCoreSessionService     = "sessionservice.core.fornax-serverless.centaurusinfra.io"
 )
 
 var (

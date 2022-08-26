@@ -1,0 +1,101 @@
+/*
+Copyright 2022.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
+
+syntax = "proto3";
+package centaurusinfra.io.fornaxcore.nodeagent.sessionservice;
+
+option go_package = "centaurusinfra.io/fornax-serverless/pkg/nodeagent/sessionservice/grpc";
+
+import "google/protobuf/empty.proto";
+import "google/protobuf/timestamp.proto";
+
+service SessionService {
+  rpc getMessage(PodIdentifier) returns (stream SessionMessage);
+  rpc putMessage(SessionMessage) returns (google.protobuf.Empty);
+}
+
+enum MessageType {
+    UNSPECIFIED = 0;
+    SESSION_CONFIGURATION = 100;
+    OPEN_SESSION = 101;
+    CLOSE_SESSION = 102;
+    PING_SESSION = 103;
+    SESSION_STATE = 104;
+}
+ 
+message SessionMessage {
+  string messageIdentifier = 1;
+  SessionIdentifier sessionIdentifier = 2;
+  MessageType messageType = 3;
+  oneof MessageBody {
+    SessionConfiguration sessionConfiguration = 100;
+    OpenSession openSession = 101;
+    CloseSession closeSession = 102;
+    PingSession pingSession = 103;
+    SessionStatus sessionStatus = 104;
+  }
+}
+
+message PodIdentifier {
+  string podId = 1;
+}
+
+message SessionIdentifier {
+  string podId = 1;
+  string identifier = 2;
+}
+
+enum SessionState {
+    STATE_INITIALIZING = 0;
+    STATE_OPEN = 101;
+    STATE_CLOSED = 102;
+    STATE_CLOSING = 103;
+}
+ 
+/* session configuration to session to initialize or modify its configuration*/
+message SessionConfiguration {
+  bytes sessionData = 1; /* a container specific blob*/
+}
+
+/* request container to initialize a session, 
+   container send a session state message back to notify session is ready for client use*/
+message OpenSession {
+  SessionConfiguration sessionConfiguration = 1;
+}
+
+/* close session and notify client to left, and container will close session after gracePeriodSeconds
+   container send a session state message back to notify session is closed*/
+message  CloseSession {
+  int64 gracePeriodSeconds = 1;
+}
+
+/* ping session and request container to report its status container send a session state message back,
+   if session do not reply ping request consecutively, session is considered as dead, and pod will be terminated */
+message  PingSession {
+}
+
+/* container keep its internal state of clients are on this session, in long term it could be managed via ingress gateway*/
+message  ClientSession {
+  string clientIdentifier = 1;
+  google.protobuf.Timestamp timeJoin = 2;
+  google.protobuf.Timestamp timeExit = 3;
+}
+
+/* container report its state and clients is using this session*/
+message SessionStatus {
+  SessionState sessionState = 1;
+  repeated ClientSession clientSession = 2;
+}

@@ -53,19 +53,19 @@ func (*integtestNodeMonitor) OnSessionUpdate(ctx context.Context, message *grpc.
 // OnPodUpdate implements server.NodeMonitor
 func (*integtestNodeMonitor) OnPodStateUpdate(ctx context.Context, message *grpc.FornaxCoreMessage) (*grpc.FornaxCoreMessage, error) {
 	podState := message.GetPodState()
-	klog.InfoS("Received a pod state", "pod", podutil.ResourceName(podState.GetPod()), "state", podState.GetState())
+	klog.InfoS("Received a pod state", "pod", podutil.Name(podState.GetPod()), "state", podState.GetState())
 
 	if podState.GetState() == grpc.PodState_Running {
 		// terminate test pod
-		podId := util.ResourceName(podState.Pod)
+		podId := util.Name(podState.Pod)
 		body := grpc.FornaxCoreMessage_PodTerminate{
 			PodTerminate: &grpc.PodTerminate{
-				PodIdentifier: &podId,
+				PodIdentifier: podId,
 			},
 		}
 		messageType := grpc.MessageType_POD_TERMINATE
 		msg := &grpc.FornaxCoreMessage{
-			MessageType: &messageType,
+			MessageType: messageType,
 			MessageBody: &body,
 		}
 		return msg, nil
@@ -98,14 +98,14 @@ func (*integtestNodeMonitor) OnRegistry(ctx context.Context, message *grpc.Forna
 	node.Spec.PodCIDR = "192.168.68.1/24"
 	nodeConig := grpc.FornaxCoreMessage_NodeConfiguration{
 		NodeConfiguration: &grpc.NodeConfiguration{
-			ClusterDomain: &domain,
+			ClusterDomain: domain,
 			Node:          node,
 			DaemonPods:    []*v1.Pod{daemonPod.DeepCopy()},
 		},
 	}
 	messageType := grpc.MessageType_NODE_CONFIGURATION
 	m := &grpc.FornaxCoreMessage{
-		MessageType: &messageType,
+		MessageType: messageType,
 		MessageBody: &nodeConig,
 	}
 
@@ -264,15 +264,15 @@ func BuildATestPodCreate(appId string) *grpc.FornaxCoreMessage {
 	mode := grpc.PodCreate_Active
 	body := grpc.FornaxCoreMessage_PodCreate{
 		PodCreate: &grpc.PodCreate{
-			PodIdentifier: &podId,
-			Mode:          &mode,
+			PodIdentifier: podId,
+			Mode:          mode,
 			Pod:           testPod,
 			ConfigMap:     &v1.ConfigMap{},
 		},
 	}
 	messageType := grpc.MessageType_POD_CREATE
 	msg := &grpc.FornaxCoreMessage{
-		MessageType: &messageType,
+		MessageType: messageType,
 		MessageBody: &body,
 	}
 	return msg

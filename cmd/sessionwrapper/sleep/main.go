@@ -14,21 +14,27 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package retry
+package main
 
 import (
-	"time"
-
-	"github.com/cenkalti/backoff"
+	"fmt"
+	"os"
+	"os/signal"
+	"syscall"
 )
 
-func BackoffExec(initalInterval, maxInterval, maxElapsedTime time.Duration, multiplier float64, function func() error) error {
-	retry := backoff.NewExponentialBackOff()
-	retry.InitialInterval = initalInterval
-	retry.MaxInterval = maxInterval
-	retry.Multiplier = multiplier
-	retry.MaxElapsedTime = maxElapsedTime
-
-	err := backoff.Retry(function, retry)
-	return err
+func main() {
+	sigCh := make(chan os.Signal, 1)
+	fmt.Println("session ready")
+	signal.Notify(sigCh, syscall.SIGINT)
+	signal.Notify(sigCh, syscall.SIGTERM)
+	for {
+		sig := <-sigCh
+		switch sig {
+		case syscall.SIGINT:
+			os.Exit(1)
+		case syscall.SIGTERM:
+			os.Exit(2)
+		}
+	}
 }

@@ -223,6 +223,8 @@ func podFieldSelectorRuntimeValue(fs *v1.ObjectFieldSelector, pod *v1.Pod, podIP
 		return pod.Spec.NodeName, nil
 	case "spec.serviceAccountName":
 		return pod.Spec.ServiceAccountName, nil
+	case "status.hostIP":
+		return pod.Status.HostIP, nil
 	case "status.podIP":
 		return podIP, nil
 	case "status.podIPs":

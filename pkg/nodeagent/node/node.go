@@ -329,13 +329,13 @@ func NewFornaxNode(nodeConfig config.NodeConfiguration, dependencies *dependency
 	} else {
 		fornaxNode.V1Node = v1node
 	}
-	nodeWithRevision, err := dependencies.NodeStore.GetNode(util.ResourceName(v1node))
+	nodeWithRevision, err := dependencies.NodeStore.GetNode(util.Name(v1node))
 	if err != nil {
 		if err != store.StoreObjectNotFound {
 			return nil, err
 		}
 	} else {
-		if util.ResourceName(nodeWithRevision.Node) != util.ResourceName(v1node) {
+		if util.Name(nodeWithRevision.Node) != util.Name(v1node) {
 			// if node name changed, it's a new node
 			// TODO, check if spec changed, fornax core could send a completed spec back to node agent after it's registered
 			fornaxNode.Revision = 0

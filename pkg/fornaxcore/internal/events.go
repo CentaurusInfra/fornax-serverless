@@ -30,8 +30,9 @@ const (
 )
 
 type NodeEvent struct {
-	Node *v1.Node
-	Type NodeEventType
+	NodeId string
+	Node   *v1.Node
+	Type   NodeEventType
 }
 
 type PodEventType string
@@ -44,9 +45,9 @@ const (
 )
 
 type PodEvent struct {
-	NodeName string
-	Pod      *v1.Pod
-	Type     PodEventType
+	NodeId string
+	Pod    *v1.Pod
+	Type   PodEventType
 }
 
 type SessionEventType string
@@ -59,17 +60,8 @@ const (
 )
 
 type SessionEvent struct {
-	NodeName string
-	Pod      *v1.Pod
-	Session  *fornaxv1.ApplicationSession
-	Type     SessionEventType
-}
-
-type NodeInfoProvider interface {
-	List() []*v1.Node
-	Watch(watcher chan<- interface{})
-}
-
-type PodInfoProvider interface {
-	Watch(watcher chan<- interface{})
+	NodeId  string
+	Pod     *v1.Pod
+	Session *fornaxv1.ApplicationSession
+	Type    SessionEventType
 }

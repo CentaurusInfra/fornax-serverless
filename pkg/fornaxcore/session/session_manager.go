@@ -24,61 +24,68 @@ import (
 	fornaxv1 "centaurusinfra.io/fornax-serverless/pkg/apis/core/v1"
 	fornaxclient "centaurusinfra.io/fornax-serverless/pkg/client/clientset/versioned"
 	"centaurusinfra.io/fornax-serverless/pkg/fornaxcore/grpc/nodeagent"
+	ie "centaurusinfra.io/fornax-serverless/pkg/fornaxcore/internal"
 	"centaurusinfra.io/fornax-serverless/pkg/util"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/util/errors"
+	"k8s.io/klog/v2"
 
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-type SessionManager interface {
-	UpdateSessionStatus(session *fornaxv1.ApplicationSession, newStatus *fornaxv1.ApplicationSessionStatus) (*fornaxv1.ApplicationSession, error)
-	UpdateSessionStatusFromNode(pod *v1.Pod, sessions []*fornaxv1.ApplicationSession) error
-	OpenSession(pod *v1.Pod, session *fornaxv1.ApplicationSession) error
-	CloseSession(pod *v1.Pod, session *fornaxv1.ApplicationSession) error
-}
-
-var _ SessionManager = &sessionManager{}
+var _ ie.SessionInterface = &sessionManager{}
 
 type sessionManager struct {
 	ctx             context.Context
 	nodeAgentProxy  nodeagent.NodeAgentProxy
 	apiServerClient fornaxclient.Interface
+	podManager      ie.PodManager
 }
 
-func NewSessionManager(ctx context.Context, nodeAgentProxy nodeagent.NodeAgentProxy, apiServerClient fornaxclient.Interface) *sessionManager {
+func NewSessionManager(ctx context.Context, nodeAgentProxy nodeagent.NodeAgentProxy, podManager ie.PodManager, apiServerClient fornaxclient.Interface) *sessionManager {
 	mgr := &sessionManager{
 		ctx:             ctx,
 		apiServerClient: apiServerClient,
 		nodeAgentProxy:  nodeAgentProxy,
+		podManager:      podManager,
 	}
 	return mgr
 }
 
 // treat node as authority for opened session status, session status from node could be Starting, Available, Closed,
 // use status from node always, then session will be closed if deletion is requested
-func (sm *sessionManager) UpdateSessionStatusFromNode(pod *v1.Pod, sessions []*fornaxv1.ApplicationSession) error {
+func (sm *sessionManager) UpdateSessionStatusFromNode(nodeId string, pod *v1.Pod, sessions []*fornaxv1.ApplicationSession) error {
 	errs := []error{}
 	for _, session := range sessions {
 		client := sm.apiServerClient.CoreV1().ApplicationSessions(session.Namespace)
 		oldCopy, err := client.Get(context.Background(), session.Name, metav1.GetOptions{})
 		if err != nil {
-			if apierrors.IsNotFound(err) {
-				// session should be closed as fornax core does not have it anymore
+			// session should be closed as fornax core does not have it anymore
+			if apierrors.IsNotFound(err) && util.SessionIsOpen(session) {
 				err = sm.CloseSession(pod, session)
 			}
 
 			errs = append(errs, err)
 		}
-		_, err = sm.UpdateSessionStatus(oldCopy, session.Status.DeepCopy())
+		newStatus := session.Status.DeepCopy()
+		if session.Spec.KillInstanceWhenSessionClosed && newStatus.SessionStatus == fornaxv1.SessionStatusClosed && util.PodNotTerminated(pod) {
+			klog.InfoS("Terminate a pod as KillInstanceWhenSessionClosed is true", "pod", util.Name(pod), "session", util.Name(session))
+			if _, err = sm.podManager.TerminatePod(pod); err != nil {
+				errs = append(errs, err)
+				continue
+			}
+		}
+		err = sm.UpdateSessionStatus(oldCopy, newStatus)
 		if err != nil {
 			errs = append(errs, err)
 		}
+
 	}
 	if len(errs) > 0 {
 		return errors.NewAggregate(errs)
 	}
+
 	return nil
 }
 
@@ -86,7 +93,7 @@ func (sm *sessionManager) CloseSession(pod *v1.Pod, session *fornaxv1.Applicatio
 	if nodeName, found := pod.GetLabels()[fornaxv1.LabelFornaxCoreNode]; found {
 		return sm.nodeAgentProxy.CloseSession(nodeName, pod, session)
 	} else {
-		return fmt.Errorf("Can not find which node this pod is on, %s", util.ResourceName(pod))
+		return fmt.Errorf("Can not find which node this pod is on, %s", util.Name(pod))
 	}
 }
 
@@ -94,22 +101,20 @@ func (sm *sessionManager) OpenSession(pod *v1.Pod, session *fornaxv1.Application
 	if nodeName, found := pod.GetLabels()[fornaxv1.LabelFornaxCoreNode]; found {
 		return sm.nodeAgentProxy.OpenSession(nodeName, pod, session)
 	} else {
-		return fmt.Errorf("Can not find which node session is on, %s", util.ResourceName(session))
+		return fmt.Errorf("Can not find which node session is on, %s", util.Name(session))
 	}
 }
 
-// updateApplicationSessionStatus attempts to update the Status of the given Application Session and return updated Application Session
-func (sm *sessionManager) UpdateSessionStatus(session *fornaxv1.ApplicationSession, newStatus *fornaxv1.ApplicationSessionStatus) (*fornaxv1.ApplicationSession, error) {
-	client := sm.apiServerClient.CoreV1().ApplicationSessions(session.Namespace)
-
+// updateApplicationSessionStatus attempts to update the Status of the given Application Session
+func (sm *sessionManager) UpdateSessionStatus(session *fornaxv1.ApplicationSession, newStatus *fornaxv1.ApplicationSessionStatus) error {
 	if reflect.DeepEqual(session.Status, *newStatus) {
-		return session, nil
+		return nil
 	}
 
 	var getErr, updateErr error
 	updatedSession := session.DeepCopy()
 	updatedSession.Status = *newStatus
-
+	client := sm.apiServerClient.CoreV1().ApplicationSessions(session.Namespace)
 	for i := 0; i <= 3; i++ {
 		updatedSession, updateErr = client.UpdateStatus(context.TODO(), updatedSession, metav1.UpdateOptions{})
 		if updateErr == nil {
@@ -117,7 +122,7 @@ func (sm *sessionManager) UpdateSessionStatus(session *fornaxv1.ApplicationSessi
 		}
 	}
 	if updateErr != nil {
-		return nil, updateErr
+		return updateErr
 	}
 
 	if len(newStatus.ClientSessions) == 0 && !util.SessionIsOpen(updatedSession) {
@@ -136,8 +141,8 @@ func (sm *sessionManager) UpdateSessionStatus(session *fornaxv1.ApplicationSessi
 	}
 
 	if updatedSession, getErr = client.Get(context.TODO(), updatedSession.Name, metav1.GetOptions{}); getErr != nil {
-		return updatedSession, getErr
+		return getErr
 	} else {
-		return updatedSession, getErr
+		return nil
 	}
 }

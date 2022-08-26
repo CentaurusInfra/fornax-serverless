@@ -53,14 +53,14 @@ func BuildFornaxcoreGrpcSessionState(revision int64, session *types.FornaxSessio
 	}
 
 	ns := grpc.SessionState{
-		NodeRevision:      &revision,
+		NodeRevision:      revision,
 		SessionData:       sessionData,
 		ClientSessionData: clientSessionData,
 	}
 
 	messageType := grpc.MessageType_SESSION_STATE
 	return &grpc.FornaxCoreMessage{
-		MessageType: &messageType,
+		MessageType: messageType,
 		MessageBody: &grpc.FornaxCoreMessage_SessionState{
 			SessionState: &ns,
 		},

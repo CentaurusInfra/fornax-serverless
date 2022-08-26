@@ -32,10 +32,7 @@ import (
 )
 
 var (
-	SessionIsAlreadyDeleted  = errors.New("Session is already deleted")
-	ApplicationNotFound      = errors.New("Application not found")
-	PodNotFound              = errors.New("Pod not found")
-	NoAvailablePodForSession = errors.New("Cannot find a pod for session")
+	PodNotFound = errors.New("Pod not found")
 )
 
 const (
@@ -161,11 +158,7 @@ func (appc *ApplicationManager) changeSessionStatus(v *fornaxv1.ApplicationSessi
 		// reset client session to let it can be hard deleted
 		newStatus.ClientSessions = []v1.LocalObjectReference{}
 	}
-	_, err := appc.sessionManager.UpdateSessionStatus(v, newStatus)
-	if err != nil {
-		return err
-	}
-	return nil
+	return appc.sessionManager.UpdateSessionStatus(v, newStatus)
 }
 
 func (appc *ApplicationManager) getSessionApplicationKey(session *fornaxv1.ApplicationSession) (string, error) {
@@ -177,7 +170,7 @@ func (appc *ApplicationManager) getSessionApplicationKey(session *fornaxv1.Appli
 			return "", err
 		}
 
-		applicationKey := util.ResourceName(application)
+		applicationKey := util.Name(application)
 		return applicationKey, nil
 	} else {
 		return "", fmt.Errorf("Session application label:%s is not valid meta namespace key", applicationLabel)
@@ -214,7 +207,7 @@ func (appc *ApplicationManager) onApplicationSessionAddEvent(obj interface{}) {
 		appc.onApplicationSessionDeleteEvent(obj)
 		return
 	}
-	sessionKey := util.ResourceName(session)
+	sessionKey := util.Name(session)
 	applicationKey, err := appc.getSessionApplicationKey(session)
 	if err != nil {
 		klog.ErrorS(err, "Can not get application key", "session", session)
@@ -239,7 +232,7 @@ func (appc *ApplicationManager) onApplicationSessionUpdateEvent(old, cur interfa
 		return
 	}
 
-	sessionKey := util.ResourceName(newCopy)
+	sessionKey := util.Name(newCopy)
 	applicationKey, err := appc.getSessionApplicationKey(newCopy)
 	if err != nil {
 		klog.ErrorS(err, "Can not get application key", "session", newCopy)
@@ -265,7 +258,7 @@ func (appc *ApplicationManager) onApplicationSessionDeleteEvent(obj interface{})
 		session.DeletionTimestamp = util.NewCurrentMetaTime()
 	}
 
-	sessionKey := util.ResourceName(session)
+	sessionKey := util.Name(session)
 	applicationKey, err := appc.getSessionApplicationKey(session)
 	if err != nil {
 		klog.ErrorS(err, "Can not get application key", "session", session)
@@ -333,17 +326,17 @@ func (appc *ApplicationManager) syncApplicationSessions(application *fornaxv1.Ap
 					}
 				}
 				newStatus.PodReference = &v1.LocalObjectReference{
-					Name: util.ResourceName(pod),
+					Name: util.Name(pod),
 				}
 				session.Status = *newStatus
 				err := appc.sessionManager.OpenSession(pod, session)
 				if err != nil {
 					// move to next pod, it could fail to accept other session also
-					klog.ErrorS(err, "Failed to open session", "app", applicationKey, "session", session.Name, "pod", util.ResourceName(pod))
+					klog.ErrorS(err, "Failed to open session", "app", applicationKey, "session", session.Name, "pod", util.Name(pod))
 					sessionErrors = append(sessionErrors, err)
 					continue
 				} else {
-					rp.sessions.Add(util.ResourceName(session))
+					rp.sessions.Add(util.Name(session))
 					si += 1
 					// appc.sessionManager.UpdateSessionStatus(session, newStatus)
 				}
@@ -354,7 +347,7 @@ func (appc *ApplicationManager) syncApplicationSessions(application *fornaxv1.Ap
 	// 2, cleanup timeout session, set session status to timeout and delete it from list
 	for _, v := range timeoutSessions {
 		if err := appc.changeSessionStatus(v, fornaxv1.SessionStatusTimeout); err == nil {
-			pool.deleteSession(util.ResourceName(v))
+			pool.deleteSession(util.Name(v))
 		} else {
 			sessionErrors = append(sessionErrors, err)
 		}
@@ -372,10 +365,10 @@ func (appc *ApplicationManager) syncApplicationSessions(application *fornaxv1.Ap
 			}
 		} else if util.SessionIsPending(v) {
 			if err := appc.changeSessionStatus(v, fornaxv1.SessionStatusClosed); err == nil {
-				pool.deleteSession(util.ResourceName(v))
+				pool.deleteSession(util.Name(v))
 			}
 		} else {
-			pool.deleteSession(util.ResourceName(v))
+			pool.deleteSession(util.Name(v))
 		}
 	}
 
@@ -387,7 +380,7 @@ func (appc *ApplicationManager) syncApplicationSessions(application *fornaxv1.Ap
 }
 
 func (appc *ApplicationManager) closeApplicationSession(v *fornaxv1.ApplicationSession) error {
-	klog.Infof("Close applciation sessions %s", util.ResourceName(v))
+	klog.Infof("Close applciation sessions %s", util.Name(v))
 	if v.Status.PodReference != nil {
 		podName := v.Status.PodReference.Name
 		pod := appc.podManager.FindPod(podName)
@@ -426,8 +419,8 @@ func (appc *ApplicationManager) cleanupSessionOnDeletedPod(pool *ApplicationPool
 	podSessions := []*fornaxv1.ApplicationSession{}
 	for _, v := range sessions {
 		if v.Status.PodReference != nil && v.Status.PodReference.Name == podName {
-			klog.Infof("Delete sessions %s", util.ResourceName(v))
-			pool.deleteSession(util.ResourceName(v))
+			klog.Infof("Delete sessions %s", util.Name(v))
+			pool.deleteSession(util.Name(v))
 			podSessions = append(podSessions, v)
 		}
 	}
@@ -467,7 +460,7 @@ func (appc *ApplicationManager) cleanupSessionOfApplication(applicationKey strin
 			case util.SessionIsPending(v):
 				err = appc.changeSessionStatus(v, fornaxv1.SessionStatusTimeout)
 				if err == nil {
-					pool.deleteSession(util.ResourceName(v))
+					pool.deleteSession(util.Name(v))
 				} else {
 					deleteErrors = append(deleteErrors, err)
 				}

@@ -56,7 +56,7 @@ func RemoveFinalizer(ometa *metav1.ObjectMeta, finalizer string) {
 	ometa.Finalizers = finalizers
 }
 
-func ResourceName(obj interface{}) string {
+func Name(obj interface{}) string {
 	name, _ := cache.MetaNamespaceKeyFunc(obj)
 	return name
 }

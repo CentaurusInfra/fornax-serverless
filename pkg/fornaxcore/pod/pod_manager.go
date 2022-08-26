@@ -32,15 +32,7 @@ import (
 	k8spodutil "k8s.io/kubernetes/pkg/api/v1/pod"
 )
 
-type PodManager interface {
-	AddPod(pod *v1.Pod, nodeName string) (*v1.Pod, error)
-	DeletePod(pod *v1.Pod, nodename string) (*v1.Pod, error)
-	TerminatePod(pod *v1.Pod) (*v1.Pod, error)
-	FindPod(identifier string) *v1.Pod
-	Watch(watcher chan<- interface{})
-}
-
-var _ PodManager = &podManager{}
+var _ ie.PodManager = &podManager{}
 
 type FornaxPodState string
 
@@ -64,7 +56,7 @@ const (
 type PodWithFornaxState struct {
 	v1pod    *v1.Pod
 	podState FornaxPodState
-	nodeName string
+	nodeId   string
 }
 
 type PodPool struct {
@@ -91,7 +83,7 @@ func (pool *PodPool) getItem(identifier string) *PodWithFornaxState {
 func (pool *PodPool) addItem(item *PodWithFornaxState) {
 	pool.mu.Lock()
 	defer pool.mu.Unlock()
-	pool.pods[util.ResourceName(item.v1pod)] = item
+	pool.pods[util.Name(item.v1pod)] = item
 }
 
 func (pool *PodPool) deleteItem(identifier string) {
@@ -129,13 +121,13 @@ func (pool *PodStatePool) findPod(identifier string) *PodWithFornaxState {
 func (pool *PodStatePool) deletePod(p *PodWithFornaxState) {
 	switch p.podState {
 	case PodStatePendingImpl:
-		pool.pendingImplPods.deleteItem(util.ResourceName(p.v1pod))
+		pool.pendingImplPods.deleteItem(util.Name(p.v1pod))
 	case PodStatePendingSchedule:
-		pool.pendingSchedulePods.deleteItem(util.ResourceName(p.v1pod))
+		pool.pendingSchedulePods.deleteItem(util.Name(p.v1pod))
 	case PodStateRunning:
-		pool.runningPods.deleteItem(util.ResourceName(p.v1pod))
+		pool.runningPods.deleteItem(util.Name(p.v1pod))
 	case PodStateTerminating:
-		pool.terminatingPods.deleteItem(util.ResourceName(p.v1pod))
+		pool.terminatingPods.deleteItem(util.Name(p.v1pod))
 	}
 }
 
@@ -177,9 +169,7 @@ func (pm *podManager) Watch(watcher chan<- interface{}) {
 }
 
 func (pm *podManager) Run(podScheduler podscheduler.PodScheduler) error {
-	// start pod scheduler
-	klog.Info("starting pod scheduler")
-
+	klog.Info("starting pod manager")
 	pm.podScheduler = podScheduler
 
 	klog.Info("starting pod manager house keeping and pod updates notification")
@@ -205,7 +195,7 @@ func (pm *podManager) Run(podScheduler podscheduler.PodScheduler) error {
 
 // DeletePod is called by node manager when it found a pod does not exist anymore
 // and pod phase is should PodFailed or PodTerminated and remove it from memory
-func (pm *podManager) DeletePod(pod *v1.Pod, nodeName string) (*v1.Pod, error) {
+func (pm *podManager) DeletePod(nodeId string, pod *v1.Pod) (*v1.Pod, error) {
 	// remove pod from schedule queue, if it does not exit, it's no op
 	pm.podScheduler.RemovePod(pod)
 
@@ -213,7 +203,7 @@ func (pm *podManager) DeletePod(pod *v1.Pod, nodeName string) (*v1.Pod, error) {
 		return nil, PodNotTerminatedYetError
 	}
 
-	oldPodState := pm.podStatePool.findPod(util.ResourceName(pod))
+	oldPodState := pm.podStatePool.findPod(util.Name(pod))
 	if oldPodState == nil {
 		return nil, PodNotFoundError
 	}
@@ -230,9 +220,9 @@ func (pm *podManager) DeletePod(pod *v1.Pod, nodeName string) (*v1.Pod, error) {
 
 	pm.podStatePool.deletePod(oldPodState)
 	pm.podUpdates <- &ie.PodEvent{
-		NodeName: nodeName,
-		Pod:      pod.DeepCopy(),
-		Type:     ie.PodEventTypeDelete,
+		NodeId: nodeId,
+		Pod:    pod.DeepCopy(),
+		Type:   ie.PodEventTypeDelete,
 	}
 
 	return existpod, nil
@@ -243,10 +233,11 @@ func (pm *podManager) DeletePod(pod *v1.Pod, nodeName string) (*v1.Pod, error) {
 // when there is a race condition with pod scheduler when it report back after moving to terminating queeu,
 // pod will be terminate again, if pod is already scheduled, it wait for node agent report back
 func (pm *podManager) TerminatePod(pod *v1.Pod) (*v1.Pod, error) {
+	klog.InfoS("Terminate a pod as requested", "pod", util.Name(pod))
 	// try best to remove pod from schedule queue, if it does not exit, it's no op
 	pm.podScheduler.RemovePod(pod)
 
-	fornaxPodState := pm.podStatePool.findPod(util.ResourceName(pod))
+	fornaxPodState := pm.podStatePool.findPod(util.Name(pod))
 	if fornaxPodState == nil {
 		return nil, PodNotFoundError
 	}
@@ -277,9 +268,9 @@ func (pm *podManager) TerminatePod(pod *v1.Pod) (*v1.Pod, error) {
 	// not terminated yet, let node agent terminate and report back
 	// there could be a race condition with scheduler when scheduler send to node, but node did not report back,
 	// when node report it back and podmanager will terminate it again since pod has deletion timestamp
-	if len(fornaxPodState.nodeName) > 0 && util.PodNotTerminated(existpod) {
+	if len(fornaxPodState.nodeId) > 0 && util.PodNotTerminated(existpod) {
 		// pod is bound with node, let node agent terminate it before deletion
-		err := pm.nodeAgentProxy.TerminatePod(fornaxPodState.nodeName, fornaxPodState.v1pod)
+		err := pm.nodeAgentProxy.TerminatePod(fornaxPodState.nodeId, fornaxPodState.v1pod)
 		if err != nil {
 			return nil, err
 		}
@@ -293,7 +284,7 @@ func (pm *podManager) TerminatePod(pod *v1.Pod) (*v1.Pod, error) {
 	return existpod, nil
 }
 
-func (pm *podManager) createPod(nodeName string, pod *v1.Pod, podState FornaxPodState) {
+func (pm *podManager) createPod(nodeId string, pod *v1.Pod, podState FornaxPodState) {
 	var eType ie.PodEventType
 	switch {
 	case util.PodIsTerminated(pod):
@@ -304,22 +295,22 @@ func (pm *podManager) createPod(nodeName string, pod *v1.Pod, podState FornaxPod
 	pm.podStatePool.addPod(&PodWithFornaxState{
 		v1pod:    pod,
 		podState: podState,
-		nodeName: nodeName,
+		nodeId:   nodeId,
 	})
 	pm.podUpdates <- &ie.PodEvent{
-		NodeName: nodeName,
-		Pod:      pod.DeepCopy(),
-		Type:     eType,
+		NodeId: nodeId,
+		Pod:    pod.DeepCopy(),
+		Type:   eType,
 	}
 }
 
-func (pm *podManager) updatePod(nodeName string, pod *v1.Pod, oldPodState *PodWithFornaxState, newState FornaxPodState) {
+func (pm *podManager) updatePod(nodeId string, pod *v1.Pod, oldPodState *PodWithFornaxState, newState FornaxPodState) {
 	if oldPodState.podState != newState {
 		pm.podStatePool.deletePod(oldPodState)
 		pm.podStatePool.addPod(&PodWithFornaxState{
 			v1pod:    pod,
 			podState: newState,
-			nodeName: nodeName,
+			nodeId:   nodeId,
 		})
 	}
 
@@ -332,15 +323,15 @@ func (pm *podManager) updatePod(nodeName string, pod *v1.Pod, oldPodState *PodWi
 	}
 
 	pm.podUpdates <- &ie.PodEvent{
-		NodeName: nodeName,
-		Pod:      pod.DeepCopy(),
-		Type:     eType,
+		NodeId: nodeId,
+		Pod:    pod.DeepCopy(),
+		Type:   eType,
 	}
 }
 
 // AddPod create a new pod if it does not exist or update pod, it is called when node agent report a newly implemented pod or application try to create a new pending pod
-func (pm *podManager) AddPod(pod *v1.Pod, nodeName string) (*v1.Pod, error) {
-	oldPodState := pm.podStatePool.findPod(util.ResourceName(pod))
+func (pm *podManager) AddPod(nodeId string, pod *v1.Pod) (*v1.Pod, error) {
+	oldPodState := pm.podStatePool.findPod(util.Name(pod))
 	if oldPodState == nil {
 		newPod := pod.DeepCopy()
 		// pod does not exist in pod manager, add it into map and delete it
@@ -350,15 +341,15 @@ func (pm *podManager) AddPod(pod *v1.Pod, nodeName string) (*v1.Pod, error) {
 			if newPod.DeletionTimestamp == nil {
 				newPod.DeletionTimestamp = util.NewCurrentMetaTime()
 			}
-			pm.createPod(nodeName, newPod, PodStateTerminating)
+			pm.createPod(nodeId, newPod, PodStateTerminating)
 		} else if len(newPod.Status.HostIP) > 0 {
 			if k8spodutil.IsPodReady(newPod) {
-				pm.createPod(nodeName, newPod, PodStateRunning)
+				pm.createPod(nodeId, newPod, PodStateRunning)
 			} else {
-				pm.createPod(nodeName, newPod, PodStatePendingImpl)
+				pm.createPod(nodeId, newPod, PodStatePendingImpl)
 			}
 		} else {
-			pm.createPod(nodeName, newPod, PodStatePendingSchedule)
+			pm.createPod(nodeId, newPod, PodStatePendingSchedule)
 			pm.podScheduler.AddPod(newPod, 0*time.Second)
 		}
 		return newPod, nil
@@ -370,26 +361,26 @@ func (pm *podManager) AddPod(pod *v1.Pod, nodeName string) (*v1.Pod, error) {
 		}
 		existPodState := oldPodState.podState
 		util.MergePod(existPod, pod)
-		oldPodState.nodeName = nodeName
+		oldPodState.nodeId = nodeId
 		if util.PodIsTerminated(pod) {
 			// pod is reported back by node agent as a terminated or failed pod, delete it
 			if existPod.DeletionTimestamp == nil {
 				existPod.DeletionTimestamp = util.NewCurrentMetaTime()
 			}
-			pm.updatePod(nodeName, existPod, oldPodState, PodStateTerminating)
-		} else if len(nodeName) > 0 {
+			pm.updatePod(nodeId, existPod, oldPodState, PodStateTerminating)
+		} else if len(nodeId) > 0 {
 			// pod is reported back by node agent while pod owner determinted pod should be deleted, send node terminate message
 			if existPod.DeletionTimestamp != nil && pod.DeletionTimestamp == nil {
-				klog.InfoS("Terminate a running pod which has delete timestamp", "pod", util.ResourceName(pod))
-				err := pm.nodeAgentProxy.TerminatePod(nodeName, pod)
+				klog.InfoS("Terminate a running pod which has delete timestamp", "pod", util.Name(pod))
+				err := pm.nodeAgentProxy.TerminatePod(nodeId, pod)
 				if err != nil {
 					return nil, err
 				}
-				pm.updatePod(nodeName, existPod, oldPodState, PodStateTerminating)
+				pm.updatePod(nodeId, existPod, oldPodState, PodStateTerminating)
 			} else if k8spodutil.IsPodReady(existPod) {
-				pm.updatePod(nodeName, existPod, oldPodState, PodStateRunning)
+				pm.updatePod(nodeId, existPod, oldPodState, PodStateRunning)
 			} else {
-				pm.updatePod(nodeName, existPod, oldPodState, PodStatePendingImpl)
+				pm.updatePod(nodeId, existPod, oldPodState, PodStatePendingImpl)
 			}
 		} else {
 			// pod does not have host ip in status should be in pending schedule state,
@@ -406,15 +397,15 @@ func (pm *podManager) AddPod(pod *v1.Pod, nodeName string) (*v1.Pod, error) {
 func (pm *podManager) pruneTerminatingPods() {
 	terminatingPods := pm.podStatePool.terminatingPods.copyMap()
 	for name, pod := range terminatingPods {
-		if util.PodIsTerminated(pod.v1pod) || (len(pod.nodeName) == 0 && util.PodNotInGracePeriod(pod.v1pod)) {
+		if util.PodIsTerminated(pod.v1pod) || (len(pod.nodeId) == 0 && util.PodNotInGracePeriod(pod.v1pod)) {
 			pm.podStatePool.terminatingPods.deleteItem(name)
 			pm.podUpdates <- &ie.PodEvent{
-				NodeName: pod.nodeName,
-				Pod:      pod.v1pod.DeepCopy(),
-				Type:     ie.PodEventTypeDelete,
+				NodeId: pod.nodeId,
+				Pod:    pod.v1pod.DeepCopy(),
+				Type:   ie.PodEventTypeDelete,
 			}
 		} else {
-			klog.InfoS("A terminating pod", "pod", name, "phase", pod.v1pod.Status.Phase, "hostIp", pod.v1pod.Status.HostIP, "nodename", pod.nodeName, "deletion time", pod.v1pod.DeletionTimestamp, "grace second", *pod.v1pod.DeletionGracePeriodSeconds)
+			klog.InfoS("A terminating pod", "pod", name, "phase", pod.v1pod.Status.Phase, "hostIp", pod.v1pod.Status.HostIP, "nodename", pod.nodeId, "deletion time", pod.v1pod.DeletionTimestamp, "grace second", *pod.v1pod.DeletionGracePeriodSeconds)
 		}
 	}
 }

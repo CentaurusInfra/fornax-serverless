@@ -1,0 +1,41 @@
+FROM golang:1.18-bullseye as build
+
+# Set destination for COPY
+WORKDIR /sessionwrapper
+
+# Copy the source code. Note the slash at the end, as explained in
+# https://docs.docker.com/engine/reference/builder/#copy
+COPY go.mod .
+COPY go.sum .
+COPY ./kubernetes ./kubernetes/
+COPY ./pkg ./pkg/
+COPY ./cmd ./cmd/
+
+# Download Go modules
+RUN go mod download
+
+# Build
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags="-w -s" -o /opt/bin/sessionwrapper ./cmd/sessionwrapper/main.go
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags="-w -s" -o /opt/bin/sessionwrapper-sleep ./cmd/sessionwrapper/sleep/main.go
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags="-w -s" -o /opt/bin/sessionwrapper-echoserver ./cmd/sessionwrapper/echoserver/main.go
+
+# This is for documentation purposes only.
+# To actually open the port, runtime parameters
+# must be supplied to the docker command.
+EXPOSE 8080
+
+# (Optional) environment variable that our dockerised
+# application can make use of. The value of environment
+# variables can also be set via parameters supplied
+# to the docker command on the command line.
+#ENV SOME_ENV=SOME_VALUE
+
+#FROM gcr.io/distroless/base-debian11
+FROM gcr.io/distroless/static-debian11
+
+COPY --from=build /opt/bin/sessionwrapper /opt/bin/sessionwrapper
+COPY --from=build /opt/bin/sessionwrapper-sleep /opt/bin/sessionwrapper-sleep
+COPY --from=build /opt/bin/sessionwrapper-echoserver /opt/bin/sessionwrapper-echoserver
+
+# Run
+CMD [ "/opt/bin/sessionwrapper" ]

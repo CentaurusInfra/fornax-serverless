@@ -24,7 +24,7 @@ import (
 	"time"
 
 	fornax "centaurusinfra.io/fornax-serverless/pkg/fornaxcore/grpc"
-	"centaurusinfra.io/fornax-serverless/pkg/nodeagent/retry"
+	"centaurusinfra.io/fornax-serverless/pkg/util"
 	grpc_retry "github.com/grpc-ecosystem/go-grpc-middleware/retry"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -129,7 +129,7 @@ func (f *fornaxCoreClient) connect() error {
 		return nil
 	}
 
-	err := retry.BackoffExec(2*time.Second, 1*time.Minute, 3*time.Minute, 1.7, connect)
+	err := util.BackoffExec(2*time.Second, 1*time.Minute, 3*time.Minute, 1.7, connect)
 	return err
 }
 

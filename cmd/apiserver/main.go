@@ -80,18 +80,14 @@ func main() {
 	// new fornaxcore grpc grpcServer which implement node agent proxy
 	grpcServer := grpc_server.NewGrpcServer()
 
-	sessionManager := session.NewSessionManager(context.Background(), grpcServer, apiServerClient)
-
 	// start node and pod manager
 	podManager := pod.NewPodManager(context.Background(), grpcServer)
+	sessionManager := session.NewSessionManager(context.Background(), grpcServer, podManager, apiServerClient)
 	nodeManager := node.NewNodeManager(context.Background(), node.DefaultStaleNodeTimeout, grpcServer, podManager, sessionManager)
-	klog.Info("starting node manager")
-	nodeManager.Run()
-
-	klog.Info("starting pod manager")
 	podScheduler := podscheduler.NewPodScheduler(context.Background(), grpcServer, nodeManager, podManager)
-	podScheduler.Run()
 	podManager.Run(podScheduler)
+	podScheduler.Run()
+	nodeManager.Run()
 
 	// start fornaxcore grpc server to listen to nodeagent
 	klog.Info("starting fornaxcore grpc server")
@@ -105,6 +101,7 @@ func main() {
 	klog.Info("Fornaxcore grpc server started")
 
 	// start application manager at last as it require api server
+	klog.Info("starting application manager")
 	appManager := application.NewApplicationManager(context.Background(), podManager, sessionManager, apiServerClient)
 	go appManager.Run(context.Background())
 
@@ -115,14 +112,14 @@ func main() {
 		WithLocalDebugExtension().
 		WithResource(&fornaxv1.Application{}).
 		WithResource(&fornaxv1.ApplicationSession{})
-		// WithResourceAndStorage(&fornaxv1.ApplicationInstance{}, storageFunc).
-		// WithResourceAndStorage(&fornaxv1.ClientSession{}, storageFunc).
-		// WithResourceAndStorage(&fornaxv1.IngressEndpoint{}, storageFunc).
-		// WithConfigFns(func(config *apiserver.RecommendedConfig) *apiserver.RecommendedConfig {
-		//  fmt.Printf("%T\n", config.Authentication.Authenticator)
-		//  fmt.Println(config.Authentication.APIAudiences)
-		//  return config
-		// })
+	// WithResourceAndStorage(&fornaxv1.ApplicationInstance{}, storageFunc).
+	// WithResourceAndStorage(&fornaxv1.ClientSession{}, storageFunc).
+	// WithResourceAndStorage(&fornaxv1.IngressEndpoint{}, storageFunc).
+	// WithConfigFns(func(config *apiserver.RecommendedConfig) *apiserver.RecommendedConfig {
+	//  fmt.Printf("%T\n", config.Authentication.Authenticator)
+	//  fmt.Println(config.Authentication.APIAudiences)
+	//  return config
+	// })
 
 	err = apiserver.Execute()
 	if err != nil {

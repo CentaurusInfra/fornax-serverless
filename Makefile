@@ -1,7 +1,5 @@
 # Image URL to use all building/pushing image targets
-IMG ?= controller:latest
-# ENVTEST_K8S_VERSION refers to the version of kubebuilder assets to be downloaded by envtest binary.
-ENVTEST_K8S_VERSION = 1.23
+VERSION ?= v0.1.0
 
 # Get the currently used golang install path (in GOPATH/bin, unless GOBIN is set)
 ifeq (,$(shell go env GOBIN))
@@ -63,7 +61,7 @@ vet: ## Run go vet against code.
 
 .PHONY: test
 test: manifests generate fmt vet envtest ## Run tests.
-	KUBEBUILDER_ASSETS="$(shell $(ENVTEST) use $(ENVTEST_K8S_VERSION) -p path)" go test ./... -coverprofile cover.out
+	go test ./... -coverprofile cover.out
 
 ##@ Build
 
@@ -79,12 +77,18 @@ build: generate fmt vet ## Build binary.
 run: manifests generate fmt vet ## Run from your host.
 
 .PHONY: docker-build
-docker-build: test ## Build docker image with the manager.
-	docker build -t ${IMG} .
+docker-build: test ## Build docker image
+	docker build -f ./Dockerfile.sessionwrapper -t centaurusinfra.io/fornax-serverless/session-wrapper:${VERSION} .
 
 .PHONY: docker-push
-docker-push: ## Push docker image with the manager.
-	docker push ${IMG}
+docker-push: ## Push docker image into docker hub registry
+	docker push centaurusinfra.io/fornax-serverless/session-wrapper:${VERSION}
+
+.PHONY: containerd-local-push
+containerd-local-push: ## Push docker image into a local containerd for test
+	docker image save -o /tmp/centaurusinfra.io.fornax-serverless.session-wrapper.img centaurusinfra.io/fornax-serverless/session-wrapper:${VERSION}
+	@sudo crictl rmi centaurusinfra.io/fornax-serverless/session-wrapper:${VERSION}
+	@sudo ctr -n=k8s.io image import /tmp/centaurusinfra.io.fornax-serverless.session-wrapper.img
 
 .PHONY: check
 check:
@@ -172,7 +176,11 @@ protoc-gen: ## Download protc-gen locally if necessary.
 		--go_opt=Mk8s.io/apimachinery/pkg/runtime/generated.proto=k8s.io/apimachinery/pkg/runtime \
 		--go_opt=Mk8s.io/apimachinery/pkg/runtime/schema/generated.proto=k8s.io/apimachinery/pkg/runtime/schema \
 		--go_opt=Mk8s.io/apimachinery/pkg/util/intstr/generated.proto=k8s.io/apimachinery/pkg/util/intstr \
-		pkg/fornaxcore/fornaxcore.proto
+		pkg/fornaxcore/grpc/fornaxcore.proto
+	$(PROTOC) -I=./ -I=./vendor \
+		--go_out=../.. \
+		--go-grpc_out=../../ \
+		pkg/nodeagent/sessionservice/grpc/session_service.proto
 
 KUSTOMIZE = $(shell pwd)/bin/kustomize
 .PHONY: kustomize

@@ -1,7 +1,6 @@
 spec:
   applicationNamespacedName: game1/nginx
   sessionData: my-nginx1-session-data
-  sessionConfig:
-    numOfSessionOfInstance: 1
-    sessionOpenTimeoutSeconds: 30
-    sessionCloseGracePeriodSeconds: 30
+  killInstanceWhenSessionClosed: true
+  openTimeoutSeconds: 30
+  closeGracePeriodSeconds: 30

@@ -33,6 +33,10 @@ type SessionActor struct {
 	supervisor     message.ActorRef
 }
 
+const (
+	DefaultCloseSessionGraceSeconds = uint16(120)
+)
+
 func NewSessionActor(session *types.FornaxSession, sessionService sessionservice.SessionService, supervisor message.ActorRef) *SessionActor {
 	actor := &SessionActor{
 		session:        session,
@@ -42,18 +46,38 @@ func NewSessionActor(session *types.FornaxSession, sessionService sessionservice
 	return actor
 }
 
+// try to open a session with session service, if it failed, send a session closed message
 func (a *SessionActor) OpenSession() error {
 	if util.SessionIsClosed(a.session.Session) && len(a.session.ClientSessions) == 0 {
 		return fmt.Errorf("Session %s already closed", a.session.Identifier)
 	}
 	podId := a.session.PodIdentifier
-	return a.sessionService.OpenSession(podId, a.session.Identifier, a.session.Session.Spec.SessionData, a.receiveSessionState)
+	err := a.sessionService.OpenSession(podId, a.session.Identifier, a.session.Session.Spec.SessionData, a.receiveSessionState)
+	if err != nil {
+		if err == sessionservice.SessionAlreadyExist {
+			// TODO handle it
+		} else {
+			a.receiveSessionState(internal.SessionState{
+				SessionId:      a.session.Identifier,
+				SessionState:   types.SessionStateClosed,
+				ClientSessions: []types.ClientSession{},
+			})
+			return err
+		}
+	}
+	return nil
+
 }
 
+// try to open a session with session service, if it failed, send a session closed message
 func (a *SessionActor) CloseSession() (err error) {
-	if util.SessionIsOpen(a.session.Session) || len(a.session.ClientSessions) > 0 {
-		err = a.sessionService.CloseSession(a.session.Identifier)
-		if err != nil && err == sessionservice.SessionNotFoundError {
+	graceSeconds := DefaultCloseSessionGraceSeconds
+	if a.session.Session.Spec.CloseGracePeriodSeconds != nil {
+		graceSeconds = *a.session.Session.Spec.CloseGracePeriodSeconds
+	}
+	if util.SessionIsOpen(a.session.Session) {
+		err = a.sessionService.CloseSession(a.session.PodIdentifier, a.session.Identifier, graceSeconds)
+		if err != nil && err == sessionservice.SessionNotFound {
 			// send session closed state event
 			a.receiveSessionState(internal.SessionState{
 				SessionId:      a.session.Identifier,
@@ -66,20 +90,7 @@ func (a *SessionActor) CloseSession() (err error) {
 }
 
 func (a *SessionActor) PingSession() error {
-	state, err := a.sessionService.Ping(a.session.Identifier)
-	if err == nil {
-		a.receiveSessionState(state)
-	} else {
-		if err == sessionservice.SessionNotFoundError {
-			// send session closed state event
-			a.receiveSessionState(internal.SessionState{
-				SessionId:      a.session.Identifier,
-				SessionState:   types.SessionStateClosed,
-				ClientSessions: []types.ClientSession{},
-			})
-		}
-	}
-	return err
+	return a.sessionService.PingSession(a.session.PodIdentifier, a.session.Identifier, a.receiveSessionState)
 }
 
 // session actor forward session state to pod to handle

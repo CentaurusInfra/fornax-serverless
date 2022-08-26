@@ -1,0 +1,36 @@
+apiVersion: core.fornax-serverless.centaurusinfra.io/v1
+kind: Application
+metadata:
+  name: echoserver
+  labels:
+    name: sessionwrapper-echoserver
+spec:
+  scalingPolicy:
+    minimumInstance: 1
+    maximumInstance: 30
+    burst: 1
+    scalingPolicyType: idle_session_number
+    idleSessionNumThreshold:
+      highWaterMark: 3
+      lowWaterMark: 1
+  containers:
+    - image: centaurusinfra.io/fornax-serverless/session-wrapper:v0.1.0
+      name: echoserver
+      env:
+        - name: SESSION_WRAPPER_OPEN_SESSION_CMD
+          value: "/opt/bin/sessionwrapper-echoserver"
+        - name: SESSION_WRAPPER_ECHO_SERVER_PORT
+          value: "80"
+      resources:
+        requests:
+          memory: "50M"
+          cpu: "0.5"
+        limits:
+          memory: "50M"
+          cpu: "0.5"
+      ports:
+        - containerPort: 80
+          name: echoserver
+  configData:
+    config1: data1
+    config2: data2

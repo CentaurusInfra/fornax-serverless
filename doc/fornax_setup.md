@@ -268,3 +268,10 @@ post_session game1  ./hack/test-data/nginx-create-session.yaml
 kubectl --kubeconfig kubeconfig get applicationsession --all-namespaces
 ```
 
+## 4. Reference and Help
+1. If you want run git pull or some other git command, but you only see this error message:
+   - error: cannot open .git/FETCH_HEAD: Permission denied
+   - you can run following command to solve this issues:
+   ```sh
+   sudo chown -R $USER: .
+   ```

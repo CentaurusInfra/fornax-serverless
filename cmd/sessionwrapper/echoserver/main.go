@@ -26,21 +26,20 @@ import (
 
 func main() {
 	sigCh := make(chan os.Signal, 1)
-	port := os.Getenv("SESSION_WRAPPER_ECHO_SERVER_PORT")
-	listen, err := net.Listen("tcp", fmt.Sprintf("0.0.0.0:%s", port))
+	listen, err := net.Listen("tcp", "0.0.0.0:80")
 	if err != nil {
 		fmt.Println(err)
 		os.Exit(-1)
 	}
 
-	fmt.Println("echo server ready on port", port)
+	fmt.Println("echo server ready on port", 80)
 	go func() {
 		for {
 			conn, err := listen.Accept()
 			if err != nil {
 				fmt.Println(err)
-				os.Exit(-1)
 				fmt.Println("echo server exit")
+				os.Exit(-1)
 			}
 			go handleConnection(conn)
 		}
@@ -73,7 +72,7 @@ func handleConnection(conn net.Conn) {
 			return
 		}
 		// respond
-		conn.Write([]byte("Hi back!"))
+		conn.Write([]byte("Hi!"))
 		conn.Write(buffer)
 	}
 }

@@ -19,8 +19,6 @@ spec:
       env:
         - name: SESSION_WRAPPER_OPEN_SESSION_CMD
           value: "/opt/bin/sessionwrapper-echoserver"
-        - name: SESSION_WRAPPER_ECHO_SERVER_PORT
-          value: "80"
       resources:
         requests:
           memory: "50M"

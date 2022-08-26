@@ -17,6 +17,7 @@ limitations under the License.
 package snode
 
 import (
+	"encoding/json"
 	"fmt"
 	"sync"
 	"time"
@@ -28,6 +29,8 @@ import (
 	internal "centaurusinfra.io/fornax-serverless/pkg/nodeagent/message"
 	"centaurusinfra.io/fornax-serverless/pkg/nodeagent/node"
 	"centaurusinfra.io/fornax-serverless/pkg/nodeagent/pod"
+	"centaurusinfra.io/fornax-serverless/pkg/nodeagent/session"
+	"centaurusinfra.io/fornax-serverless/pkg/nodeagent/types"
 	fornaxtypes "centaurusinfra.io/fornax-serverless/pkg/nodeagent/types"
 	"centaurusinfra.io/fornax-serverless/pkg/util"
 
@@ -95,11 +98,11 @@ func (n *SimulationNodeActor) startStateReport() {
 	}, 1*time.Minute, n.stopCh)
 }
 
-func (n *SimulationNodeActor) incrementNodeRevision() (int64, error) {
+func (n *SimulationNodeActor) incrementNodeRevision() int64 {
 	n.nodeMutex.Lock()
 	defer n.nodeMutex.Unlock()
 	n.node.Revision += 1
-	return n.node.Revision, nil
+	return n.node.Revision
 }
 
 func (n *SimulationNodeActor) actorMessageProcess(msg message.ActorMessage) (interface{}, error) {
@@ -187,13 +190,11 @@ func (n *SimulationNodeActor) onNodeConfigurationCommand(msg *fornaxgrpc.NodeCon
 			if IsNodeStatusReady(n.node) {
 				klog.InfoS("Node is ready, tell fornax core")
 				// bump revision to let fornax core to update node status
-				revision, err := n.incrementNodeRevision()
-				if err == nil {
-					n.node.V1Node.Status.Phase = v1.NodeRunning
-					n.notify(n.fornoxCoreRef, node.BuildFornaxGrpcNodeReady(n.node, revision))
-					n.state = node.NodeActorStateReady
-					n.startStateReport()
-				}
+				revision := n.incrementNodeRevision()
+				n.node.V1Node.Status.Phase = v1.NodeRunning
+				n.notify(n.fornoxCoreRef, node.BuildFornaxGrpcNodeReady(n.node, revision))
+				n.state = node.NodeActorStateReady
+				n.startStateReport()
 			} else {
 				time.Sleep(5 * time.Second)
 			}
@@ -322,15 +323,13 @@ func (n *SimulationNodeActor) onPodCreateCommand(msg *fornaxgrpc.PodCreate) erro
 		conditions = append(conditions, podScheduledCondition)
 		fpod.Pod.Status.Conditions = conditions
 
-		klog.Info("Pod have been created, ", "Pod Identifier ID: ", fpod.Identifier)
 		time.Sleep(1 * time.Second)
 		fpod.FornaxPodState = fornaxtypes.PodStateRunning
-		n.incrementNodeRevision()
+		revision := n.incrementNodeRevision()
+		fpod.Pod.ResourceVersion = fmt.Sprint("%i", revision)
+		klog.Info("Pod have been created, ", "Pod Identifier ID: ", fpod.Identifier)
 		n.notify(n.fornoxCoreRef, pod.BuildFornaxcoreGrpcPodState(n.node.Revision, fpod))
 	} else {
-		// TODO, need to update daemon if spec changed
-		// not supposed to receive create command for a existing pod, ignore it and send back pod status
-		// pod should be terminate and recreated for update case
 		return fmt.Errorf("Pod: %s already exist", msg.GetPodIdentifier())
 	}
 	return nil
@@ -342,11 +341,11 @@ func (n *SimulationNodeActor) onPodTerminateCommand(msg *fornaxgrpc.PodTerminate
 	if fpod == nil {
 		return fmt.Errorf("Pod: %s does not exist, fornax core is not in sync", msg.GetPodIdentifier())
 	} else {
+		time.Sleep(1 * time.Second)
 		fpod.Pod.Status.Phase = v1.PodSucceeded
 		fpod.FornaxPodState = fornaxtypes.PodStateTerminated
-		klog.Info("Pod will be terminated and Pod ID: ", fpod.Identifier)
-		time.Sleep(1 * time.Second)
-		n.incrementNodeRevision()
+		revision := n.incrementNodeRevision()
+		fpod.Pod.ResourceVersion = fmt.Sprint("%i", revision)
 		n.notify(n.fornoxCoreRef, pod.BuildFornaxcoreGrpcPodState(n.node.Revision, fpod))
 		n.node.Pods.Del(msg.GetPodIdentifier())
 		klog.Info("Pod have been terminated and Pod ID: ", fpod.Identifier)
@@ -361,12 +360,53 @@ func (n *SimulationNodeActor) onPodActiveCommand(msg *fornaxgrpc.PodActive) erro
 
 // find pod actor to let it open a session, if pod actor does not exist, return failure
 func (n *SimulationNodeActor) onSessionOpenCommand(msg *fornaxgrpc.SessionOpen) error {
-	panic("not implemented")
+	if n.state != node.NodeActorStateReady {
+		return fmt.Errorf("node is not in ready state to open a session")
+	}
+	sess := &fornaxv1.ApplicationSession{}
+	if err := json.Unmarshal(msg.GetSessionData(), sess); err != nil {
+		return err
+	}
+	fpod := n.node.Pods.Get(msg.GetPodIdentifier())
+	if fpod == nil {
+		return fmt.Errorf("Pod: %s does not exist, can not open session", msg.GetPodIdentifier())
+	} else {
+		sessId := util.Name(sess)
+		fsess := &types.FornaxSession{
+			Identifier:     sessId,
+			PodIdentifier:  fpod.Identifier,
+			Session:        sess,
+			ClientSessions: map[string]*fornaxtypes.ClientSession{},
+		}
+		revision := n.incrementNodeRevision()
+		sess.ResourceVersion = fmt.Sprint("%i", revision)
+		fpod.Sessions[sessId] = fsess
+		fsess.Session.Status.SessionStatus = fornaxv1.SessionStatusAvailable
+		n.notify(n.fornoxCoreRef, session.BuildFornaxcoreGrpcSessionState(revision, fsess))
+	}
+	return nil
 }
 
 // find pod actor to let it terminate a session, if pod actor does not exist, return failure
 func (n *SimulationNodeActor) onSessionCloseCommand(msg *fornaxgrpc.SessionClose) error {
-	panic("not implemented")
+	sessId := msg.GetSessionIdentifier()
+	podId := msg.GetPodIdentifier()
+
+	fpod := n.node.Pods.Get(podId)
+	if fpod == nil {
+		return fmt.Errorf("Pod: %s does not exist, can not terminate session", podId)
+	} else {
+		if fsess, found := fpod.Sessions[sessId]; found {
+			revision := n.incrementNodeRevision()
+			fsess.Session.ResourceVersion = fmt.Sprint("%i", revision)
+			fsess.Session.Status.SessionStatus = fornaxv1.SessionStatusClosed
+			n.notify(n.fornoxCoreRef, session.BuildFornaxcoreGrpcSessionState(revision, fsess))
+		} else {
+			return fmt.Errorf("Session: %s does not exist, can not terminate session", sessId)
+		}
+	}
+	return nil
+
 }
 
 func (n *SimulationNodeActor) notify(receiver message.ActorRef, msg interface{}) {

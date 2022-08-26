@@ -35,13 +35,13 @@ var (
 )
 
 type MessageDispatcher interface {
-	DispatchMessage(node string, message *grpc.FornaxCoreMessage) error
+	DispatchNodeMessage(nodeId string, message *grpc.FornaxCoreMessage) error
 }
-type NodeAgentProxy interface {
+type NodeAgentClient interface {
 	MessageDispatcher
-	CreatePod(nodeIdentifier string, pod *v1.Pod) error
-	TerminatePod(nodeIdentifier string, pod *v1.Pod) error
-	FullSyncNode(nodeIdentifier string) error
-	OpenSession(nodeIdentifier string, pod *v1.Pod, session *fornaxv1.ApplicationSession) error
-	CloseSession(nodeIdentifier string, pod *v1.Pod, session *fornaxv1.ApplicationSession) error
+	FullSyncNode(nodeId string) error
+	CreatePod(nodeId string, pod *v1.Pod) error
+	TerminatePod(nodeId string, pod *v1.Pod) error
+	OpenSession(nodeId string, pod *v1.Pod, session *fornaxv1.ApplicationSession) error
+	CloseSession(nodeId string, pod *v1.Pod, session *fornaxv1.ApplicationSession) error
 }

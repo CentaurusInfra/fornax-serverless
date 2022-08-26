@@ -38,16 +38,16 @@ var _ ie.SessionInterface = &sessionManager{}
 
 type sessionManager struct {
 	ctx             context.Context
-	nodeAgentProxy  nodeagent.NodeAgentProxy
+	nodeAgentClient nodeagent.NodeAgentClient
 	apiServerClient fornaxclient.Interface
 	podManager      ie.PodManager
 }
 
-func NewSessionManager(ctx context.Context, nodeAgentProxy nodeagent.NodeAgentProxy, podManager ie.PodManager, apiServerClient fornaxclient.Interface) *sessionManager {
+func NewSessionManager(ctx context.Context, nodeAgentProxy nodeagent.NodeAgentClient, podManager ie.PodManager, apiServerClient fornaxclient.Interface) *sessionManager {
 	mgr := &sessionManager{
 		ctx:             ctx,
 		apiServerClient: apiServerClient,
-		nodeAgentProxy:  nodeAgentProxy,
+		nodeAgentClient: nodeAgentProxy,
 		podManager:      podManager,
 	}
 	return mgr
@@ -91,7 +91,7 @@ func (sm *sessionManager) UpdateSessionStatusFromNode(nodeId string, pod *v1.Pod
 
 func (sm *sessionManager) CloseSession(pod *v1.Pod, session *fornaxv1.ApplicationSession) error {
 	if nodeName, found := pod.GetLabels()[fornaxv1.LabelFornaxCoreNode]; found {
-		return sm.nodeAgentProxy.CloseSession(nodeName, pod, session)
+		return sm.nodeAgentClient.CloseSession(nodeName, pod, session)
 	} else {
 		return fmt.Errorf("Can not find which node this pod is on, %s", util.Name(pod))
 	}
@@ -99,7 +99,7 @@ func (sm *sessionManager) CloseSession(pod *v1.Pod, session *fornaxv1.Applicatio
 
 func (sm *sessionManager) OpenSession(pod *v1.Pod, session *fornaxv1.ApplicationSession) error {
 	if nodeName, found := pod.GetLabels()[fornaxv1.LabelFornaxCoreNode]; found {
-		return sm.nodeAgentProxy.OpenSession(nodeName, pod, session)
+		return sm.nodeAgentClient.OpenSession(nodeName, pod, session)
 	} else {
 		return fmt.Errorf("Can not find which node session is on, %s", util.Name(session))
 	}

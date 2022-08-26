@@ -24,7 +24,7 @@ import (
 	fornaxv1 "centaurusinfra.io/fornax-serverless/pkg/apis/core/v1"
 	default_config "centaurusinfra.io/fornax-serverless/pkg/config"
 	"centaurusinfra.io/fornax-serverless/pkg/fornaxcore/grpc"
-	"centaurusinfra.io/fornax-serverless/pkg/fornaxcore/grpc/server"
+	ie "centaurusinfra.io/fornax-serverless/pkg/fornaxcore/internal"
 	"centaurusinfra.io/fornax-serverless/pkg/util"
 	podutil "centaurusinfra.io/fornax-serverless/pkg/util"
 	"github.com/google/uuid"
@@ -36,7 +36,7 @@ import (
 	"k8s.io/klog/v2"
 )
 
-var _ server.NodeMonitor = &integtestNodeMonitor{}
+var _ ie.NodeMonitor = &integtestNodeMonitor{}
 
 type integtestNodeMonitor struct {
 	sync.RWMutex

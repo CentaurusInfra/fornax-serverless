@@ -25,7 +25,6 @@ import (
 	default_config "centaurusinfra.io/fornax-serverless/pkg/config"
 	"centaurusinfra.io/fornax-serverless/pkg/fornaxcore/grpc"
 	"centaurusinfra.io/fornax-serverless/pkg/fornaxcore/grpc/nodeagent"
-	"centaurusinfra.io/fornax-serverless/pkg/fornaxcore/grpc/server"
 	ie "centaurusinfra.io/fornax-serverless/pkg/fornaxcore/internal"
 	"centaurusinfra.io/fornax-serverless/pkg/util"
 	podutil "centaurusinfra.io/fornax-serverless/pkg/util"
@@ -35,7 +34,7 @@ import (
 	"k8s.io/klog/v2"
 )
 
-var _ server.NodeMonitor = &nodeMonitor{}
+var _ ie.NodeMonitor = &nodeMonitor{}
 
 type NodeWithRevision struct {
 	NodeIdentifier string

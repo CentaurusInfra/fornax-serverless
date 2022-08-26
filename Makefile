@@ -86,7 +86,7 @@ docker-push: ## Push docker image into docker hub registry
 
 .PHONY: containerd-local-push
 containerd-local-push: ## Push docker image into a local containerd for test
-	docker image save -o /tmp/centaurusinfra.io.fornax-serverless.session-wrapper.img centaurusinfra.io/fornax-serverless/session-wrapper:${VERSION}
+	@docker image save -o /tmp/centaurusinfra.io.fornax-serverless.session-wrapper.img centaurusinfra.io/fornax-serverless/session-wrapper:${VERSION}
 	@sudo crictl rmi centaurusinfra.io/fornax-serverless/session-wrapper:${VERSION}
 	@sudo ctr -n=k8s.io image import /tmp/centaurusinfra.io.fornax-serverless.session-wrapper.img
 

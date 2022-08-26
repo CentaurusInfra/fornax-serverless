@@ -50,7 +50,7 @@ type podScheduler struct {
 	ctx                       context.Context
 	updateCh                  chan interface{}
 	nodeInfoP                 ie.NodeInfoProvider
-	nodeAgent                 nodeagent.NodeAgentProxy
+	nodeAgentClient           nodeagent.NodeAgentClient
 	scheduleQueue             *PodScheduleQueue
 	nodePool                  *SchedulableNodePool
 	ScheduleConditionBuilders []ConditionBuildFunc
@@ -106,7 +106,7 @@ func (ps *podScheduler) bindNode(snode *SchedulableNode, pod *v1.Pod) error {
 	pod.Status.Reason = "Scheduled"
 
 	// call nodeagent to start pod
-	err := ps.nodeAgent.CreatePod(nodeId, pod)
+	err := ps.nodeAgentClient.CreatePod(nodeId, pod)
 	if err != nil {
 		klog.ErrorS(err, "Failed to bind pod, reschedule", "node", nodeId, "pod", podName)
 		ps.unbindNode(snode, pod)
@@ -285,14 +285,14 @@ func (ps *podScheduler) Run() {
 	}()
 }
 
-func NewPodScheduler(ctx context.Context, nodeAgent nodeagent.NodeAgentProxy, nodeInfoP ie.NodeInfoProvider, podInfoP ie.PodInfoProvider) *podScheduler {
+func NewPodScheduler(ctx context.Context, nodeAgent nodeagent.NodeAgentClient, nodeInfoP ie.NodeInfoProvider, podInfoP ie.PodInfoProvider) *podScheduler {
 	ps := &podScheduler{
-		ctx:           ctx,
-		stop:          false,
-		updateCh:      make(chan interface{}, 100),
-		nodeInfoP:     nodeInfoP,
-		nodeAgent:     nodeAgent,
-		scheduleQueue: NewScheduleQueue(),
+		ctx:             ctx,
+		stop:            false,
+		updateCh:        make(chan interface{}, 100),
+		nodeInfoP:       nodeInfoP,
+		nodeAgentClient: nodeAgent,
+		scheduleQueue:   NewScheduleQueue(),
 		nodePool: &SchedulableNodePool{
 			mu:          sync.Mutex{},
 			nodes:       map[string]*SchedulableNode{},

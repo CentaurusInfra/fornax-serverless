@@ -17,6 +17,7 @@ limitations under the License.
 package internal
 
 import (
+	"context"
 	"time"
 
 	fornaxv1 "centaurusinfra.io/fornax-serverless/pkg/apis/core/v1"
@@ -72,11 +73,22 @@ type SessionInterface interface {
 	CloseSession(pod *v1.Pod, session *fornaxv1.ApplicationSession) error
 }
 
+// NodeInfoProvider provide method to watch and list NodeEvent
 type NodeInfoProvider interface {
 	List() []*NodeEvent
 	Watch(watcher chan<- interface{})
 }
 
+// PodInfoProvider provide method to watch and list PodEvent
 type PodInfoProvider interface {
 	Watch(watcher chan<- interface{})
+}
+
+// NodeMonitor handle message sent by node agent
+type NodeMonitor interface {
+	OnRegistry(ctx context.Context, message *grpc.FornaxCoreMessage) (*grpc.FornaxCoreMessage, error)
+	OnNodeReady(ctx context.Context, message *grpc.FornaxCoreMessage) (*grpc.FornaxCoreMessage, error)
+	OnNodeStateUpdate(ctx context.Context, message *grpc.FornaxCoreMessage) (*grpc.FornaxCoreMessage, error)
+	OnPodStateUpdate(ctx context.Context, message *grpc.FornaxCoreMessage) (*grpc.FornaxCoreMessage, error)
+	OnSessionUpdate(ctx context.Context, message *grpc.FornaxCoreMessage) (*grpc.FornaxCoreMessage, error)
 }

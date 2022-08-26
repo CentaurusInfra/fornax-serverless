@@ -27,7 +27,6 @@ import (
 
 	"centaurusinfra.io/fornax-serverless/pkg/nodeagent/network"
 	"centaurusinfra.io/fornax-serverless/pkg/nodeagent/node"
-	"github.com/coreos/go-systemd/v22/daemon"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 	"k8s.io/klog/v2"
@@ -64,11 +63,6 @@ func NewCommand() *cobra.Command {
 		Long:               `node agent takes fornax core command message to start pod and session, it save pod and session info into its own db`,
 		DisableFlagParsing: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			// if err := checkPermissions(); err != nil {
-			//  klog.ErrorS(err, "nodeagent is not running with sufficient permissions")
-			//  os.Exit(1)
-			// }
-
 			ctx := genericapiserver.SetupSignalContext()
 
 			// initial flag parse, since we disable cobra's flag parsing
@@ -134,11 +128,9 @@ func Run(ctx context.Context, nodeConfig config.SimulationNodeConfiguration) err
 }
 
 func RunNodeAndNodeActor(ctx context.Context, hostIp, hostName string, nodeConfig config.SimulationNodeConfiguration) error {
-	klog.InfoS("NodeConfiguration", "configuration", nodeConfig.Hostname)
+	klog.InfoS("Run a simulation node", "node", hostName)
 
 	logs.InitLogs()
-
-	go daemon.SdNotify(false, "READY=1")
 
 	fornaxNode := node.FornaxNode{
 		NodeConfig:   nodeConfig.NodeConfiguration,
@@ -151,12 +143,11 @@ func RunNodeAndNodeActor(ctx context.Context, hostIp, hostName string, nodeConfi
 		klog.Errorf("can not initialize node actor, error %v", err)
 	}
 
-	klog.Info("Starting FornaxNode")
 	err = nodeActor.Start()
 	if err != nil {
 		klog.Errorf("Can not start node, error %v", err)
 	}
-	klog.Info("FornaxNode started")
+	klog.InfoS("Simuation node started", "node", hostName)
 
 	return nil
 }

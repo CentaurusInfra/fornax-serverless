@@ -25,6 +25,7 @@ import (
 
 	fornaxv1 "centaurusinfra.io/fornax-serverless/pkg/apis/core/v1"
 	fornaxcore_grpc "centaurusinfra.io/fornax-serverless/pkg/fornaxcore/grpc"
+	ie "centaurusinfra.io/fornax-serverless/pkg/fornaxcore/internal"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
 
@@ -41,7 +42,7 @@ const FornaxCoreChanSize = 2
 
 type FornaxCoreServer interface {
 	fornaxcore_grpc.FornaxCoreServiceServer
-	nodeagent.NodeAgentProxy
+	nodeagent.NodeAgentClient
 }
 
 var _ FornaxCoreServer = &grpcServer{}
@@ -50,11 +51,11 @@ type grpcServer struct {
 	sync.RWMutex
 	nodeGetMessageChans map[string]chan<- *fornaxcore_grpc.FornaxCoreMessage
 
-	nodeMonitor NodeMonitor
+	nodeMonitor ie.NodeMonitor
 	fornaxcore_grpc.UnimplementedFornaxCoreServiceServer
 }
 
-func (g *grpcServer) RunGrpcServer(ctx context.Context, nodeMonitor NodeMonitor, port int, certFile, keyFile string) error {
+func (g *grpcServer) RunGrpcServer(ctx context.Context, nodeMonitor ie.NodeMonitor, port int, certFile, keyFile string) error {
 	lis, err := net.Listen("tcp", fmt.Sprintf("0.0.0.0:%d", port))
 	if err != nil {
 		klog.ErrorS(err, "Fornaxcore grpc server failed to listen on port:", port)
@@ -155,11 +156,11 @@ func (g *grpcServer) PutMessage(ctx context.Context, message *fornaxcore_grpc.Fo
 	}
 
 	if err == nodeagent.NodeRevisionOutOfOrderError {
-		g.DispatchMessage(message.GetNodeIdentifier().GetIdentifier(), NewFullSyncRequest())
+		g.DispatchNodeMessage(message.GetNodeIdentifier().GetIdentifier(), NewFullSyncRequest())
 	}
 
 	if msg != nil {
-		g.DispatchMessage(message.GetNodeIdentifier().GetIdentifier(), msg)
+		g.DispatchNodeMessage(message.GetNodeIdentifier().GetIdentifier(), msg)
 	}
 	return &emptypb.Empty{}, err
 }
@@ -193,7 +194,7 @@ func (g *grpcServer) CreatePod(nodeIdentifier string, pod *v1.Pod) error {
 		MessageBody: &podCreate,
 	}
 
-	err := g.DispatchMessage(nodeIdentifier, m)
+	err := g.DispatchNodeMessage(nodeIdentifier, m)
 	if err != nil {
 		klog.ErrorS(err, "Failed to dispatch pod create message to node", "node", nodeIdentifier, "pod", util.Name(pod))
 		return err
@@ -215,7 +216,7 @@ func (g *grpcServer) TerminatePod(nodeIdentifier string, pod *v1.Pod) error {
 		MessageBody: &podTerminate,
 	}
 
-	err := g.DispatchMessage(nodeIdentifier, m)
+	err := g.DispatchNodeMessage(nodeIdentifier, m)
 	if err != nil {
 		klog.ErrorS(err, "Failed to dispatch pod terminate message to node", "node", nodeIdentifier, "pod", util.Name(pod))
 		return err
@@ -239,7 +240,7 @@ func (g *grpcServer) CloseSession(nodeIdentifier string, pod *v1.Pod, session *f
 		MessageBody: &body,
 	}
 
-	err := g.DispatchMessage(nodeIdentifier, m)
+	err := g.DispatchNodeMessage(nodeIdentifier, m)
 	if err != nil {
 		klog.ErrorS(err, "Failed to dispatch pod create message to node", "node", nodeIdentifier, "session", sessionIdentifier)
 		return err
@@ -270,7 +271,7 @@ func (g *grpcServer) OpenSession(nodeIdentifier string, pod *v1.Pod, session *fo
 		MessageBody: &body,
 	}
 
-	err = g.DispatchMessage(nodeIdentifier, m)
+	err = g.DispatchNodeMessage(nodeIdentifier, m)
 	if err != nil {
 		klog.ErrorS(err, "Failed to dispatch pod create message to node", "node", nodeIdentifier, "session", sessionIdentifier)
 		return err
@@ -284,7 +285,7 @@ func (g *grpcServer) FullSyncNode(nodeIdentifier string) error {
 
 	msg := NewFullSyncRequest()
 
-	err := g.DispatchMessage(nodeIdentifier, msg)
+	err := g.DispatchNodeMessage(nodeIdentifier, msg)
 	if err != nil {
 		klog.ErrorS(err, "Failed to dispatch full sync message to node", "node", nodeIdentifier)
 		return err

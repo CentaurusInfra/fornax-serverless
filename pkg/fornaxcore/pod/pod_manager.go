@@ -151,7 +151,7 @@ type podManager struct {
 	watchers           []chan<- interface{}
 	podStatePool       *PodStatePool
 	podScheduler       podscheduler.PodScheduler
-	nodeAgentProxy     nodeagent.NodeAgentProxy
+	nodeAgentClient    nodeagent.NodeAgentClient
 }
 
 // FindPod implements PodManager
@@ -270,7 +270,7 @@ func (pm *podManager) TerminatePod(pod *v1.Pod) (*v1.Pod, error) {
 	// when node report it back and podmanager will terminate it again since pod has deletion timestamp
 	if len(fornaxPodState.nodeId) > 0 && util.PodNotTerminated(existpod) {
 		// pod is bound with node, let node agent terminate it before deletion
-		err := pm.nodeAgentProxy.TerminatePod(fornaxPodState.nodeId, fornaxPodState.v1pod)
+		err := pm.nodeAgentClient.TerminatePod(fornaxPodState.nodeId, fornaxPodState.v1pod)
 		if err != nil {
 			return nil, err
 		}
@@ -372,7 +372,7 @@ func (pm *podManager) AddPod(nodeId string, pod *v1.Pod) (*v1.Pod, error) {
 			// pod is reported back by node agent while pod owner determinted pod should be deleted, send node terminate message
 			if existPod.DeletionTimestamp != nil && pod.DeletionTimestamp == nil {
 				klog.InfoS("Terminate a running pod which has delete timestamp", "pod", util.Name(pod))
-				err := pm.nodeAgentProxy.TerminatePod(nodeId, pod)
+				err := pm.nodeAgentClient.TerminatePod(nodeId, pod)
 				if err != nil {
 					return nil, err
 				}
@@ -419,7 +419,7 @@ func (pm *podManager) printPodSummary() {
 	)
 }
 
-func NewPodManager(ctx context.Context, nodeAgentProxy nodeagent.NodeAgentProxy) *podManager {
+func NewPodManager(ctx context.Context, nodeAgentProxy nodeagent.NodeAgentClient) *podManager {
 	return &podManager{
 		ctx:                ctx,
 		houseKeepingTicker: time.NewTicker(DefaultPodManagerHouseKeepingDuration),
@@ -430,6 +430,6 @@ func NewPodManager(ctx context.Context, nodeAgentProxy nodeagent.NodeAgentProxy)
 			pendingSchedulePods: PodPool{pods: map[string]*PodWithFornaxState{}},
 			runningPods:         PodPool{pods: map[string]*PodWithFornaxState{}},
 			terminatingPods:     PodPool{pods: map[string]*PodWithFornaxState{}}},
-		nodeAgentProxy: nodeAgentProxy,
+		nodeAgentClient: nodeAgentProxy,
 	}
 }

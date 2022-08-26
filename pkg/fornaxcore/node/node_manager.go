@@ -48,7 +48,7 @@ type nodeManager struct {
 	watchers           []chan<- interface{}
 	nodes              NodePool
 	nodeUpdateBucket   *NodeUpdateBucket
-	nodeAgent          nodeagent.NodeAgentProxy
+	nodeAgent          nodeagent.NodeAgentClient
 	podManager         ie.PodManager
 	sessionManager     ie.SessionInterface
 	nodePodCidrManager NodeCidrManager
@@ -306,7 +306,7 @@ func (nm *nodeManager) PrintNodeSummary() {
 	}
 }
 
-func NewNodeManager(ctx context.Context, checkPeriod time.Duration, nodeAgent nodeagent.NodeAgentProxy, podManager ie.PodManager, sessionManager ie.SessionInterface) *nodeManager {
+func NewNodeManager(ctx context.Context, checkPeriod time.Duration, nodeAgent nodeagent.NodeAgentClient, podManager ie.PodManager, sessionManager ie.SessionInterface) *nodeManager {
 	bucketA := &store.ArrayBucket{
 		Prev:     nil,
 		Next:     nil,

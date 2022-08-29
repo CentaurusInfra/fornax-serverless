@@ -33,7 +33,7 @@ docker_install(){
 
 rust_install(){
     echo -e "## INSTALL RUST"
-    curl --proto '=https' --tlsv1.2 https://sh.rustup.rs -sSf | sh 
+    curl --proto '=https' --tlsv1.2 https://sh.rustup.rs -sSf | sh -s -- -y
     source $HOME/.cargo/env
     echo -e "## DONE\n"
 }

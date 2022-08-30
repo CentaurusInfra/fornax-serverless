@@ -11,6 +11,7 @@ sudo apt-get update
 sudo apt install build-essential
 sudo snap install curl  # version 7.81.0
 sudo apt-get install vim
+sudo apt install git
 ```
 
 ## 1. Install and Setup Fornax Core

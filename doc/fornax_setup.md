@@ -31,7 +31,10 @@ sudo systemctl restart etcd
 
 ### 1.2 Install Fornax Core From Source Code
 #### 1.2.1 Install Golang
+In your home directory, do following command
 ```script
+mkdir -p go
+cd go
 GOLANG_VERSION=${GOLANG_VERSION:-"1.18"}
 sudo apt -y update
 sudo apt -y install make
@@ -47,10 +50,9 @@ go version
 ```
 the result should be: go version go1.18 linux/amd64
 
-make following directory (under yourself home directory)
+make following directory (under "go" directory)
 ```script
-mkdir -p go/bin
-mkdir -p go/src
+mkdir -p bin src pkg
 ```
 
 Add following setting to machine ~/.bashrc (notes: ubuntu is yourself user login directory, remember to replace your's)
@@ -72,8 +74,9 @@ source ~/.bashrc
 #### 1.2.2 Download and Compile Source Code
 Create working folder, download code, and go working folder (fornax-serverles)
 ```script
-sudo mkdir -p src/centaurusinfra.io
-cd src/centaurusinfra.io
+cd src
+mkdir -p centaurusinfra.io
+cd centaurusinfra.io
 ```
 In centaurusinfra.io folder and run follwing command
 ```script
@@ -276,3 +279,7 @@ kubectl --kubeconfig kubeconfig get applicationsession --all-namespaces
    ```sh
    sudo chown -R $USER: .
    ```
+2. If you run "make" and have a issues, you can change go/pkg folder permission to a+x or 777
+```sh
+sudo chmod a+x go/pkg
+```

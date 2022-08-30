@@ -49,8 +49,8 @@ the result should be: go version go1.18 linux/amd64
 
 make following directory (under yourself home directory)
 ```script
-sudo mkdir -p go/bin
-sudo mkdir -p go/src
+mkdir -p go/bin
+mkdir -p go/src
 ```
 
 Add following setting to machine ~/.bashrc (notes: ubuntu is yourself user login directory, remember to replace your's)

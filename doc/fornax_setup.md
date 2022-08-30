@@ -124,9 +124,15 @@ sudo rm -f cni-plugins-linux-amd64-$VERSION.tgz
 ```
 
 #### 2.1.3 Install runc
+```sh
+sudo apt-get update
+sudo apt-get install runc
+```
+or specific verion
 ```script
 VERSION="v1.1.3"
 sudo wget https://github.com/opencontainers/runc/releases/download/$VERSION/runc.amd64 -P /usr/local/bin
+install -m 755 /usr/local/bin/runc.amd64 /usr/local/bin/runc
 ```
 
 ### 2.2 Enable Containerd CRI Plugins
@@ -144,6 +150,7 @@ sudo vi /etc/containerd/config.toml
 Comment line "disable_plugins = ["cri"]", see screen shot. add # before "disable_plugins"
 
 Save and exit file.
+
 ### 2.3 Add CNI config
 If there are no 10-containerd-net.conflist file exits, you need create one.
 ```script
@@ -282,4 +289,16 @@ kubectl --kubeconfig kubeconfig get applicationsession --all-namespaces
 2. If you run "make" and have a issues, you can change go/pkg folder permission to a+x or 777
 ```sh
 sudo chmod a+x go/pkg
+```
+3. If you use Quark container, you also need add content to /etc/containerd/config.toml file
+```
+version = 2
+[plugins."io.containerd.runtime.v1.linux"]
+  shim_debug = true
+[plugins."io.containerd.grpc.v1.cri".containerd.runtimes.runc]
+  runtime_type = "io.containerd.runc.v2"
+[plugins."io.containerd.grpc.v1.cri".containerd.runtimes.runsc]
+  runtime_type = "io.containerd.runsc.v1"
+[plugins."io.containerd.grpc.v1.cri".containerd.runtimes.quark]
+  runtime_type = "io.containerd.quark.v1"
 ```

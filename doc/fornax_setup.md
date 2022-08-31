@@ -270,14 +270,20 @@ zsh
 source ./hack/fornax_curl.zshrc
 ```
 ```sh
-post_app  game1  ./hack/test-data/nginx-create-app.yaml
+post_app  game1  ./hack/test-data/sessionwrapper-echoserver-app-create.yaml
 kubectl --kubeconfig kubeconfig get applications --all-namespaces
 ```
 
 3. Create First ApplicationSession
 ```sh
-post_session game1  ./hack/test-data/nginx-create-session.yaml
+post_session game1  ./hack/test-data/sessionwrapper-echoserver-session-create.yaml
 kubectl --kubeconfig kubeconfig get applicationsession --all-namespaces
+post_session game1  ./hack/test-data/sessionwrapper-echoserver-session-create.yaml
+```
+If you want delete Application Session, you can use following command
+```sh
+kubectl delete applicationsession --kubeconfig kubeconfig --namespace game1 nginx-session2
+kubectl --kubeconfig kubeconfig delete applicationsession --namespace game1 nginx-session2
 ```
 
 ## 4. Reference and Help

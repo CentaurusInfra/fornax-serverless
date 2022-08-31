@@ -304,22 +304,22 @@ items:
     - opensession.core.fornax-serverless.centaurusinfra.io
     labels:
       application: nginx
-    name: nginx-session-1
+    name: echo-session-3
     namespace: game1
     resourceVersion: "1261"
     uid: 0e8b5463-90e6-4e9e-9720-cbfd74480e50
   spec:
-    applicationName: game1/nginx
-    sessionData: my-nginx1-session-data
+    applicationName: game1/echoserver
+    sessionData: my-session-data
   status:
     accessEndPoints:
     - ipAddress: 192.168.0.45
       port: 1024
     podReference:
-      name: game1/nginx-9q8plr7mtlld49gr-12883
+      name: game1/echoserver-9q8plr7mtlld49gr-12883
     sessionStatus: Available
 ```
-4. verify accessEndPoints in above session status are reachable
+4. verify session is accessable using access point
 ```sh
 sudo nc -zv 192.168.0.45 1024
 ```

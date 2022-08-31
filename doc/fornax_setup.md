@@ -200,7 +200,7 @@ sudo systemctl status containerd
 ```
 If there are any error, run and see log
 ```sh
-journalctl -fu containerd
+sudo journalctl -fu containerd
 ```
 
 

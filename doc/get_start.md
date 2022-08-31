@@ -223,7 +223,7 @@ journalctl -u containerd -f
 1. Create application
 
  ```yaml
-cat << EOF | sudo tee ./hack/test-data/nginx-create-app.yaml
+cat << EOF | sudo tee ./hack/test-data/nginx-app-create.yaml
 apiVersion: core.fornax-serverless.centaurusinfra.io/v1
 kind: Application
 metadata:
@@ -257,7 +257,7 @@ EOF
 
 create application use created yaml file
 ```sh
-kubectl apply --kubeconfig kubeconfig --namespace game1 application nginx -f ./hack/test-data/nginx-create-app.yaml
+kubectl apply --kubeconfig kubeconfig --namespace game1 application nginx -f ./hack/test-data/nginx-app-create.yaml
 ```
 
 2. Create application session
@@ -266,23 +266,22 @@ cat << EOF | sudo tee ./hack/test-data/nginx-create-session.yaml
 apiVersion: core.fornax-serverless.centaurusinfra.io/v1
 kind: ApplicationSession
 metadata:
-  name: nginx-session-1
+  name: nginx-session-0
   labels:
     application: nginx
 spec:
   applicationName: game1/nginx
   sessionData: my-nginx1-session-data
-  sessionConfig:
-    numOfSessionOfInstance: 1
-    sessionOpenTimeoutSeconds: 30
-    sessionCloseGracePeriodSeconds: 30
+  openTimeoutSeconds: 30
+  closeGracePeriodSeconds: 30
+  killInstanceWhenSessionClosed: true
 EOF
 ```
 
 create application session using created yaml file
 
 ```sh
-kubectl apply --kubeconfig kubeconfig --namespace game1 application nginx -f ./hack/test-data/nginx-create-session.yaml
+kubectl apply --kubeconfig kubeconfig --namespace game1 application nginx -f ./hack/test-data/nginx-session-create.yaml
 ```
 3. describe session and find session ingress endpoint
 ```sh

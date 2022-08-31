@@ -223,65 +223,70 @@ journalctl -u containerd -f
 1. Create application
 
  ```yaml
-cat << EOF | sudo tee ./hack/test-data/nginx-app-create.yaml
+cat << EOF | sudo tee ./hack/test-data/sessionwrapper-echoserver-app-create.yaml
 apiVersion: core.fornax-serverless.centaurusinfra.io/v1
 kind: Application
 metadata:
-  name: nginx
+  name: echoserver
   labels:
-    name: nginx
+    name: sessionwrapper-echoserver
 spec:
   scalingPolicy:
-    minimumInstance: 0
+    minimumInstance: 1
     maximumInstance: 30
     burst: 1
     scalingPolicyType: idle_session_number
     idleSessionNumThreshold:
       highWaterMark: 3
-      lowWaterMark: 0
+      lowWaterMark: 1
   containers:
-    - image: nginx:latest
-      name: nginx
+    - image: centaurusinfra.io/fornax-serverless/session-wrapper:v0.1.0
+      name: echoserver
+      env:
+        - name: SESSION_WRAPPER_OPEN_SESSION_CMD
+          value: "/opt/bin/sessionwrapper-echoserver"
       resources:
         requests:
-          memory: "500M"
+          memory: "50M"
           cpu: "0.5"
         limits:
-          memory: "500M"
+          memory: "50M"
           cpu: "0.5"
       ports:
         - containerPort: 80
-          name: nginx
+          name: echoserver
+  configData:
+    config1: data1
 EOF
 ```
 
 create application use created yaml file
 ```sh
-kubectl apply --kubeconfig kubeconfig --namespace game1 application nginx -f ./hack/test-data/nginx-app-create.yaml
+kubectl apply --kubeconfig kubeconfig --namespace game1 application nginx -f ./hack/test-data/sessionwrapper-echoserver-app-create..yaml
 ```
 
 2. Create application session
  ```yaml
-cat << EOF | sudo tee ./hack/test-data/nginx-create-session.yaml
+cat << EOF | sudo tee ./hack/test-data/sessionwrapper-echoserver-session-create..yaml
 apiVersion: core.fornax-serverless.centaurusinfra.io/v1
 kind: ApplicationSession
 metadata:
-  name: nginx-session-0
+  name: echo-session-3
   labels:
-    application: nginx
+    application: echoserver
 spec:
-  applicationName: game1/nginx
-  sessionData: my-nginx1-session-data
+  applicationName: game1/echoserver
+  sessionData: my-session-data
   openTimeoutSeconds: 30
   closeGracePeriodSeconds: 30
-  killInstanceWhenSessionClosed: true
+  killInstanceWhenSessionClosed: false
 EOF
 ```
 
 create application session using created yaml file
 
 ```sh
-kubectl apply --kubeconfig kubeconfig --namespace game1 application nginx -f ./hack/test-data/nginx-session-create.yaml
+kubectl apply --kubeconfig kubeconfig --namespace game1 application nginx -f ./hack/test-data/sessionwrapper-echoserver-session-create.yaml
 ```
 3. describe session and find session ingress endpoint
 ```sh

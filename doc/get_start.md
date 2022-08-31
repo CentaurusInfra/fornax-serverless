@@ -195,30 +195,8 @@ journalctl -u containerd -f
   ```sh
   sudo ./bin/nodeagent --fornaxcore-ip localhost:18001 --disable-swap=false
   ```
-  
-## 3.3 Operate Fornax serverless resources
 
-  Fornax serverless expose two resources to client, you can use kubectl to create and explore these resouces
-
-  1. Check api resources
-
-  ```
-  [main] # kubectl --kubeconfig ./kubeconfig api-resources
-  NAME                  SHORTNAMES   APIVERSION                                    NAMESPACED   KIND
-  applications                       core.fornax-serverless.centaurusinfra.io/v1   true         Application
-  applicationsessions                core.fornax-serverless.centaurusinfra.io/v1   true         ApplicationSession
-  ```
-
-  2. Get applications
-
-  ````
-  [main] # kubectl --kubeconfig kubeconfig get applications --all-namespaces
-  NAMESPACE   NAME          CREATED AT
-  game1       nginx         2022-08-08T18:59:35Z
-  game2       nginx-mysql   2022-08-08T19:10:41Z
-  ````
-
-## 3.4 Run First Fornax Core serverless application
+## 3.3 Run First Fornax Core serverless application
 
 1. Create application
 
@@ -288,7 +266,7 @@ create application session using created yaml file
 ```sh
 kubectl apply --kubeconfig kubeconfig --namespace game1 application nginx -f ./hack/test-data/sessionwrapper-echoserver-session-create.yaml
 ```
-3. describe session and find session ingress endpoint
+3. Describe session and find session ingress endpoint
 ```sh
 kubectl get applicationsessions --kubeconfig kubeconfig --namespace game1 -o yaml
 ```
@@ -319,13 +297,30 @@ items:
       name: game1/echoserver-9q8plr7mtlld49gr-12883
     sessionStatus: Available
 ```
-4. verify session is accessable using access point
+4. Verify session is accessable using access point
 ```sh
 sudo nc -zv 192.168.0.45 1024
 ```
+so on, create new session if we need more application instances
 
-5. verify a pod is created on node
-```sh
-sudo crictl pods
-```
-![Server-less pods sample](https://github.com/CentaurusInfra/fornax-serverless/blob/main/doc/serverless-pods.png)
+## 4 Explore Fornax serverless resources
+
+  Fornax serverless expose two resources to client, you can use kubectl to create and explore these resouces
+
+  1. Check api resources
+
+  ```
+  [main] # kubectl --kubeconfig ./kubeconfig api-resources
+  NAME                  SHORTNAMES   APIVERSION                                    NAMESPACED   KIND
+  applications                       core.fornax-serverless.centaurusinfra.io/v1   true         Application
+  applicationsessions                core.fornax-serverless.centaurusinfra.io/v1   true         ApplicationSession
+  ```
+
+  2. Get applications
+
+  ````
+  [main] # kubectl --kubeconfig kubeconfig get applications --all-namespaces
+  NAMESPACE   NAME          CREATED AT
+  game1       nginx         2022-08-08T18:59:35Z
+  game2       nginx-mysql   2022-08-08T19:10:41Z
+  ````

@@ -22,11 +22,9 @@ import (
 	"fmt"
 	"os"
 
-	"centaurusinfra.io/fornax-serverless/cmd/simulation/app/snode"
-	"centaurusinfra.io/fornax-serverless/cmd/simulation/config"
+	"centaurusinfra.io/fornax-serverless/cmd/simulation/node/app/snode"
+	"centaurusinfra.io/fornax-serverless/cmd/simulation/node/config"
 
-	"centaurusinfra.io/fornax-serverless/pkg/nodeagent/network"
-	"centaurusinfra.io/fornax-serverless/pkg/nodeagent/node"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 	"k8s.io/klog/v2"
@@ -108,17 +106,13 @@ func Run(ctx context.Context, nodeConfig config.SimulationNodeConfiguration) err
 
 	logs.InitLogs()
 
-	osHostIps, err := network.GetLocalV4IP()
-	if err != nil {
-		return err
-	}
 	osHostName, err := os.Hostname()
 	if err != nil {
 		return err
 	}
 	for i := 0; i < nodeConfig.NumOfNode; i++ {
 		hostName := fmt.Sprintf("%s-%d", osHostName, i)
-		go RunNodeAndNodeActor(ctx, osHostIps[0].String(), hostName, nodeConfig)
+		go RunNodeAndNodeActor(ctx, nodeConfig.NodeIP, hostName, &nodeConfig)
 		klog.Infof("%d th node and node actor created \n", i)
 	}
 
@@ -127,18 +121,12 @@ func Run(ctx context.Context, nodeConfig config.SimulationNodeConfiguration) err
 	return nil
 }
 
-func RunNodeAndNodeActor(ctx context.Context, hostIp, hostName string, nodeConfig config.SimulationNodeConfiguration) error {
+func RunNodeAndNodeActor(ctx context.Context, hostIp, hostName string, nodeConfig *config.SimulationNodeConfiguration) error {
 	klog.InfoS("Run a simulation node", "node", hostName)
 
 	logs.InitLogs()
 
-	fornaxNode := node.FornaxNode{
-		NodeConfig:   nodeConfig.NodeConfiguration,
-		V1Node:       nil,
-		Pods:         node.NewPodPool(),
-		Dependencies: nil,
-	}
-	nodeActor, err := snode.NewNodeActor(hostIp, hostName, &fornaxNode)
+	nodeActor, err := snode.NewNodeActor(hostIp, hostName, nodeConfig)
 	if err != nil {
 		klog.Errorf("can not initialize node actor, error %v", err)
 	}

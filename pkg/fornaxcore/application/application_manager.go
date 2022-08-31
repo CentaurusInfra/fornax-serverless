@@ -86,15 +86,15 @@ type ApplicationManager struct {
 	applicationPools map[string]*ApplicationPool
 	apiServerClient  fornaxclient.Interface
 	watcher          chan interface{}
-	podManager       ie.PodManager
-	sessionManager   ie.SessionInterface
+	podManager       ie.PodManagerInterface
+	sessionManager   ie.SessionManagerInterface
 
 	syncHandler func(ctx context.Context, appKey string) error
 }
 
 // NewApplicationManager init ApplicationInformer and ApplicationSessionInformer,
 // and start to listen to pod event from node
-func NewApplicationManager(ctx context.Context, podManager ie.PodManager, sessionManager ie.SessionInterface, apiServerClient fornaxclient.Interface) *ApplicationManager {
+func NewApplicationManager(ctx context.Context, podManager ie.PodManagerInterface, sessionManager ie.SessionManagerInterface, apiServerClient fornaxclient.Interface) *ApplicationManager {
 	appc := &ApplicationManager{
 		applicationQueue: workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "fornaxv1.Application"),
 		applicationPools: map[string]*ApplicationPool{},
@@ -104,6 +104,7 @@ func NewApplicationManager(ctx context.Context, podManager ie.PodManager, sessio
 		sessionManager:   sessionManager,
 	}
 	appc.podManager.Watch(appc.watcher)
+	appc.sessionManager.Watch(appc.watcher)
 	appc.syncHandler = appc.syncApplication
 
 	return appc
@@ -228,6 +229,9 @@ func (appc *ApplicationManager) Run(ctx context.Context) {
 				if pe, ok := update.(*ie.PodEvent); ok {
 					appc.onPodEventFromNode(pe)
 				}
+				if se, ok := update.(*ie.SessionEvent); ok {
+					appc.onSessionEventFromNode(se)
+				}
 			case <-ticker.C:
 				appc.sessionHouseKeeping()
 			}
@@ -295,14 +299,8 @@ func (appc *ApplicationManager) onApplicationDeleteEvent(obj interface{}) {
 		}
 	}
 
-	if appliation.DeletionTimestamp == nil {
-		appliation.DeletionTimestamp = util.NewCurrentMetaTime()
-	}
-
 	applicationKey := util.Name(appliation)
-
 	klog.Infof("Deleting application %s", applicationKey)
-
 	appc.applicationQueue.Add(applicationKey)
 }
 
@@ -343,14 +341,20 @@ func (appc *ApplicationManager) getApplication(applicationKey string) (*fornaxv1
 }
 
 func (appc *ApplicationManager) cleanupDeletedApplication(applicationKey string) error {
-	klog.InfoS("Application is deleted, remove all pods and sessions", "application", applicationKey)
-	err := appc.cleanupPodOfApplication(applicationKey)
-	if err != nil {
-		return err
-	}
-	err = appc.cleanupSessionOfApplication(applicationKey)
-	if err != nil {
-		return err
+	klog.InfoS("Cleanup a deleting Application, remove all session then pod", "application", applicationKey)
+	pool := appc.getApplicationPool(applicationKey)
+	if pool != nil {
+		if pool.sessionLength() > 0 {
+			err := appc.cleanupSessionOfApplication(applicationKey)
+			if err != nil {
+				return err
+			}
+		} else {
+			err := appc.cleanupPodOfApplication(applicationKey)
+			if err != nil {
+				return err
+			}
+		}
 	}
 	return nil
 }
@@ -385,14 +389,15 @@ func (appc *ApplicationManager) syncApplication(ctx context.Context, application
 		if application.DeletionTimestamp == nil {
 			// sync session assign pending session to exist running pods firstly and cleanup timedout sessions,
 			syncErr = appc.syncApplicationSessions(application, applicationKey)
-			// determine how many pods required for remaining sessions
+			// determine how many pods required for remaining pending sessions
 			if syncErr == nil {
 				occupiedPods, idlePendingPods, idleRunningPods := appc.groupApplicationPods(applicationKey)
 				numOfIdlePod := len(idleRunningPods) + len(idlePendingPods)
-				numOfTotalSession, numOfPendingSession := appc.getTotalAndPendingSessionNum(applicationKey)
-				numOfDesiredIdlePod := appc.CalculateDesiredIdlePods(application, numOfIdlePod, numOfPendingSession)
-				numOfDesiredPod = len(occupiedPods) + numOfDesiredIdlePod
-				klog.InfoS("Sync application pod", "total sessions", numOfTotalSession, "pending sessions", numOfPendingSession, "total pods", len(occupiedPods)+numOfIdlePod, "idle pods", numOfIdlePod, "desired idle pods", numOfDesiredIdlePod)
+				numOfOccupiedPod := len(occupiedPods)
+				_, numOfPendingSession := appc.getTotalAndPendingSessionNum(applicationKey)
+				numOfDesiredIdlePod := appc.CalculateDesiredIdlePods(application, numOfOccupiedPod, numOfIdlePod, numOfPendingSession)
+				numOfDesiredPod = numOfOccupiedPod + numOfDesiredIdlePod
+				klog.InfoS("Sync application pod", "pending sessions", numOfPendingSession, "#curr-pods", numOfOccupiedPod+numOfIdlePod, "idle-pods", numOfIdlePod, "desired-idle-pods", numOfDesiredIdlePod)
 				if numOfDesiredIdlePod > numOfIdlePod {
 					action = fornaxv1.DeploymentActionCreateInstance
 				} else if numOfDesiredIdlePod < numOfIdlePod {
@@ -401,20 +406,13 @@ func (appc *ApplicationManager) syncApplication(ctx context.Context, application
 				syncErr = appc.syncApplicationPods(application, numOfDesiredIdlePod, numOfIdlePod, append(idlePendingPods, idleRunningPods...))
 			}
 		} else {
-			klog.InfoS("Application is deleted", "application", applicationKey, "deletionTime", application.DeletionTimestamp)
 			numOfDesiredPod = 0
 			action = fornaxv1.DeploymentActionDeleteInstance
 			syncErr = appc.cleanupDeletedApplication(applicationKey)
 		}
 
 		newStatus := appc.calculateStatus(application, numOfDesiredPod, action, syncErr)
-		if newStatus != nil && !reflect.DeepEqual(application.Status, *newStatus) {
-			_, err := appc.updateApplicationStatus(application, newStatus)
-			if err != nil {
-				klog.InfoS("Application status update failed", "application", applicationKey)
-				syncErr = err
-			}
-		}
+		syncErr = appc.updateApplicationStatus(application, newStatus)
 	}
 
 	// Resync the Application if there is error or does not meet desired number
@@ -424,16 +422,18 @@ func (appc *ApplicationManager) syncApplication(ctx context.Context, application
 	} else {
 		// if a application does not have any pod or session, remove it from application pool to save memory
 		pool := appc.getApplicationPool(applicationKey)
-		if pool != nil && pool.podLength() == 0 && pool.sessionLength() == 0 {
-			// remove this application from pool
-			appc.deleteApplicationPool(applicationKey)
+		if pool != nil {
+			if pool.podLength() == 0 && pool.sessionLength() == 0 {
+				// remove this application from pool
+				appc.deleteApplicationPool(applicationKey)
+			}
 		}
 	}
 
 	return syncErr
 }
 
-func (appc *ApplicationManager) CalculateDesiredIdlePods(application *fornaxv1.Application, idlePodNum int, sessionNum int) int {
+func (appc *ApplicationManager) CalculateDesiredIdlePods(application *fornaxv1.Application, occupiedPodNum, idlePodNum int, sessionNum int) int {
 	desiredCount := idlePodNum
 	sessionSupported := idlePodNum
 	idleSessionNum := int(sessionSupported) - sessionNum
@@ -464,12 +464,17 @@ func (appc *ApplicationManager) CalculateDesiredIdlePods(application *fornaxv1.A
 		}
 	}
 
-	// desiredCount must between maximum and minmum instances
-	if desiredCount <= int(application.Spec.ScalingPolicy.MinimumInstance) {
-		return int(application.Spec.ScalingPolicy.MinimumInstance)
-	} else if desiredCount >= int(application.Spec.ScalingPolicy.MaximumInstance) {
-		return int(application.Spec.ScalingPolicy.MaximumInstance)
-	} else {
-		return desiredCount
+	numOfDesiredPod := desiredCount + occupiedPodNum
+	// total number must between maximum and minmum instances
+	if numOfDesiredPod <= int(application.Spec.ScalingPolicy.MinimumInstance) {
+		desiredCount = int(application.Spec.ScalingPolicy.MinimumInstance) - occupiedPodNum
+	} else if numOfDesiredPod >= int(application.Spec.ScalingPolicy.MaximumInstance) {
+		desiredCount = int(application.Spec.ScalingPolicy.MaximumInstance) - occupiedPodNum
+		// not able to add more, as already reach maxinum instances
+		if desiredCount <= 0 {
+			desiredCount = idlePodNum
+		}
 	}
+	return desiredCount
+
 }

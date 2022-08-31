@@ -452,10 +452,13 @@ func (a *PodActor) handleSessionState(s internal.SessionState) {
 		newStatus.SessionStatus = fornaxv1.SessionStatusStarting
 	case types.SessionStateReady:
 		newStatus.SessionStatus = fornaxv1.SessionStatusAvailable
+		newStatus.AvailableTime = util.NewCurrentMetaTime()
 	case types.SessionStateClosed:
 		newStatus.SessionStatus = fornaxv1.SessionStatusClosed
+		newStatus.CloseTime = util.NewCurrentMetaTime()
 	case types.SessionStateNoHeartbeat:
 		newStatus.SessionStatus = fornaxv1.SessionStatusClosed
+		newStatus.CloseTime = util.NewCurrentMetaTime()
 	}
 
 	// just copy client sessions

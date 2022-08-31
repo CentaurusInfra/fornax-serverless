@@ -27,7 +27,6 @@ import (
 	"centaurusinfra.io/fornax-serverless/pkg/fornaxcore/grpc/nodeagent"
 	ie "centaurusinfra.io/fornax-serverless/pkg/fornaxcore/internal"
 	fornaxpod "centaurusinfra.io/fornax-serverless/pkg/fornaxcore/pod"
-	"centaurusinfra.io/fornax-serverless/pkg/fornaxcore/store"
 	"centaurusinfra.io/fornax-serverless/pkg/util"
 	fornaxutil "centaurusinfra.io/fornax-serverless/pkg/util"
 	v1 "k8s.io/api/core/v1"
@@ -40,20 +39,18 @@ const (
 	MaxlengthOfNodeUpdates  = 5000
 )
 
-var _ ie.NodeManager = &nodeManager{}
+var _ ie.NodeManagerInterface = &nodeManager{}
 
 type nodeManager struct {
 	ctx                context.Context
 	nodeUpdates        chan interface{}
 	watchers           []chan<- interface{}
 	nodes              NodePool
-	nodeUpdateBucket   *NodeUpdateBucket
 	nodeAgent          nodeagent.NodeAgentClient
-	podManager         ie.PodManager
-	sessionManager     ie.SessionInterface
+	podManager         ie.PodManagerInterface
+	sessionManager     ie.SessionManagerInterface
 	nodePodCidrManager NodeCidrManager
 	nodeDaemonManager  NodeDaemonManager
-	staleNodeBucket    *StaleNodeBucket
 	houseKeepingTicker *time.Ticker
 }
 
@@ -208,7 +205,6 @@ func (nm *nodeManager) CreateNode(nodeId string, node *v1.Node) (fornaxNode *ie.
 		LastSeen:   time.Now(),
 	}
 
-	nm.staleNodeBucket.refreshNode(fornaxNode)
 	if util.IsNodeCondtionReady(node) {
 		fornaxNode.State = ie.NodeWorkingStateRunning
 	}
@@ -231,13 +227,14 @@ func (nm *nodeManager) CreateNode(nodeId string, node *v1.Node) (fornaxNode *ie.
 // UpdateNode implements NodeManager
 func (nm *nodeManager) UpdateNode(nodeId string, node *v1.Node) (*ie.FornaxNodeWithState, error) {
 	if nodeWS := nm.nodes.get(nodeId); nodeWS != nil {
-		nm.staleNodeBucket.refreshNode(nodeWS)
+		oldNodeWSState := nodeWS.State
 		if util.IsNodeCondtionReady(node) {
 			nodeWS.State = ie.NodeWorkingStateRunning
 		}
 		nodeWS.LastSeen = time.Now()
 
-		if node.ResourceVersion == nodeWS.Node.ResourceVersion {
+		// nodeWS.State change means node probably disconnected, need to resend node event
+		if oldNodeWSState == nodeWS.State && node.ResourceVersion == nodeWS.Node.ResourceVersion {
 			return nodeWS, nil
 		}
 		fornaxutil.MergeNodeStatus(nodeWS.Node, node)
@@ -252,28 +249,18 @@ func (nm *nodeManager) UpdateNode(nodeId string, node *v1.Node) (*ie.FornaxNodeW
 	}
 }
 
-// DeleteNode mark node not schedulable, it got removed from list after a graceful period
-func (nm *nodeManager) DeleteNode(nodeId string, node *v1.Node) error {
-	if nodeWS := nm.nodes.get(fornaxutil.Name(node)); nodeWS != nil {
-		nodeWS.State = ie.NodeWorkingStateTerminating
-		nodeWS.Node.Status.Phase = v1.NodeTerminated
-		nodeWS.Node.DeletionTimestamp = util.NewCurrentMetaTime()
+// DeleteNode send node event tell node not schedulable, it got removed from list after a graceful period
+func (nm *nodeManager) DisconnectNode(nodeId string) error {
+	if nodeWS := nm.nodes.get(nodeId); nodeWS != nil {
+		nodeWS.State = ie.NodeWorkingStateDisconnected
+		nodeWS.Node.Status.Phase = v1.NodePending
 		nm.nodeUpdates <- &ie.NodeEvent{
 			NodeId: nodeId,
 			Node:   nodeWS.Node.DeepCopy(),
-			Type:   ie.NodeEventTypeDelete,
+			Type:   ie.NodeEventTypeUpdate,
 		}
 	}
-
 	return nil
-}
-
-func (nm *nodeManager) CheckStaleNode() {
-	staleNodes := nm.staleNodeBucket.getStaleNodes()
-	// ask nodes to send full sync request
-	for _, node := range staleNodes {
-		nm.nodeAgent.FullSyncNode(util.Name(node.Node))
-	}
 }
 
 func (nm *nodeManager) Run() error {
@@ -288,10 +275,6 @@ func (nm *nodeManager) Run() error {
 				for _, watcher := range nm.watchers {
 					watcher <- update
 				}
-				// nm.nodeUpdateBucket.appendUpdate(update)
-			case <-nm.houseKeepingTicker.C:
-				nm.PrintNodeSummary()
-				nm.CheckStaleNode()
 			}
 		}
 	}()
@@ -306,32 +289,17 @@ func (nm *nodeManager) PrintNodeSummary() {
 	}
 }
 
-func NewNodeManager(ctx context.Context, checkPeriod time.Duration, nodeAgent nodeagent.NodeAgentClient, podManager ie.PodManager, sessionManager ie.SessionInterface) *nodeManager {
-	bucketA := &store.ArrayBucket{
-		Prev:     nil,
-		Next:     nil,
-		Elements: []interface{}{},
-	}
-
+func NewNodeManager(ctx context.Context, checkPeriod time.Duration, nodeAgent nodeagent.NodeAgentClient, podManager ie.PodManagerInterface, sessionManager ie.SessionManagerInterface) *nodeManager {
 	return &nodeManager{
-		ctx:         ctx,
-		nodeUpdates: make(chan interface{}, 100),
-		watchers:    []chan<- interface{}{},
-		nodeAgent:   nodeAgent,
-		nodeUpdateBucket: &NodeUpdateBucket{
-			bucketHead: bucketA,
-			bucketTail: bucketA,
-		},
+		ctx:                ctx,
+		nodeUpdates:        make(chan interface{}, 100),
+		watchers:           []chan<- interface{}{},
+		nodeAgent:          nodeAgent,
 		nodePodCidrManager: NewPodCidrManager(),
 		nodeDaemonManager:  NewNodeDaemonManager(),
 		houseKeepingTicker: time.NewTicker(checkPeriod),
 		podManager:         podManager,
 		sessionManager:     sessionManager,
-		staleNodeBucket: &StaleNodeBucket{
-			RWMutex:       sync.RWMutex{},
-			bucketStale:   map[string]*ie.FornaxNodeWithState{},
-			bucketRefresh: map[string]*ie.FornaxNodeWithState{},
-		},
 		nodes: NodePool{
 			mu:    sync.RWMutex{},
 			nodes: map[string]*ie.FornaxNodeWithState{},

@@ -69,24 +69,35 @@ test: manifests generate fmt vet envtest ## Run tests.
 build: generate fmt vet ## Build binary.
 	go build ./...
 	go build -o bin/integtestgrpcserver cmd/integtestgrpcserver/main.go
-	go build -o bin/apiserver cmd/apiserver/main.go
+	go build -o bin/fornaxcore cmd/fornaxcore/main.go
 	go build -o bin/nodeagent cmd/nodeagent/main.go
-	go build -o bin/simulatenode cmd/simulation/main.go
+	go build -o bin/simulatenode cmd/simulation/node/main.go
+	go build -o bin/fornaxtest cmd/fornaxtest/main.go
 
 .PHONY: run
 run: manifests generate fmt vet ## Run from your host.
 
+.PHONY: run-nodeagent-local
+	@sudo ./bin/nodeagent --fornaxcore-ip localhost:18001 --disable-swap=false
+
+APISERVER-BOOT = $(shell pwd)/bin/apiserver-boot
+.PHONY: run-fornaxcore-local
+run-fornaxcore-local: build ## Download apiserver-boot cmd locally if necessary.
+	# $(call go-get-tool,$(APISERVER-BOOT),sigs.k8s.io/apiserver-builder-alpha/cmd/apiserver-boot@v1.23.0)
+	# $(APISERVER-BOOT) run local --run etcd,fornaxcore
+	@bin/fornaxcore --etcd-servers=http://127.0.0.1:2379 --secure-port=9443 --feature-gates=APIPriorityAndFairness=false --standalone-debug-mode --bind-address=127.0.0.1
+
 .PHONY: docker-build
 docker-build: test ## Build docker image
-	docker build -f ./Dockerfile.sessionwrapper -t centaurusinfra.io/fornax-serverless/session-wrapper:${VERSION} .
+	@sudo docker build -f ./Dockerfile.sessionwrapper -t centaurusinfra.io/fornax-serverless/session-wrapper:${VERSION} .
 
 .PHONY: docker-push
 docker-push: ## Push docker image into docker hub registry
-	docker push centaurusinfra.io/fornax-serverless/session-wrapper:${VERSION}
+	@sudo docker push centaurusinfra.io/fornax-serverless/session-wrapper:${VERSION}
 
 .PHONY: containerd-local-push
 containerd-local-push: ## Push docker image into a local containerd for test
-	@docker image save -o /tmp/centaurusinfra.io.fornax-serverless.session-wrapper.img centaurusinfra.io/fornax-serverless/session-wrapper:${VERSION}
+	@sudo docker image save -o /tmp/centaurusinfra.io.fornax-serverless.session-wrapper.img centaurusinfra.io/fornax-serverless/session-wrapper:${VERSION}
 	@sudo crictl rmi centaurusinfra.io/fornax-serverless/session-wrapper:${VERSION}
 	@sudo ctr -n=k8s.io image import /tmp/centaurusinfra.io.fornax-serverless.session-wrapper.img
 
@@ -104,7 +115,10 @@ check:
 clean:
 	@rm -rf config/
 	@rm -f cover.out
-	@rm -f bin/apiserver
+	@rm -f bin/fornaxcore
+	@rm -f bin/nodeagent
+	@rm -f bin/simulatenode
+	@rm -f bin/integtestgrpcserver
 
 ##@ Deployment
 
@@ -128,16 +142,6 @@ deploy: manifests kustomize ## Deploy controller to the K8s cluster specified in
 .PHONY: undeploy
 undeploy: ## Undeploy controller from the K8s cluster specified in ~/.kube/config. Call with ignore-not-found=true to ignore resource not found errors during deletion.
 	$(KUSTOMIZE) build config/default | kubectl delete --ignore-not-found=$(ignore-not-found) -f -
-
-.PHONY: run-local-nodeagent
-	@sudo ./bin/nodeagent --fornaxcore-ip localhost:18001 --disable-swap=false
-
-APISERVER-BOOT = $(shell pwd)/bin/apiserver-boot
-.PHONY: run-apiserver-local
-run-apiserver-local: build ## Download apiserver-boot cmd locally if necessary.
-	$(call go-get-tool,$(APISERVER-BOOT),sigs.k8s.io/apiserver-builder-alpha/cmd/apiserver-boot@v1.23.0)
-	#$(APISERVER-BOOT) run local --run etcd
-	@bin/apiserver --etcd-servers=http://localhost:2379 --secure-port=9443 --feature-gates=APIPriorityAndFairness=false --standalone-debug-mode --bind-address=127.0.0.1
 
 CONTROLLER_GEN = $(shell pwd)/bin/controller-gen
 .PHONY: controller-gen

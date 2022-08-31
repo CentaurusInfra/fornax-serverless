@@ -24,7 +24,7 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"centaurusinfra.io/fornax-serverless/cmd/simulation/app"
+	"centaurusinfra.io/fornax-serverless/cmd/simulation/node/app"
 	cliflag "k8s.io/component-base/cli/flag"
 	"k8s.io/component-base/logs"
 	_ "k8s.io/component-base/logs/json/register" // for JSON log format registration

@@ -80,7 +80,7 @@ type NodeConfiguration struct {
 	CgroupRoot               string
 	CgroupDriver             string
 	DatabaseURL              string // /var/lib/nodeagent/db/nodeagent.sqlite
-	FornaxCoreIPs            []string
+	FornaxCoreUrls           []string
 	Hostname                 string
 	MemoryQoS                bool
 	DisableSwap              bool
@@ -131,7 +131,7 @@ func DefaultNodeConfiguration() (*NodeConfiguration, error) {
 		CgroupRoot:               DefaultCgroupRoot,
 		CgroupDriver:             DefaultCgroupDriver,
 		DatabaseURL:              fmt.Sprintf("%s/db/%s", DefaultRootPath, DefaultDBName),
-		FornaxCoreIPs:            []string{},
+		FornaxCoreUrls:           []string{},
 		Hostname:                 hostname,
 		MaxPods:                  DefaultMaxPods,
 		MaxContainerPerPod:       DefaultMaxContainerPerPod,
@@ -202,6 +202,6 @@ func AddConfigFlags(flagSet *pflag.FlagSet, nodeConfig *NodeConfiguration) {
 
 	flagSet.StringVar(&nodeConfig.ContainerRuntimeEndpoint, "remote-runtime-endpoint", nodeConfig.ContainerRuntimeEndpoint, "container runtime remote endpoint")
 
-	flagSet.StringArrayVar(&nodeConfig.FornaxCoreIPs, "fornaxcore-ip", nodeConfig.FornaxCoreIPs, "IPv4 addresses of the fornaxcores. must provided")
+	flagSet.StringArrayVar(&nodeConfig.FornaxCoreUrls, "fornaxcore-url", nodeConfig.FornaxCoreUrls, "addresses of the fornaxcores, format is ip:port. must provided")
 
 }

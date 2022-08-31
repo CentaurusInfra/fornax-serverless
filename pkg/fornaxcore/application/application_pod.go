@@ -62,7 +62,7 @@ type ApplicationPodSummary struct {
 	readyCount    int32
 }
 
-func (pool *ApplicationPool) summaryPod(podManager ie.PodManager) ApplicationPodSummary {
+func (pool *ApplicationPool) summaryPod(podManager ie.PodManagerInterface) ApplicationPodSummary {
 	summary := ApplicationPodSummary{}
 	pods := pool.podList()
 	for _, k := range pods {

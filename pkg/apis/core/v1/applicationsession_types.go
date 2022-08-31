@@ -82,7 +82,7 @@ const (
 	// session is not allocated yet
 	SessionStatusPending SessionStatus = "Pending"
 
-	// session is allocated to instance, not yet started
+	// session is send to instance, waiting for instance report session state
 	SessionStatusStarting SessionStatus = "Starting"
 
 	// session is started on instance, not used yet
@@ -91,23 +91,15 @@ const (
 	// session is started on instance, session is being used
 	SessionStatusOccupied SessionStatus = "Occupied"
 
+	// session is closing on instance, wait for session client exit
+	SessionStatusClosing SessionStatus = "Closing"
+
 	// session is closed on instance
 	SessionStatusClosed SessionStatus = "Closed"
 
 	// session is dead, no heartbeat, should close and start a new one
 	SessionStatusTimeout SessionStatus = "Timeout"
 )
-
-type SessionHistory struct {
-	// The last time this deployment was updated.
-	UpdateTime metav1.Time `json:"updateTime,omitempty"`
-
-	// The reason for the last transition.
-	Reason string `json:"reason,omitempty"`
-
-	// A human readable message indicating details about the transition.
-	Message string `json:"message,omitempty"`
-}
 
 type AccessEndPoint struct {
 	// TCP/UDP
@@ -139,12 +131,11 @@ type ApplicationSessionStatus struct {
 	// +listType=set
 	ClientSessions []corev1.LocalObjectReference `json:"clientSessions,omitempty" patchStrategy:"merge" patchMergeKey:"name"`
 
-	// Represents the latest available observations of a deployment's current state.
 	// +optional
-	// +patchMergeKey=updateTime
-	// +patchStrategy=merge
-	// +listType=set
-	History []SessionHistory `json:"history,omitempty" patchStrategy:"merge" patchMergeKey:"updateTime"`
+	AvailableTime *metav1.Time `json:"availableTime,omitempty"`
+
+	// +optional
+	CloseTime *metav1.Time `json:"closeTime,omitempty"`
 }
 
 var _ resource.Object = &ApplicationSession{}

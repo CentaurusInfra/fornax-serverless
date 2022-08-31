@@ -19,6 +19,7 @@ package session
 import (
 	"fmt"
 
+	fornaxv1 "centaurusinfra.io/fornax-serverless/pkg/apis/core/v1"
 	"centaurusinfra.io/fornax-serverless/pkg/message"
 	internal "centaurusinfra.io/fornax-serverless/pkg/nodeagent/message"
 	"centaurusinfra.io/fornax-serverless/pkg/nodeagent/sessionservice"
@@ -76,6 +77,8 @@ func (a *SessionActor) CloseSession() (err error) {
 		graceSeconds = *a.session.Session.Spec.CloseGracePeriodSeconds
 	}
 	if util.SessionIsOpen(a.session.Session) {
+		// save this state to report back to fornaxcore
+		a.session.Session.Status.SessionStatus = fornaxv1.SessionStatusClosing
 		err = a.sessionService.CloseSession(a.session.PodIdentifier, a.session.Identifier, graceSeconds)
 		if err != nil && err == sessionservice.SessionNotFound {
 			// send session closed state event

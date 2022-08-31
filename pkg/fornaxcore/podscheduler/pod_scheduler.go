@@ -18,6 +18,7 @@ package podscheduler
 
 import (
 	"context"
+	"math/rand"
 	"sync"
 	"time"
 
@@ -77,7 +78,7 @@ func (ps *podScheduler) calcScore(node *SchedulableNode, conditions []ScheduleCo
 	return score
 }
 
-func (ps *podScheduler) selectNode(pod *v1.Pod, nodes []*SchedulableNode) *SchedulableNode {
+func (ps *podScheduler) scoreNode(pod *v1.Pod, nodes []*SchedulableNode) *SchedulableNode {
 	maxScore := -1
 	var bestNode *SchedulableNode
 	conditions := CalculateScheduleConditions(ps.ScheduleConditionBuilders, pod)
@@ -89,6 +90,11 @@ func (ps *podScheduler) selectNode(pod *v1.Pod, nodes []*SchedulableNode) *Sched
 	}
 
 	return bestNode
+}
+func (ps *podScheduler) selectNode(pod *v1.Pod, nodes []*SchedulableNode) *SchedulableNode {
+	// randomly pickup one
+	no := rand.Intn(len(nodes))
+	return nodes[no]
 }
 
 // add pod into node resource list, and send pod to node via grpc channel, if it channel failed, reschedule
@@ -303,7 +309,7 @@ func NewPodScheduler(ctx context.Context, nodeAgent nodeagent.NodeAgentClient, n
 			NewPodMemoryCondition,
 		},
 		policy: SchedulePolicy{
-			NumOfEvaluatedNodes: 10,
+			NumOfEvaluatedNodes: 30,
 			BackoffDuration:     10 * time.Second,
 		},
 	}

@@ -265,6 +265,10 @@ See [get_start.md](https://github.com/CentaurusInfra/fornax-serverless/edit/main
 ```sh
 kubectl --kubeconfig kubeconfig proxy
 ```
+First time use zsh, install zsh
+```sh
+sudo apt install zsh
+```
 ```sh
 zsh
 source ./hack/fornax_curl.zshrc

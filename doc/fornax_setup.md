@@ -155,7 +155,7 @@ Save and exit file.
 If there are no 10-containerd-net.conflist file exits, you need create one.
 ```script
 sudo mkdir -p /etc/cni/net.d
-sudo vi /etc/cni/net.d/10-containerd-net.conflist
+sudo touch /etc/cni/net.d/10-containerd-net.conflist
 sudo chmod 777 /etc/cni/net.d/10-containerd-net.conflist
 ```
 You can back to [get_start.md](https://github.com/CentaurusInfra/fornax-serverless/edit/main/doc/get_start.md) and continue Add CNI config step.

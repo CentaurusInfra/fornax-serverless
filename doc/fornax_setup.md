@@ -266,6 +266,7 @@ See [get_start.md](https://github.com/CentaurusInfra/fornax-serverless/edit/main
 kubectl --kubeconfig kubeconfig proxy
 ```
 ```sh
+zsh
 source ./hack/fornax_curl.zshrc
 ```
 ```sh

@@ -247,9 +247,12 @@ func (appc *ApplicationManager) onApplicationSessionAddEvent(obj interface{}) {
 			appc.closeApplicationSession(session)
 		}
 	}
-	klog.InfoS("Application session created", "session", sessionKey)
-	appc.updateSessionPool(applicationKey, session, false)
-	appc.enqueueApplication(applicationKey)
+
+	if !util.SessionInTerminalState(session) {
+		klog.InfoS("Application session created", "session", sessionKey)
+		appc.updateSessionPool(applicationKey, session, false)
+		appc.enqueueApplication(applicationKey)
+	}
 }
 
 // callback from Application informer when ApplicationSession is updated

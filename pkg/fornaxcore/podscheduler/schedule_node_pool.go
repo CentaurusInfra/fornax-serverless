@@ -29,7 +29,7 @@ type SchedulableNode struct {
 	NodeId                     string
 	Node                       *v1.Node
 	LastSeen                   time.Time
-	LastUsed                   *time.Time
+	LastUsed                   time.Time
 	Stat                       ScheduleStat
 	ResourceList               v1.ResourceList
 	PodPreOccupiedResourceList v1.ResourceList
@@ -63,7 +63,7 @@ func (snode *SchedulableNode) AdmitPodOccupiedResourceList(resourceList *v1.Reso
 	snode.PodPreOccupiedResourceList[v1.ResourceStorage] = nodeStorage
 }
 
-func (snode *SchedulableNode) getAllocatableResources() v1.ResourceList {
+func (snode *SchedulableNode) GetAllocatableResources() v1.ResourceList {
 	snode.mu.Lock()
 	defer snode.mu.Unlock()
 	allocatedResources := v1.ResourceList{}
@@ -129,28 +129,32 @@ type SchedulableNodePool struct {
 	sortedNodes []*SchedulableNode
 }
 
-func (pool *SchedulableNodePool) getNode(name string) *SchedulableNode {
+func (pool *SchedulableNodePool) GetNode(name string) *SchedulableNode {
 	if n, f := pool.nodes[name]; f {
 		return n
 	}
 	return nil
 }
 
-func (pool *SchedulableNodePool) deleteNode(name string) {
+func (pool *SchedulableNodePool) DeleteNode(name string) {
 	pool.mu.Lock()
 	defer pool.mu.Unlock()
 	delete(pool.nodes, name)
 	pool.cow()
 }
 
-func (pool *SchedulableNodePool) addNode(name string, node *SchedulableNode) {
+func (pool *SchedulableNodePool) AddNode(name string, node *SchedulableNode) {
 	pool.mu.Lock()
 	defer pool.mu.Unlock()
 	pool.nodes[name] = node
 	pool.cow()
 }
 
-// cow us copy on write to avoid concurrent map iteration and modification
+func (pool *SchedulableNodePool) GetNodes() []*SchedulableNode {
+	return pool.sortedNodes
+}
+
+// build a sorted node, copy on write to avoid concurrent map iteration and modification,
 func (pool *SchedulableNodePool) cow() {
 	// TODO add real sorting logic
 	sortedNodes := []*SchedulableNode{}
@@ -162,10 +166,6 @@ func (pool *SchedulableNodePool) cow() {
 
 func (pool *SchedulableNodePool) size() int {
 	return len(pool.nodes)
-}
-
-func (pool *SchedulableNodePool) GetNodes() []*SchedulableNode {
-	return pool.sortedNodes
 }
 
 func (pool *SchedulableNodePool) printSummary() {

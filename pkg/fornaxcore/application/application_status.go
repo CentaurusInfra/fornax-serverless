@@ -19,6 +19,7 @@ package application
 import (
 	"context"
 	"fmt"
+	"reflect"
 	"time"
 
 	fornaxv1 "centaurusinfra.io/fornax-serverless/pkg/apis/core/v1"
@@ -35,7 +36,10 @@ const (
 )
 
 // updateApplicationStatus attempts to update the Status of the given Application and return updated Application
-func (appc *ApplicationManager) updateApplicationStatus(application *fornaxv1.Application, newStatus *fornaxv1.ApplicationStatus) (*fornaxv1.Application, error) {
+func (appc *ApplicationManager) updateApplicationStatus(application *fornaxv1.Application, newStatus *fornaxv1.ApplicationStatus) error {
+	if reflect.DeepEqual(application.Status, *newStatus) {
+		return nil
+	}
 	client := appc.apiServerClient.CoreV1().Applications(application.Namespace)
 
 	klog.Infof(fmt.Sprintf("Updating application status for %s, ", util.Name(application)) +
@@ -46,7 +50,7 @@ func (appc *ApplicationManager) updateApplicationStatus(application *fornaxv1.Ap
 		fmt.Sprintf("readyInstances %d->%d, ", application.Status.ReadyInstances, newStatus.ReadyInstances) +
 		fmt.Sprintf("idleInstances %d->%d, ", application.Status.IdleInstances, newStatus.IdleInstances))
 
-	var getErr, updateErr error
+	var updateErr error
 	updatedApplication := application.DeepCopy()
 	updatedApplication.Status = *newStatus
 	for i := 0; i <= UPDATE_RETRIES; i++ {
@@ -57,17 +61,16 @@ func (appc *ApplicationManager) updateApplicationStatus(application *fornaxv1.Ap
 	}
 
 	if updateErr != nil {
-		return nil, updateErr
+		return updateErr
 	}
 
 	// update finalizer
-	finalizer := application.Finalizers
 	if newStatus.TotalInstances == 0 {
 		util.RemoveFinalizer(&updatedApplication.ObjectMeta, fornaxv1.FinalizerApplicationPod)
 	} else {
 		util.AddFinalizer(&updatedApplication.ObjectMeta, fornaxv1.FinalizerApplicationPod)
 	}
-	if len(finalizer) != len(application.Finalizers) {
+	if len(updatedApplication.Finalizers) != len(application.Finalizers) {
 		for i := 0; i <= UPDATE_RETRIES; i++ {
 			updatedApplication, updateErr = client.Update(context.TODO(), updatedApplication, metav1.UpdateOptions{})
 			if updateErr == nil {
@@ -75,25 +78,19 @@ func (appc *ApplicationManager) updateApplicationStatus(application *fornaxv1.Ap
 			}
 		}
 	}
-
-	if application, getErr = client.Get(context.TODO(), application.Name, metav1.GetOptions{}); getErr != nil {
-		return application, getErr
-	} else {
-		return application, getErr
-	}
+	return nil
 }
 
 func (appc *ApplicationManager) calculateStatus(application *fornaxv1.Application, desiredCount int, action fornaxv1.DeploymentAction, deploymentErr error) *fornaxv1.ApplicationStatus {
+	newStatus := application.Status.DeepCopy()
 	applicationKey, err := cache.MetaNamespaceKeyFunc(application)
 	if err != nil {
-		return nil
+		return newStatus
 	}
 
 	var poolSummary ApplicationPodSummary
 	if pool := appc.getApplicationPool(applicationKey); pool != nil {
 		poolSummary = pool.summaryPod(appc.podManager)
-	} else {
-		return nil
 	}
 
 	if application.Status.DesiredInstances == int32(desiredCount) &&
@@ -102,10 +99,9 @@ func (appc *ApplicationManager) calculateStatus(application *fornaxv1.Applicatio
 		application.Status.DeletingInstances == poolSummary.deletingCount &&
 		application.Status.PendingInstances == poolSummary.pendingCount &&
 		application.Status.ReadyInstances == poolSummary.readyCount {
-		return nil
+		return newStatus
 	}
 
-	newStatus := application.Status.DeepCopy()
 	newStatus.DesiredInstances = int32(desiredCount)
 	newStatus.TotalInstances = poolSummary.totalCount
 	newStatus.PendingInstances = poolSummary.pendingCount

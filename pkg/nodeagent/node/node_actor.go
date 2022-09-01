@@ -509,7 +509,7 @@ func NewNodeActor(node *FornaxNode) (*FornaxNodeActor, error) {
 	actor.innerActor = message.NewLocalChannelActor(node.V1Node.GetName(), actor.nodeHandler)
 
 	klog.Info("Starting Fornax core actor")
-	fornaxCoreActor := fornaxcore.NewFornaxCoreActor(node.NodeConfig.NodeIP, util.Name(node.V1Node), node.NodeConfig.FornaxCoreIPs)
+	fornaxCoreActor := fornaxcore.NewFornaxCoreActor(node.NodeConfig.NodeIP, util.Name(node.V1Node), node.NodeConfig.FornaxCoreUrls)
 	actor.fornoxCoreRef = fornaxCoreActor.Reference()
 	err := fornaxCoreActor.Start(actor.innerActor.Reference())
 	if err != nil {

@@ -36,13 +36,23 @@ import (
 	"k8s.io/klog/v2"
 )
 
-var _ ie.NodeMonitor = &integtestNodeMonitor{}
+var _ ie.NodeMonitorInterface = &integtestNodeMonitor{}
 
 type integtestNodeMonitor struct {
 	sync.RWMutex
 	nodes map[string]*v1.Node
 
 	chQuit chan interface{}
+}
+
+// OnNodeConnect implements internal.NodeMonitor
+func (*integtestNodeMonitor) OnNodeConnect(nodeId string) error {
+	panic("unimplemented")
+}
+
+// OnNodeDisconnect implements internal.NodeMonitor
+func (*integtestNodeMonitor) OnNodeDisconnect(nodeId string) error {
+	panic("unimplemented")
 }
 
 // OnSessionUpdate implements server.NodeMonitor

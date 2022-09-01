@@ -51,11 +51,11 @@ type grpcServer struct {
 	sync.RWMutex
 	nodeGetMessageChans map[string]chan<- *fornaxcore_grpc.FornaxCoreMessage
 
-	nodeMonitor ie.NodeMonitor
+	nodeMonitor ie.NodeMonitorInterface
 	fornaxcore_grpc.UnimplementedFornaxCoreServiceServer
 }
 
-func (g *grpcServer) RunGrpcServer(ctx context.Context, nodeMonitor ie.NodeMonitor, port int, certFile, keyFile string) error {
+func (g *grpcServer) RunGrpcServer(ctx context.Context, nodeMonitor ie.NodeMonitorInterface, port int, certFile, keyFile string) error {
 	lis, err := net.Listen("tcp", fmt.Sprintf("0.0.0.0:%d", port))
 	if err != nil {
 		klog.ErrorS(err, "Fornaxcore grpc server failed to listen on port:", port)
@@ -93,6 +93,7 @@ func (g *grpcServer) enlistNode(node string, ch chan<- *fornaxcore_grpc.FornaxCo
 	if _, ok := g.nodeGetMessageChans[node]; ok {
 		return fmt.Errorf("node %s already has channel", node)
 	}
+	g.nodeMonitor.OnNodeConnect(node)
 	g.nodeGetMessageChans[node] = ch
 	return nil
 }
@@ -100,13 +101,13 @@ func (g *grpcServer) enlistNode(node string, ch chan<- *fornaxcore_grpc.FornaxCo
 func (g *grpcServer) delistNode(node string) {
 	g.Lock()
 	defer g.Unlock()
+	g.nodeMonitor.OnNodeDisconnect(node)
 	close(g.nodeGetMessageChans[node])
 	delete(g.nodeGetMessageChans, node)
 }
 
 func (g *grpcServer) GetMessage(identifier *fornaxcore_grpc.NodeIdentifier, server fornaxcore_grpc.FornaxCoreService_GetMessageServer) error {
 	var messageSeq int64 = 0
-	klog.InfoS("Received GetMessage stream connection from node", "node", identifier)
 	ch := make(chan *fornaxcore_grpc.FornaxCoreMessage, FornaxCoreChanSize)
 	if err := g.enlistNode(identifier.GetIdentifier(), ch); err != nil {
 		close(ch)

@@ -34,7 +34,7 @@ import (
 	"k8s.io/klog/v2"
 )
 
-var _ ie.NodeMonitor = &nodeMonitor{}
+var _ ie.NodeMonitorInterface = &nodeMonitor{}
 
 type NodeWithRevision struct {
 	NodeIdentifier string
@@ -70,8 +70,9 @@ func (pool *NodeRevisionPool) get(name string) *NodeWithRevision {
 
 type nodeMonitor struct {
 	chQuit      chan interface{}
-	nodeManager ie.NodeManager
+	nodeManager ie.NodeManagerInterface
 	nodes       NodeRevisionPool
+	staleNodes  NodeRevisionPool
 }
 
 // OnSessionUpdate implements server.NodeMonitor
@@ -86,8 +87,8 @@ func (nm *nodeMonitor) OnSessionUpdate(ctx context.Context, message *grpc.Fornax
 	}
 
 	klog.InfoS("Received a session state", "session", util.Name(session), "node revision", revision, "status", session.Status)
-	nodeIdentifier := message.GetNodeIdentifier()
-	nodeWS := nm.nodes.get(nodeIdentifier.GetIdentifier())
+	nodeId := message.GetNodeIdentifier().GetIdentifier()
+	nodeWS := nm.nodes.get(nodeId)
 	if nodeWS == nil {
 		return nil, nodeagent.NodeRevisionOutOfOrderError
 	}
@@ -100,7 +101,7 @@ func (nm *nodeMonitor) OnSessionUpdate(ctx context.Context, message *grpc.Fornax
 	}
 
 	nodeWS.Revision = revision
-	err := nm.nodeManager.UpdateSessionState(nodeIdentifier.GetIdentifier(), session)
+	err := nm.nodeManager.UpdateSessionState(nodeId, session)
 	if err != nil {
 		klog.ErrorS(err, "Failed to update pod state", "pod", sessionState)
 		return nil, err
@@ -160,6 +161,34 @@ func (nm *nodeMonitor) OnRegistry(ctx context.Context, message *grpc.FornaxCoreM
 	return m, nil
 }
 
+// OnNodeConnect update node state, make node ready for schedule pod
+func (nm *nodeMonitor) OnNodeConnect(nodeId string) error {
+	klog.InfoS("A node connected to FornaxCore", "node", nodeId)
+	nodeWS := nm.staleNodes.get(nodeId)
+	if nodeWS != nil {
+		nm.staleNodes.delete(nodeId)
+		// ask node to full sync since this node was disconnected before
+		return nodeagent.NodeRevisionOutOfOrderError
+	}
+	return nil
+}
+
+// OnNodeDisconnect update node state, make node ready for schedule pod
+func (nm *nodeMonitor) OnNodeDisconnect(nodeId string) error {
+	klog.InfoS("A node disconnected from FornaxCore", "node", nodeId)
+	nodeWS := nm.nodes.get(nodeId)
+	if nodeWS != nil {
+		nm.staleNodes.add(nodeId, nodeWS)
+	} else {
+		nm.staleNodes.add(nodeId, &NodeWithRevision{
+			NodeIdentifier: nodeId,
+			Revision:       0,
+		})
+	}
+	nm.nodeManager.DisconnectNode(nodeId)
+	return nil
+}
+
 // OnNodeReady update node state, make node ready for schedule pod
 func (nm *nodeMonitor) OnNodeReady(ctx context.Context, message *grpc.FornaxCoreMessage) (*grpc.FornaxCoreMessage, error) {
 	nodeReady := message.GetNodeReady()
@@ -214,7 +243,7 @@ func (nm *nodeMonitor) OnPodStateUpdate(ctx context.Context, message *grpc.Forna
 		return nil, err
 	}
 	if revision == nodeWS.Revision {
-		// klog.Infof("Received a same revision from node agent, revision: %d, skip", revision)
+		klog.InfoS("Received a same revision from node agent of pod, skip", "pod", podState.Pod.Name)
 		return nil, nil
 	}
 
@@ -283,11 +312,28 @@ func (nm *nodeMonitor) updateOrCreateNode(nodeId string, v1node *v1.Node, revisi
 	return nil
 }
 
-func NewNodeMonitor(nodeManager ie.NodeManager) *nodeMonitor {
+// nm.staleNodeBucket.refreshNode(fornaxNode)
+// nm.staleNodeBucket.refreshNode(nodeWS)
+func (nm *nodeMonitor) CheckStaleNode() {
+	// ask nodes to send full sync request
+	// for _, node := range nm.staleNodes {
+	// nm.FullSyncNode(util.Name(node.Node))
+	// }
+}
+
+// nm.nodeUpdateBucket.appendUpdate(update)
+// case <-nm.houseKeepingTicker.C:
+//   nm.PrintNodeSummary()
+//   nm.CheckStaleNode()
+func NewNodeMonitor(nodeManager ie.NodeManagerInterface) *nodeMonitor {
 	nm := &nodeMonitor{
 		chQuit:      make(chan interface{}),
 		nodeManager: nodeManager,
 		nodes: NodeRevisionPool{
+			mu:    sync.RWMutex{},
+			nodes: map[string]*NodeWithRevision{},
+		},
+		staleNodes: NodeRevisionPool{
 			mu:    sync.RWMutex{},
 			nodes: map[string]*NodeWithRevision{},
 		},

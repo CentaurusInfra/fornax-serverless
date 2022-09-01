@@ -26,24 +26,23 @@ import (
 	"centaurusinfra.io/fornax-serverless/pkg/fornaxcore/grpc/nodeagent"
 	ie "centaurusinfra.io/fornax-serverless/pkg/fornaxcore/internal"
 	"centaurusinfra.io/fornax-serverless/pkg/util"
-	apierrors "k8s.io/apimachinery/pkg/api/errors"
-	"k8s.io/apimachinery/pkg/util/errors"
-	"k8s.io/klog/v2"
 
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/klog/v2"
 )
 
-var _ ie.SessionInterface = &sessionManager{}
+var _ ie.SessionManagerInterface = &sessionManager{}
 
 type sessionManager struct {
 	ctx             context.Context
 	nodeAgentClient nodeagent.NodeAgentClient
 	apiServerClient fornaxclient.Interface
-	podManager      ie.PodManager
+	podManager      ie.PodManagerInterface
+	watchers        []chan<- interface{}
 }
 
-func NewSessionManager(ctx context.Context, nodeAgentProxy nodeagent.NodeAgentClient, podManager ie.PodManager, apiServerClient fornaxclient.Interface) *sessionManager {
+func NewSessionManager(ctx context.Context, nodeAgentProxy nodeagent.NodeAgentClient, podManager ie.PodManagerInterface, apiServerClient fornaxclient.Interface) *sessionManager {
 	mgr := &sessionManager{
 		ctx:             ctx,
 		apiServerClient: apiServerClient,
@@ -53,40 +52,22 @@ func NewSessionManager(ctx context.Context, nodeAgentProxy nodeagent.NodeAgentCl
 	return mgr
 }
 
-// treat node as authority for opened session status, session status from node could be Starting, Available, Closed,
-// use status from node always, then session will be closed if deletion is requested
-func (sm *sessionManager) UpdateSessionStatusFromNode(nodeId string, pod *v1.Pod, sessions []*fornaxv1.ApplicationSession) error {
-	errs := []error{}
+func (sm *sessionManager) Watch(receiver chan<- interface{}) {
+	sm.watchers = append(sm.watchers, receiver)
+}
+
+// forward to who are interested in session event
+func (sm *sessionManager) UpdateSessionStatusFromNode(nodeId string, pod *v1.Pod, sessions []*fornaxv1.ApplicationSession) {
 	for _, session := range sessions {
-		client := sm.apiServerClient.CoreV1().ApplicationSessions(session.Namespace)
-		oldCopy, err := client.Get(context.Background(), session.Name, metav1.GetOptions{})
-		if err != nil {
-			// session should be closed as fornax core does not have it anymore
-			if apierrors.IsNotFound(err) && util.SessionIsOpen(session) {
-				err = sm.CloseSession(pod, session)
-			}
-
-			errs = append(errs, err)
-		}
-		newStatus := session.Status.DeepCopy()
-		if session.Spec.KillInstanceWhenSessionClosed && newStatus.SessionStatus == fornaxv1.SessionStatusClosed && util.PodNotTerminated(pod) {
-			klog.InfoS("Terminate a pod as KillInstanceWhenSessionClosed is true", "pod", util.Name(pod), "session", util.Name(session))
-			if _, err = sm.podManager.TerminatePod(pod); err != nil {
-				errs = append(errs, err)
-				continue
+		for _, v := range sm.watchers {
+			v <- &ie.SessionEvent{
+				NodeId:  nodeId,
+				Pod:     pod,
+				Session: session,
+				Type:    ie.SessionEventTypeUpdate,
 			}
 		}
-		err = sm.UpdateSessionStatus(oldCopy, newStatus)
-		if err != nil {
-			errs = append(errs, err)
-		}
-
 	}
-	if len(errs) > 0 {
-		return errors.NewAggregate(errs)
-	}
-
-	return nil
 }
 
 func (sm *sessionManager) CloseSession(pod *v1.Pod, session *fornaxv1.ApplicationSession) error {
@@ -111,7 +92,7 @@ func (sm *sessionManager) UpdateSessionStatus(session *fornaxv1.ApplicationSessi
 		return nil
 	}
 
-	var getErr, updateErr error
+	var updateErr error
 	updatedSession := session.DeepCopy()
 	updatedSession.Status = *newStatus
 	client := sm.apiServerClient.CoreV1().ApplicationSessions(session.Namespace)
@@ -122,27 +103,30 @@ func (sm *sessionManager) UpdateSessionStatus(session *fornaxv1.ApplicationSessi
 		}
 	}
 	if updateErr != nil {
+		klog.ErrorS(updateErr, "Failed to update session", "sess", session)
 		return updateErr
 	}
 
-	if len(newStatus.ClientSessions) == 0 && !util.SessionIsOpen(updatedSession) {
-		util.RemoveFinalizer(&updatedSession.ObjectMeta, fornaxv1.FinalizerOpenSession)
+	return nil
+}
+
+func (sm *sessionManager) UpdateSessionFinalizer(sess *fornaxv1.ApplicationSession) error {
+	client := sm.apiServerClient.CoreV1().ApplicationSessions(sess.Namespace)
+	session := sess.DeepCopy()
+	if util.SessionIsOpen(session) {
+		util.AddFinalizer(&session.ObjectMeta, fornaxv1.FinalizerOpenSession)
 	} else {
-		util.AddFinalizer(&updatedSession.ObjectMeta, fornaxv1.FinalizerOpenSession)
+		util.RemoveFinalizer(&session.ObjectMeta, fornaxv1.FinalizerOpenSession)
 	}
 
-	if len(session.Finalizers) != len(updatedSession.Finalizers) {
+	if len(sess.Finalizers) != len(session.Finalizers) {
 		for i := 0; i <= 3; i++ {
-			updatedSession, updateErr = client.Update(context.TODO(), updatedSession, metav1.UpdateOptions{})
-			if updateErr == nil {
+			_, err := client.Update(context.TODO(), session, metav1.UpdateOptions{})
+			if err == nil {
 				break
 			}
 		}
 	}
 
-	if updatedSession, getErr = client.Get(context.TODO(), updatedSession.Name, metav1.GetOptions{}); getErr != nil {
-		return getErr
-	} else {
-		return nil
-	}
+	return nil
 }

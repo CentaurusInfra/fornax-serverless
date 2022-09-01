@@ -16,28 +16,41 @@ limitations under the License.
 package config
 
 import (
-	node_config "centaurusinfra.io/fornax-serverless/pkg/nodeagent/config"
+	"fmt"
+
+	nconfig "centaurusinfra.io/fornax-serverless/pkg/nodeagent/config"
+	"centaurusinfra.io/fornax-serverless/pkg/nodeagent/network"
 	"github.com/spf13/pflag"
 )
 
 type SimulationNodeConfiguration struct {
-	node_config.NodeConfiguration
-	NumOfNode int
+	NodeConfig     nconfig.NodeConfiguration
+	NodeIP         string
+	FornaxCoreUrls []string
+	NumOfNode      int
 }
 
 func AddConfigFlags(flagSet *pflag.FlagSet, nodeConfig *SimulationNodeConfiguration) {
-	node_config.AddConfigFlags(flagSet, &nodeConfig.NodeConfiguration)
+	flagSet.StringVar(&nodeConfig.NodeIP, "node-ip", nodeConfig.NodeIP, "IPv4 addresses of the node. If unset, use the node's default IPv4 address")
+
+	flagSet.StringArrayVar(&nodeConfig.FornaxCoreUrls, "fornaxcore-ip", nodeConfig.FornaxCoreUrls, "IPv4 addresses of the fornaxcores. must provided")
+
 	flagSet.IntVar(&nodeConfig.NumOfNode, "num-of-node", nodeConfig.NumOfNode, "how many nodes are simulated")
 }
 
 func DefaultNodeConfiguration() (*SimulationNodeConfiguration, error) {
-	c, err := node_config.DefaultNodeConfiguration()
+	ips, err := network.GetLocalV4IP()
 	if err != nil {
 		return nil, err
 	}
+	nodeIp := ips[0].To4().String()
+	nodeConfig, _ := nconfig.DefaultNodeConfiguration()
+
 	return &SimulationNodeConfiguration{
-		NodeConfiguration: *c,
-		NumOfNode:         0,
+		NodeConfig:     *nodeConfig,
+		NumOfNode:      1,
+		FornaxCoreUrls: []string{fmt.Sprintf("%s:18001", nodeIp)},
+		NodeIP:         nodeIp,
 	}, nil
 }
 

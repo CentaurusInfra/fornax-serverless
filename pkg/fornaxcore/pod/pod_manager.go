@@ -32,14 +32,13 @@ import (
 	k8spodutil "k8s.io/kubernetes/pkg/api/v1/pod"
 )
 
-var _ ie.PodManager = &podManager{}
+var _ ie.PodManagerInterface = &podManager{}
 
 type FornaxPodState string
 
 var (
 	PodNotFoundError           = errors.New("Pod does not exist")
 	PodNotTerminatedYetError   = errors.New("Pod not terminated yet")
-	PodAlreadyTerminatedError  = errors.New("Pod alredy terminated")
 	PodIsAlreadyScheduledError = errors.New("Pod is scheduled, reject double schedule")
 )
 
@@ -64,9 +63,15 @@ type PodPool struct {
 	pods map[string]*PodWithFornaxState
 }
 
+func (pool *PodPool) Len() int {
+	pool.mu.RLock()
+	defer pool.mu.RUnlock()
+	return len(pool.pods)
+}
+
 func (pool *PodPool) copyMap() map[string]*PodWithFornaxState {
-	pool.mu.Lock()
-	defer pool.mu.Unlock()
+	pool.mu.RLock()
+	defer pool.mu.RUnlock()
 	pods := make(map[string]*PodWithFornaxState, len(pool.pods))
 	for k, v := range pool.pods {
 		pods[k] = v
@@ -147,7 +152,7 @@ func (pool *PodStatePool) addPod(p *PodWithFornaxState) {
 type podManager struct {
 	ctx                context.Context
 	houseKeepingTicker *time.Ticker
-	podUpdates         chan interface{}
+	podUpdates         chan *ie.PodEvent
 	watchers           []chan<- interface{}
 	podStatePool       *PodStatePool
 	podScheduler       podscheduler.PodScheduler
@@ -172,7 +177,7 @@ func (pm *podManager) Run(podScheduler podscheduler.PodScheduler) error {
 	klog.Info("starting pod manager")
 	pm.podScheduler = podScheduler
 
-	klog.Info("starting pod manager house keeping and pod updates notification")
+	klog.Info("starting pod updates notification")
 	go func() {
 		for {
 			select {
@@ -183,6 +188,15 @@ func (pm *podManager) Run(podScheduler podscheduler.PodScheduler) error {
 				for _, watcher := range pm.watchers {
 					watcher <- update
 				}
+			}
+		}
+	}()
+
+	// use separate go routine, as pruneTerminatingPods will send envent to pm.podUpdates, it could stuck each otehr
+	klog.Info("starting pod manager summary")
+	go func() {
+		for {
+			select {
 			case <-pm.houseKeepingTicker.C:
 				pm.printPodSummary()
 				pm.pruneTerminatingPods()
@@ -412,10 +426,10 @@ func (pm *podManager) pruneTerminatingPods() {
 
 func (pm *podManager) printPodSummary() {
 	klog.InfoS("pod summary:",
-		"running", len(pm.podStatePool.runningPods.pods),
-		"pendingimpl", len(pm.podStatePool.pendingImplPods.pods),
-		"pendingschedule", len(pm.podStatePool.pendingSchedulePods.pods),
-		"terminating", len(pm.podStatePool.terminatingPods.pods),
+		"running", pm.podStatePool.runningPods.Len(),
+		"pendingimpl", pm.podStatePool.pendingImplPods.Len(),
+		"pendingschedule", pm.podStatePool.pendingSchedulePods.Len(),
+		"terminating", pm.podStatePool.terminatingPods.Len(),
 	)
 }
 
@@ -423,7 +437,7 @@ func NewPodManager(ctx context.Context, nodeAgentProxy nodeagent.NodeAgentClient
 	return &podManager{
 		ctx:                ctx,
 		houseKeepingTicker: time.NewTicker(DefaultPodManagerHouseKeepingDuration),
-		podUpdates:         make(chan interface{}, 100),
+		podUpdates:         make(chan *ie.PodEvent, 100),
 		watchers:           []chan<- interface{}{},
 		podStatePool: &PodStatePool{
 			pendingImplPods:     PodPool{pods: map[string]*PodWithFornaxState{}},

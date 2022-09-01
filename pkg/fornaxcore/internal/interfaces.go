@@ -26,7 +26,7 @@ import (
 	v1 "k8s.io/api/core/v1"
 )
 
-type PodManager interface {
+type PodManagerInterface interface {
 	AddPod(nodeId string, pod *v1.Pod) (*v1.Pod, error)
 	DeletePod(nodeId string, pod *v1.Pod) (*v1.Pod, error)
 	TerminatePod(pod *v1.Pod) (*v1.Pod, error)
@@ -37,10 +37,9 @@ type PodManager interface {
 type NodeWorkingState string
 
 const (
-	NodeWorkingStateRegistering NodeWorkingState = "registering"
-	NodeWorkingStateTerminating NodeWorkingState = "terminating"
-	NodeWorkingStateInActive    NodeWorkingState = "inactive"
-	NodeWorkingStateRunning     NodeWorkingState = "running"
+	NodeWorkingStateRegistering  NodeWorkingState = "registering"
+	NodeWorkingStateDisconnected NodeWorkingState = "disconnected"
+	NodeWorkingStateRunning      NodeWorkingState = "running"
 )
 
 type FornaxNodeWithState struct {
@@ -52,25 +51,27 @@ type FornaxNodeWithState struct {
 	LastSeen   time.Time
 }
 
-type NodeManager interface {
+type NodeManagerInterface interface {
 	NodeInfoProvider
 	UpdateSessionState(nodeId string, session *fornaxv1.ApplicationSession) error
 	UpdatePodState(nodeId string, pod *v1.Pod, sessions []*fornaxv1.ApplicationSession) error
 	SyncNodePodStates(nodeId string, podStates []*grpc.PodState)
+	DisconnectNode(nodeId string) error
 	FindNode(name string) *FornaxNodeWithState
 	CreateNode(nodeId string, node *v1.Node) (*FornaxNodeWithState, error)
-	DeleteNode(nodeId string, node *v1.Node) error
 	UpdateNode(nodeId string, node *v1.Node) (*FornaxNodeWithState, error)
 	SetupNode(nodeId string, node *v1.Node) (*FornaxNodeWithState, error)
 }
 
-// SessionInterface work as a bridge between node agent and fornax core, it call nodeagent to open/close a session
+// SessionManagerInterface work as a bridge between node agent and fornax core, it call nodeagent to open/close a session
 // and update session status using session state reported back from node agent
-type SessionInterface interface {
+type SessionManagerInterface interface {
 	UpdateSessionStatus(session *fornaxv1.ApplicationSession, newStatus *fornaxv1.ApplicationSessionStatus) error
-	UpdateSessionStatusFromNode(nodeId string, pod *v1.Pod, sessions []*fornaxv1.ApplicationSession) error
+	UpdateSessionFinalizer(session *fornaxv1.ApplicationSession) error
+	UpdateSessionStatusFromNode(nodeId string, pod *v1.Pod, sessions []*fornaxv1.ApplicationSession)
 	OpenSession(pod *v1.Pod, session *fornaxv1.ApplicationSession) error
 	CloseSession(pod *v1.Pod, session *fornaxv1.ApplicationSession) error
+	Watch(watcher chan<- interface{})
 }
 
 // NodeInfoProvider provide method to watch and list NodeEvent
@@ -84,8 +85,10 @@ type PodInfoProvider interface {
 	Watch(watcher chan<- interface{})
 }
 
-// NodeMonitor handle message sent by node agent
-type NodeMonitor interface {
+// NodeMonitorInterface handle message sent by node agent
+type NodeMonitorInterface interface {
+	OnNodeConnect(nodeId string) error
+	OnNodeDisconnect(nodeId string) error
 	OnRegistry(ctx context.Context, message *grpc.FornaxCoreMessage) (*grpc.FornaxCoreMessage, error)
 	OnNodeReady(ctx context.Context, message *grpc.FornaxCoreMessage) (*grpc.FornaxCoreMessage, error)
 	OnNodeStateUpdate(ctx context.Context, message *grpc.FornaxCoreMessage) (*grpc.FornaxCoreMessage, error)

@@ -17,11 +17,14 @@ limitations under the License.
 package podscheduler
 
 import (
+	"container/heap"
 	"context"
+	"fmt"
 	"math/rand"
 	"sync"
 	"time"
 
+	"centaurusinfra.io/fornax-serverless/pkg/collection"
 	"centaurusinfra.io/fornax-serverless/pkg/fornaxcore/grpc/nodeagent"
 	ie "centaurusinfra.io/fornax-serverless/pkg/fornaxcore/internal"
 	"centaurusinfra.io/fornax-serverless/pkg/util"
@@ -37,13 +40,48 @@ type PodScheduler interface {
 
 var _ PodScheduler = &podScheduler{}
 
+type NodeSortingMethod string
+
 const (
-	DefaultBackoffRetryDuration = 10 * time.Second
+	DefaultBackoffRetryDuration                    = 10 * time.Second
+	NodeSortingMethodMoreMemory  NodeSortingMethod = "more_memory"   // chose node with more memory
+	NodeSortingMethodLessLastUse NodeSortingMethod = "less_last_use" // choose oldest node
+	NodeSortingMethodLessUse     NodeSortingMethod = "less_use"      // choose node with less pods
 )
+
+func MoreNodeMemorySortFunc(pi, pj interface{}) bool {
+	piResource := pi.(*SchedulableNode).GetAllocatableResources()
+	piResourceV, _ := piResource.Memory().AsInt64()
+	pjResource := pj.(*SchedulableNode).GetAllocatableResources()
+	pjResourceV, _ := pjResource.Memory().AsInt64()
+	return piResourceV > pjResourceV
+}
+
+func LessNodeLastUseSortFunc(pi, pj interface{}) bool {
+	piLastUsed := pi.(*SchedulableNode).LastUsed.UnixNano()
+	pjLastUsed := pj.(*SchedulableNode).LastUsed.UnixNano()
+	return piLastUsed < pjLastUsed
+}
+
+func NodeNameKeyFunc(pj interface{}) string {
+	return pj.(*SchedulableNode).NodeId
+}
+
+func BuildNodePriorityQueue(policy *SchedulePolicy) *collection.PriorityQueue {
+	switch policy.NodeSortingMethod {
+	case NodeSortingMethodMoreMemory:
+		return collection.NewPriorityQueue(MoreNodeMemorySortFunc, NodeNameKeyFunc)
+	case NodeSortingMethodLessLastUse:
+		return collection.NewPriorityQueue(LessNodeLastUseSortFunc, NodeNameKeyFunc)
+	default:
+		return collection.NewPriorityQueue(LessNodeLastUseSortFunc, NodeNameKeyFunc)
+	}
+}
 
 type SchedulePolicy struct {
 	NumOfEvaluatedNodes int
 	BackoffDuration     time.Duration
+	NodeSortingMethod   NodeSortingMethod
 }
 
 type podScheduler struct {
@@ -69,7 +107,7 @@ func (ps *podScheduler) AddPod(pod *v1.Pod, duration time.Duration) {
 }
 
 func (ps *podScheduler) calcScore(node *SchedulableNode, conditions []ScheduleCondition) int {
-	allocatedResources := node.getAllocatableResources()
+	allocatedResources := node.GetAllocatableResources()
 	score := 0
 	for _, v := range conditions {
 		score += int(v.Score(node, &allocatedResources))
@@ -105,6 +143,7 @@ func (ps *podScheduler) bindNode(snode *SchedulableNode, pod *v1.Pod) error {
 
 	resourceList := util.GetPodResourceList(pod)
 	snode.AdmitPodOccupiedResourceList(resourceList)
+	snode.LastUsed = time.Now()
 
 	// set pod status
 	pod.Status.HostIP = snode.Node.Status.Addresses[0].Address
@@ -140,33 +179,36 @@ func (ps *podScheduler) schedulePod(pod *v1.Pod) {
 	}
 
 	conditions := CalculateScheduleConditions(ps.ScheduleConditionBuilders, pod)
-	availableNodes := []*SchedulableNode{}
+	availableNodes := BuildNodePriorityQueue(&ps.policy)
 	nodes := ps.nodePool.GetNodes()
 	for _, node := range nodes {
-		allocatedResources := node.getAllocatableResources()
-		good := true
+		allocatedResources := node.GetAllocatableResources()
+		goodNode := true
 		for _, cond := range conditions {
-			good = good && cond.Apply(node, &allocatedResources)
-			if !good {
+			goodNode = goodNode && cond.Apply(node, &allocatedResources)
+			if !goodNode {
 				klog.InfoS("Schedule condition does not meet", "condition", cond)
 				break
 			}
 		}
 
-		if good {
-			availableNodes = append(availableNodes, node)
+		if goodNode {
+			heap.Push(availableNodes, node)
 		}
-		if len(availableNodes) >= ps.policy.NumOfEvaluatedNodes {
+
+		if availableNodes.Len() >= ps.policy.NumOfEvaluatedNodes {
 			break
 		}
 	}
 
-	if len(availableNodes) == 0 {
+	if availableNodes.Len() == 0 {
 		// send pod to retry backoff queue
 		klog.InfoS("Can not find a node candidate for scheduling pod, retry later", "pod", podName)
 		ps.scheduleQueue.BackoffPod(pod, ps.policy.BackoffDuration)
 	} else {
-		node := ps.selectNode(pod, availableNodes)
+		// node := ps.selectNode(pod, availableNodes)
+		node := heap.Pop(availableNodes).(*SchedulableNode)
+		fmt.Println(node.LastUsed.UnixNano())
 		if node == nil {
 			klog.InfoS("All node candidate do not met requirement, retry later", "pod", podName)
 			ps.scheduleQueue.BackoffPod(pod, ps.policy.BackoffDuration)
@@ -182,13 +224,13 @@ func (ps *podScheduler) schedulePod(pod *v1.Pod) {
 func (ps *podScheduler) updateNodePool(nodeId string, v1node *v1.Node, updateType ie.NodeEventType) *SchedulableNode {
 	nodeName := util.Name(v1node)
 	if updateType == ie.NodeEventTypeDelete {
-		ps.nodePool.deleteNode(nodeName)
+		ps.nodePool.DeleteNode(nodeName)
 		return nil
 	} else {
-		if snode := ps.nodePool.getNode(nodeName); snode != nil {
+		if snode := ps.nodePool.GetNode(nodeName); snode != nil {
 			snode.LastSeen = time.Now()
 			if !util.IsNodeRunning(v1node) {
-				ps.nodePool.deleteNode(nodeName)
+				ps.nodePool.DeleteNode(nodeName)
 			}
 			return snode
 		} else {
@@ -199,12 +241,12 @@ func (ps *podScheduler) updateNodePool(nodeId string, v1node *v1.Node, updateTyp
 					NodeId:                     nodeId,
 					Node:                       v1node.DeepCopy(),
 					LastSeen:                   time.Now(),
-					LastUsed:                   nil,
+					LastUsed:                   time.Now(),
 					Stat:                       ScheduleStat{},
 					ResourceList:               GetNodeAllocatableResourceList(v1node),
 					PodPreOccupiedResourceList: v1.ResourceList{},
 				}
-				ps.nodePool.addNode(nodeName, snode)
+				ps.nodePool.AddNode(nodeName, snode)
 			}
 			// TODO, if there are pod in backoff queue with similar resource req, notify to try schedule
 
@@ -265,7 +307,7 @@ func (ps *podScheduler) Run() {
 				case *ie.PodEvent:
 					if u, ok := update.(*ie.PodEvent); ok {
 						if len(u.NodeId) != 0 {
-							snode := ps.nodePool.getNode(u.NodeId)
+							snode := ps.nodePool.GetNode(u.NodeId)
 							if snode != nil {
 								ps.updatePodOccupiedResourceList(snode, u.Pod, u.Type)
 							}
@@ -311,6 +353,7 @@ func NewPodScheduler(ctx context.Context, nodeAgent nodeagent.NodeAgentClient, n
 		policy: SchedulePolicy{
 			NumOfEvaluatedNodes: 30,
 			BackoffDuration:     10 * time.Second,
+			NodeSortingMethod:   NodeSortingMethodMoreMemory,
 		},
 	}
 	nodeInfoP.Watch(ps.updateCh)

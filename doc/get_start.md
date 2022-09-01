@@ -185,15 +185,14 @@ journalctl -u containerd -f
   Install and Set Up kubectl tool on Linux (https://kubernetes.io/docs/tasks/tools/install-kubectl-linux/)
   
 ## 3.2 Start Fornax Core Server And Node Agent
-  If you have not started Fornax Core API-Server and Node Agent, you need start them in different terminal or put in background.
   1. Fornax Core API-Server.
   ```sh
-  make run-fornaxcore-local
+  ./bin/fornaxcore --etcd-servers=http://127.0.0.1:2379 --secure-port=9443 --feature-gates=APIPriorityAndFairness=false --standalone-debug-mode --bind-address=127.0.0.1
   ```
   
-  2. Node Agent.
+  2. Node Agent. node agent require root permission
   ```sh
-  sudo ./bin/nodeagent --fornaxcore-ip localhost:18001 --disable-swap=false
+  sudo ./bin/nodeagent --fornaxcore-url 127.0.0.1:18001 --disable-swap=false
   ```
 
 ## 3.3 Run First Fornax Core serverless application

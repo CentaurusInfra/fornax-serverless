@@ -287,7 +287,7 @@ post_session game1  ./hack/test-data/sessionwrapper-echoserver-session-create.ya
 If you want delete Application Session, you can use following command
 ```sh
 kubectl delete applicationsession --kubeconfig kubeconfig --namespace game1 nginx-session2
-kubectl --kubeconfig kubeconfig delete applicationsession --namespace game1 nginx-session2
+kubectl --kubeconfig kubeconfig delete applicationsession --namespace game1 nginx-session2 -o yaml
 ```
 
 ## 4. Reference and Help

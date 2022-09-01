@@ -34,6 +34,7 @@ make
 Install latest version from <https://github.com/CentaurusInfra/fornax-serverless/releases>, start it as
 
 # 2. Install Node Agent
+Node Agent is installed on every host which run containers, install below dependencies and configure hosts accordingly
 
 ## 2.1 Install containerd/cni/runc
 
@@ -165,16 +166,16 @@ journalctl -u containerd -f
 From you install directory or project path
   1. Fornax Core API-Server.
   ```sh
-  ./bin/fornaxcore --etcd-servers=http://127.0.0.1:2379 --secure-port=9443 --feature-gates=APIPriorityAndFairness=false --standalone-debug-mode --bind-address=127.0.0.1
+  ./bin/fornaxcore --etcd-servers=http://127.0.0.1:2379 --secure-port=9443 --standalone-debug-mode --bind-address=127.0.0.1
   ```
   
-  2. Node Agent. node agent require root permission
+  2. Run Node Agent on host which run pods, Node agent require root permission
   ```sh
   sudo ./bin/nodeagent --fornaxcore-url 127.0.0.1:18001 --disable-swap=false
   ```
   Notes: You should replace 127.0.0.1 with correct fornax core host ip address if fornaxcore is not running on same host
 
-## 3.3 Run First Fornax Core serverless application
+## 3.3 Create First Fornax Core serverless application and session
 
 1. Create application
 

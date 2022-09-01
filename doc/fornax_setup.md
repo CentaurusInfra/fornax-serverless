@@ -282,12 +282,12 @@ kubectl --kubeconfig kubeconfig get applications --all-namespaces
 ```sh
 post_session game1  ./hack/test-data/sessionwrapper-echoserver-session-create.yaml
 kubectl --kubeconfig kubeconfig get applicationsession --all-namespaces
-post_session game1  ./hack/test-data/sessionwrapper-echoserver-session-create.yaml
+post_session game1  ./hack/test-data/sessionwrapper-echoserver-session-create.yaml -o yaml
 ```
 If you want delete Application Session, you can use following command
 ```sh
 kubectl delete applicationsession --kubeconfig kubeconfig --namespace game1 nginx-session2
-kubectl --kubeconfig kubeconfig delete applicationsession --namespace game1 nginx-session2 -o yaml
+kubectl --kubeconfig kubeconfig delete applicationsession --namespace game1 nginx-session2
 ```
 
 ## 4. Reference and Help

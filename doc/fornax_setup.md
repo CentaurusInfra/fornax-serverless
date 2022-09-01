@@ -245,7 +245,7 @@ kubectl version --client --output=yaml
 ### 3.2 Start Fornax Core API-Server And Node Agent
 1. Start API-Server
 ```script
-make run-apiserver-local
+make run-fornaxcore-local
 ```
 
 2. Start Node Agent

@@ -184,11 +184,11 @@ journalctl -u containerd -f
 ## 3.1 Install Kubectl In The VM Machine
   Install and Set Up kubectl tool on Linux (https://kubernetes.io/docs/tasks/tools/install-kubectl-linux/)
   
-## 3.2 Start Fornax Core API-Server And Node Agent
+## 3.2 Start Fornax Core Server And Node Agent
   If you have not started Fornax Core API-Server and Node Agent, you need start them in different terminal or put in background.
   1. Fornax Core API-Server.
   ```sh
-  make run-apiserver-local
+  make run-fornaxcore-local
   ```
   
   2. Node Agent.

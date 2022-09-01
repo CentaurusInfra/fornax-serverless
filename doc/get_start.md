@@ -26,7 +26,7 @@ Fornax serverless require go 1.8+, install golang from <https://go.dev/doc/insta
 Checkout code from <https://github.com/CentaurusInfra/fornax-serverless> into go workspace, from project folder, execute
 
 ```sh
-make install
+make
 ```
 
 ### 1.2.2 From binary
@@ -149,7 +149,7 @@ journalctl -u containerd -f
   Checkout code from <https://github.com/CentaurusInfra/fornax-serverless> into go workspace, from project folder, execute
 
   ```
-  make install
+  make
   ```
 
 ### 2.6.2 From binary

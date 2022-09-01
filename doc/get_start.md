@@ -29,20 +29,9 @@ Checkout code from <https://github.com/CentaurusInfra/fornax-serverless> into go
 make install
 ```
 
-3. start Fornax core.
-
-```sh
-make run-apiserver-local
-```
-
 ### 1.2.2 From binary
 
 Install latest version from <https://github.com/CentaurusInfra/fornax-serverless/releases>, start it as
-
-```sh
-bin/apiserver --etcd-servers=http://localhost:2379 --secure-port=9443 --feature-gates=APIPriorityAndFairness=false
-
-```
 
 # 2. Install Node Agent
 
@@ -163,21 +152,9 @@ journalctl -u containerd -f
   make install
   ```
 
-  3. start Node Agent
-
-  ```
-  sudo ./bin/nodeagent --fornaxcore-ip localhost:18001 --disable-swap=false
-  ```
-
 ### 2.6.2 From binary
 
-  Install latest version from <https://github.com/CentaurusInfra/fornax-serverless/releases>, start it as
-
-  ```
-  sudo ./bin/nodeagent --fornaxcore-ip localhost:18001 --disable-swap=false
-
-  ```
-  Notes: You also can replace localhost with specific ip address (for example: 192.168.0.45)
+  Install latest version from <https://github.com/CentaurusInfra/fornax-serverless/releases>, 
 
 # 3. Play Fornax serverless
 
@@ -185,6 +162,7 @@ journalctl -u containerd -f
   Install and Set Up kubectl tool on Linux (https://kubernetes.io/docs/tasks/tools/install-kubectl-linux/)
   
 ## 3.2 Start Fornax Core Server And Node Agent
+From you install directory or project path
   1. Fornax Core API-Server.
   ```sh
   ./bin/fornaxcore --etcd-servers=http://127.0.0.1:2379 --secure-port=9443 --feature-gates=APIPriorityAndFairness=false --standalone-debug-mode --bind-address=127.0.0.1
@@ -194,6 +172,7 @@ journalctl -u containerd -f
   ```sh
   sudo ./bin/nodeagent --fornaxcore-url 127.0.0.1:18001 --disable-swap=false
   ```
+  Notes: You should replace 127.0.0.1 with correct fornax core host ip address if fornaxcore is not running on same host
 
 ## 3.3 Run First Fornax Core serverless application
 

@@ -293,6 +293,10 @@ kubectl --kubeconfig kubeconfig delete applicationsession --namespace game1 ngin
 kubectl delete application --kubeconfig kubeconfig --namespace game1 echoserver1
 ```
 
+4. Verify session is accessable using access point
+```sh
+sudo nc -zv 10.218.233.95 1024
+```
 ## 4. Reference and Help
 1. If you want run git pull or some other git command, but you only see this error message:
    - error: cannot open .git/FETCH_HEAD: Permission denied

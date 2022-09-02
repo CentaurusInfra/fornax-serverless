@@ -250,7 +250,7 @@ make run-fornaxcore-local
 
 2. Start Node Agent
 ```script
-sudo ./bin/nodeagent --fornaxcore-ip localhost:18001 --disable-swap=false
+sudo ./bin/nodeagent --fornaxcore-url 127.0.0.1:18001 --disable-swap=false
 ```
 3. Notes: Based on your server machine, you maybe need update localhost to specific ip (for exmaple: 192.168.0.45:18001)
 

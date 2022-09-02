@@ -289,6 +289,9 @@ If you want delete Application Session, you can use following command
 kubectl delete applicationsession --kubeconfig kubeconfig --namespace game1 nginx-session2
 kubectl --kubeconfig kubeconfig delete applicationsession --namespace game1 nginx-session2
 ```
+```sh
+kubectl delete application --kubeconfig kubeconfig --namespace game1 echoserver1
+```
 
 ## 4. Reference and Help
 1. If you want run git pull or some other git command, but you only see this error message:

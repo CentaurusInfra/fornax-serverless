@@ -20,10 +20,12 @@ import (
 )
 
 type TestConfiguration struct {
-	TestCase           string
-	RunOnce            bool
-	NumOfApps          int
-	NumOfSessionPerApp int
+	TestCase            string
+	RunOnce             bool
+	NumOfApps           int
+	NumOfInitPodsPerApp int
+	BurstOfPods         int
+	NumOfSessionPerApp  int
 }
 
 type TestCase string
@@ -38,15 +40,19 @@ const (
 func AddConfigFlags(flagSet *pflag.FlagSet, simuConfig *TestConfiguration) {
 	flagSet.StringVar(&simuConfig.TestCase, "test-case", simuConfig.TestCase, "which test is running, app_full_cycle,session_full_cycle")
 	flagSet.IntVar(&simuConfig.NumOfApps, "num-of-app", simuConfig.NumOfApps, "how many applications are simulated")
+	flagSet.IntVar(&simuConfig.NumOfInitPodsPerApp, "num-of-init-pod-per-app", simuConfig.NumOfInitPodsPerApp, "how many applications pods are precreated when create app")
+	flagSet.IntVar(&simuConfig.BurstOfPods, "burst-of-app-pods", simuConfig.BurstOfPods, "maximum pods are allowed in one batch for a application")
 	flagSet.BoolVar(&simuConfig.RunOnce, "run-once", simuConfig.RunOnce, "run one test and exit")
 	flagSet.IntVar(&simuConfig.NumOfSessionPerApp, "num-of-session-per-app", simuConfig.NumOfSessionPerApp, "how many application sessions are created for a application")
 }
 
 func DefaultConfiguration() *TestConfiguration {
 	return &TestConfiguration{
-		TestCase:           AppFullCycleTest,
-		NumOfApps:          1,
-		RunOnce:            false,
-		NumOfSessionPerApp: 1,
+		TestCase:            AppFullCycleTest,
+		NumOfApps:           1,
+		NumOfInitPodsPerApp: 0,
+		BurstOfPods:         10,
+		RunOnce:             false,
+		NumOfSessionPerApp:  1,
 	}
 }

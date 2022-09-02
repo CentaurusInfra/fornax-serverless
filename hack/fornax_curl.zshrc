@@ -30,11 +30,11 @@ del_session() {
 }
 
 get_apps() {
- kubectl get application --kubeconfig kubeconfig --namespace $1 -o yaml
+ kubectl get application --kubeconfig kubeconfig -o yaml --namespace $*
 }
 
 get_sessions() {
- kubectl get applicationsession --kubeconfig kubeconfig --namespace $1 -o yaml
+ kubectl get applicationsession --kubeconfig kubeconfig -o yaml --namespace $*
 }
 
 

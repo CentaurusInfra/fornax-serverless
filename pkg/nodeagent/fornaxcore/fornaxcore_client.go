@@ -81,7 +81,7 @@ func (f *fornaxCoreClient) GetMessage(receiver string, channel chan *fornax.Forn
 func (f *fornaxCoreClient) PutMessage(message *fornax.FornaxCoreMessage) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	klog.InfoS("Send a message to FornaxCore", "endpoint", f.config.endpoint, "msgType", message.GetMessageType())
+	// klog.InfoS("Send a message to FornaxCore", "endpoint", f.config.endpoint, "msgType", message.GetMessageType())
 	if f.service == nil {
 		return errors.New("FornaxCore connection is not initialized yet")
 	}
@@ -182,7 +182,7 @@ func (f *fornaxCoreClient) recvMessage() {
 			continue
 		}
 
-		klog.InfoS("Received a message from FornaxCore", "msgType", msg.GetMessageType())
+		// klog.InfoS("Received a message from FornaxCore", "msgType", msg.GetMessageType())
 		panicReceivers := []string{}
 		for n, v := range f.receivers {
 			func() {

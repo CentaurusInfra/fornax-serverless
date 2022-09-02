@@ -62,10 +62,9 @@ func (pool *ApplicationPool) sessionList() []*fornaxv1.ApplicationSession {
 }
 
 func (pool *ApplicationPool) summarySessions() ApplicationSessionSummary {
-	pool.mu.RLock()
-	defer pool.mu.RUnlock()
 	summary := ApplicationSessionSummary{}
-	for _, v := range pool.sessionList() {
+	sessions := pool.sessionList()
+	for _, v := range sessions {
 		if v.DeletionTimestamp == nil {
 			if v.Status.SessionStatus == fornaxv1.SessionStatusUnspecified || v.Status.SessionStatus == fornaxv1.SessionStatusPending {
 				summary.pendingCount += 1
@@ -117,7 +116,8 @@ func (pool *ApplicationPool) deleteSession(key string) {
 // timeout, session timedout to get a pod, or session assigned to node, but timeout to get session state from node
 // active, session assigned to pod, waiting for started by pod or being used or waiting for connection
 func (pool *ApplicationPool) groupSessionsByState() (pendingSessions, deletingSessions, closingSessions, timeoutSessions, activeSessions []*fornaxv1.ApplicationSession) {
-	for _, v := range pool.sessionList() {
+	sessions := pool.sessionList()
+	for _, v := range sessions {
 		timeoutDuration := DefaultSessionOpenTimeoutDuration
 		if v.Spec.OpenTimeoutSeconds > 0 {
 			timeoutDuration = time.Duration(v.Spec.OpenTimeoutSeconds) * time.Second
@@ -331,7 +331,7 @@ func (appc *ApplicationManager) syncApplicationSessions(application *fornaxv1.Ap
 	}
 	_, _, idleRunningPods := appc.groupApplicationPods(applicationKey)
 	pendingSessions, deletingSessions, _, timeoutSessions, runningSessions := pool.groupSessionsByState()
-	klog.InfoS("Syncing application session", "application", applicationKey, "#running", len(runningSessions), "#pending", len(pendingSessions), "#deleting", len(deletingSessions), "#timeout", len(timeoutSessions), "#idleRunningPods", len(idleRunningPods))
+	klog.InfoS("Syncing pending application session", "application", applicationKey, "#running", len(runningSessions), "#pending", len(pendingSessions), "#deleting", len(deletingSessions), "#timeout", len(timeoutSessions), "#idleRunningPods", len(idleRunningPods))
 
 	sessionErrors := []error{}
 	// 1/ assign pending sessions to idle pod
@@ -475,13 +475,14 @@ func (appc *ApplicationManager) closeApplicationSession(session *fornaxv1.Applic
 
 func (appc *ApplicationManager) sessionHouseKeeping() error {
 	apps := appc.applicationList()
-	klog.Info("cleanup timeout session")
+	klog.Info("Session house keeping")
 	for _, v := range apps {
 		_, _, _, timeoutSessions, _ := v.groupSessionsByState()
 		for _, v := range timeoutSessions {
 			appc.changeSessionStatus(v, fornaxv1.SessionStatusTimeout)
 		}
 	}
+	klog.Info("Done session house keeping")
 
 	return nil
 }

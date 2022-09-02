@@ -20,8 +20,10 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"sync"
 	"time"
 
+	"centaurusinfra.io/fornax-serverless/cmd/fornaxtest/config"
 	fornaxv1 "centaurusinfra.io/fornax-serverless/pkg/apis/core/v1"
 	fornaxclient "centaurusinfra.io/fornax-serverless/pkg/client/clientset/versioned"
 	"centaurusinfra.io/fornax-serverless/pkg/util"
@@ -32,11 +34,13 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/tools/clientcmd"
-	_ "k8s.io/component-base/logs/json/register" // for JSON log format registration
+	_ "k8s.io/component-base/logs/json/register"
 	"k8s.io/klog/v2"
 )
 
 var (
+	apiServerClient = getApiServerClient()
+
 	SessionWrapperEchoServerSpec = &fornaxv1.ApplicationSpec{
 		Containers: []v1.Container{{
 			Name:  "echoserver",
@@ -62,8 +66,8 @@ var (
 		}},
 		ConfigData: map[string]string{},
 		ScalingPolicy: fornaxv1.ScalingPolicy{
-			MinimumInstance:   20,
-			MaximumInstance:   500,
+			MinimumInstance:   0,
+			MaximumInstance:   5000,
 			Burst:             50,
 			ScalingPolicyType: "idle_session_number",
 			IdleSessionNumThreshold: &fornaxv1.IdelSessionNumThreshold{
@@ -83,50 +87,21 @@ var (
 	}
 )
 
-func runAppFullCycleTest(namespace, appName string, numOfSession int) {
-	defer cleanupAppFullCycleTest(namespace, appName)
-	apiServerClient := getApiServerClient()
+func runAppFullCycleTest(namespace, appName string, testConfig config.TestConfiguration) {
 	application, err := describeApplication(apiServerClient, namespace, appName)
 	if err != nil {
 		klog.ErrorS(err, "Failed to find application", "name", appName)
 		return
 	}
 	if application == nil {
-		application, err = createApplication(apiServerClient, namespace, appName, SessionWrapperEchoServerSpec)
-		if err != nil {
-			klog.ErrorS(err, "Failed to create application", "name", appName)
-			return
-		}
-		waitForAppSetup(namespace, appName, int(SessionWrapperEchoServerSpec.ScalingPolicy.MinimumInstance))
+		application = createAndWaitForApplicationSetup(namespace, appName, testConfig)
 	}
 
-	sessionBaseName := uuid.New().String()
-	sessions := []string{}
-	for i := 0; i < numOfSession; i++ {
-		sessName := fmt.Sprintf("%s-session-%s-%d", appName, sessionBaseName, i)
-		sess, err := describeSession(apiServerClient, namespace, sessName)
-		if err != nil {
-			klog.ErrorS(err, "Failed to find session", "app", appName, "name", sessName)
-			continue
-		}
-		if sess != nil {
-			continue
-		}
-		applicationKey := util.Name(application)
-		_, err = createSession(apiServerClient, namespace, sessName, applicationKey, SessionWrapperEchoServerSessionSpec)
-		if err != nil {
-			klog.ErrorS(err, "Failed to create session", "app", appName, "name", sessName)
-			continue
-		} else {
-			sessions = append(sessions, sessName)
-		}
-	}
-
-	waitForSessionSetup(namespace, appName, sessions)
+	sessions := createAndWaitForSessionSetup(application, namespace, appName, testConfig)
+	cleanupAppFullCycleTest(namespace, appName, sessions)
 }
 
-func cleanupAppFullCycleTest(namespace, appName string) {
-	apiServerClient := getApiServerClient()
+func cleanupAppFullCycleTest(namespace, appName string, sessions []string) {
 	delTime := time.Now()
 	application, _ := describeApplication(apiServerClient, namespace, appName)
 	instanceNum := application.Status.TotalInstances
@@ -140,10 +115,50 @@ func cleanupAppFullCycleTest(namespace, appName string) {
 		}
 		continue
 	}
+	// for _, v := range sessions {
+	// 	deleteSession(apiServerClient, namespace, v)
+	// }
+}
+
+func createAndWaitForApplicationSetup(namespace, appName string, testConfig config.TestConfiguration) *fornaxv1.Application {
+	appSpec := SessionWrapperEchoServerSpec.DeepCopy()
+	appSpec.ScalingPolicy.Burst = uint32(testConfig.BurstOfPods)
+	appSpec.ScalingPolicy.MinimumInstance = uint32(testConfig.NumOfInitPodsPerApp)
+	application, err := createApplication(apiServerClient, namespace, appName, appSpec)
+	if err != nil {
+		klog.ErrorS(err, "Failed to create application", "name", appName)
+		return nil
+	}
+	waitForAppSetup(namespace, appName, int(appSpec.ScalingPolicy.MinimumInstance))
+	return application
+}
+
+func createAndWaitForSessionSetup(application *fornaxv1.Application, namespace, appName string, testConfig config.TestConfiguration) []string {
+	sessions := []string{}
+	sessionBaseName := uuid.New().String()
+	numOfSession := testConfig.NumOfSessionPerApp
+	wg := sync.WaitGroup{}
+	for i := 0; i < numOfSession; i++ {
+		sessName := fmt.Sprintf("%s-session-%s-%d", appName, sessionBaseName, i)
+		applicationKey := util.Name(application)
+		wg.Add(1)
+		func() {
+			defer wg.Done()
+			_, err := createSession(apiServerClient, namespace, sessName, applicationKey, SessionWrapperEchoServerSessionSpec)
+			if err != nil {
+				klog.ErrorS(err, "Failed to create session", "app", appName, "name", sessName)
+			} else {
+				sessions = append(sessions, sessName)
+			}
+		}()
+	}
+	wg.Wait()
+
+	waitForSessionSetup(namespace, appName, sessions)
+	return sessions
 }
 
 func waitForAppSetup(namespace, appName string, numOfInstance int) {
-	apiServerClient := getApiServerClient()
 	for {
 		time.Sleep(500 * time.Millisecond)
 		application, err := describeApplication(apiServerClient, namespace, appName)
@@ -160,7 +175,6 @@ func waitForAppSetup(namespace, appName string, numOfInstance int) {
 }
 
 func waitForSessionTearDown(namespace, appName string, sessions []string) {
-	apiServerClient := getApiServerClient()
 	for {
 		time.Sleep(500 * time.Millisecond)
 		allTeardown := true
@@ -171,13 +185,8 @@ func waitForSessionTearDown(namespace, appName string, sessions []string) {
 				allTeardown = false
 				break
 			}
-			if sess == nil {
-				continue
-			}
-
-			if !util.SessionInTerminalState(sess) {
+			if sess != nil {
 				allTeardown = false
-				break
 			}
 		}
 
@@ -188,7 +197,8 @@ func waitForSessionTearDown(namespace, appName string, sessions []string) {
 }
 
 func waitForSessionSetup(namespace, appName string, sessions []string) {
-	apiServerClient := getApiServerClient()
+	setupTimes := map[string]int64{}
+	timeoutSess := map[string]int64{}
 	for {
 		time.Sleep(500 * time.Millisecond)
 		allSetup := true
@@ -204,10 +214,16 @@ func waitForSessionSetup(namespace, appName string, sessions []string) {
 
 			switch sess.Status.SessionStatus {
 			case fornaxv1.SessionStatusAvailable:
-				fmt.Printf("Session: %s took %d micro second to setup\n", sessName, sess.Status.AvailableTime.Time.Sub(sess.CreationTimestamp.Time).Microseconds())
+				t := sess.Status.AvailableTimeMicro
+				setupTimes[sessName] = t
+				fmt.Printf("Session: %s took %d micro second to setup\n", sessName, sess.Status.AvailableTimeMicro)
 			case fornaxv1.SessionStatusTimeout:
+				t := time.Now().Sub(sess.CreationTimestamp.Time).Microseconds()
+				timeoutSess[sessName] = t
 				fmt.Printf("Session: %s timeout\n", sessName)
 			case fornaxv1.SessionStatusClosed:
+				t := sess.Status.CloseTime.Sub(sess.CreationTimestamp.Time).Microseconds()
+				setupTimes[sessName] = t
 				fmt.Printf("Session: %s closed\n", sessName)
 			default:
 				allSetup = false
@@ -221,52 +237,25 @@ func waitForSessionSetup(namespace, appName string, sessions []string) {
 	}
 }
 
-func runSessionFullSycleTest(namespace, appName string, numOfSession int) {
-	sessions := []string{}
-	defer cleanupSessionFullCycleTest(namespace, appName, sessions)
-	apiServerClient := getApiServerClient()
+func runSessionFullSycleTest(namespace, appName string, testConfig config.TestConfiguration) {
 	application, err := describeApplication(apiServerClient, namespace, appName)
 	if err != nil {
 		klog.ErrorS(err, "Failed to find application", "name", appName)
 		return
 	}
 	if application == nil {
-		application, err = createApplication(apiServerClient, namespace, appName, SessionWrapperEchoServerSpec)
-		if err != nil {
-			klog.ErrorS(err, "Failed to create application", "name", appName)
-			return
-		}
-		waitForAppSetup(namespace, appName, int(SessionWrapperEchoServerSpec.ScalingPolicy.MinimumInstance))
+		application = createAndWaitForApplicationSetup(namespace, appName, testConfig)
 	}
 
-	sessionBaseName := uuid.New().String()
-	for i := 0; i < numOfSession; i++ {
-		sessName := fmt.Sprintf("%s-session-%s-%d", appName, sessionBaseName, i)
-		sess, err := describeSession(apiServerClient, namespace, sessName)
-		if err != nil {
-			klog.ErrorS(err, "Failed to find session", "app", appName, "name", sessName)
-			continue
-		}
-		if sess != nil {
-			continue
-		}
-		applicationKey := util.Name(application)
-		_, err = createSession(apiServerClient, namespace, sessName, applicationKey, SessionWrapperEchoServerSessionSpec)
-		if err != nil {
-			klog.ErrorS(err, "Failed to create session", "app", appName, "name", sessName)
-			continue
-		} else {
-			sessions = append(sessions, sessName)
-		}
-	}
-	waitForSessionSetup(namespace, appName, sessions)
+	sessions := createAndWaitForSessionSetup(application, namespace, appName, testConfig)
+	cleanupSessionFullCycleTest(namespace, appName, sessions)
 }
 
 func cleanupSessionFullCycleTest(namespace, appName string, sessions []string) {
-	apiServerClient := getApiServerClient()
 	for _, sessName := range sessions {
 		deleteSession(apiServerClient, namespace, sessName)
 	}
+	waitForSessionTearDown(namespace, appName, sessions)
 }
 
 func createApplication(client fornaxclient.Interface, namespace, name string, appSpec *fornaxv1.ApplicationSpec) (*fornaxv1.Application, error) {
@@ -285,7 +274,7 @@ func createApplication(client fornaxclient.Interface, namespace, name string, ap
 		Spec:   *appSpec.DeepCopy(),
 		Status: fornaxv1.ApplicationStatus{},
 	}
-	klog.InfoS("Application created", "application", application)
+	klog.InfoS("Application created", "application", util.Name(application), "initial pods", application.Spec.ScalingPolicy.MinimumInstance)
 	return appClient.Create(context.Background(), application, metav1.CreateOptions{})
 }
 
@@ -303,8 +292,10 @@ func createSession(client fornaxclient.Interface, namespace, name, application s
 			GenerateName: name,
 			Namespace:    namespace,
 		},
-		Spec:   spec,
-		Status: fornaxv1.ApplicationSessionStatus{},
+		Spec: spec,
+		Status: fornaxv1.ApplicationSessionStatus{
+			CreationTimeMicro: time.Now().UnixMicro(),
+		},
 	}
 	klog.InfoS("Session created", "application", application, "session", name)
 	return appClient.Create(context.Background(), session, metav1.CreateOptions{})

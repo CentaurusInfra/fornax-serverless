@@ -100,10 +100,13 @@ func (sm *sessionManager) UpdateSessionStatus(session *fornaxv1.ApplicationSessi
 		updatedSession, updateErr = client.UpdateStatus(context.TODO(), updatedSession, metav1.UpdateOptions{})
 		if updateErr == nil {
 			break
+		} else {
+			updatedSession = session.DeepCopy()
+			updatedSession.Status = *newStatus
 		}
 	}
 	if updateErr != nil {
-		klog.ErrorS(updateErr, "Failed to update session", "sess", session)
+		klog.ErrorS(updateErr, "Failed to update session status", "sess", session)
 		return updateErr
 	}
 

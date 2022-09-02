@@ -270,6 +270,7 @@ func (n *SimulationNodeActor) createPodAndActor(state fornaxtypes.PodState,
 
 // find pod actor and send a message to it, if pod actor does not exist, create one
 func (n *SimulationNodeActor) onPodCreateCommand(msg *fornaxgrpc.PodCreate) error {
+	klog.InfoS("Creating Pod", "pod", msg.PodIdentifier, "node", n.node.V1Node.Name)
 	if n.state != node.NodeActorStateReady {
 		return fmt.Errorf("Node is not in ready state to create a new pod")
 	}
@@ -330,6 +331,7 @@ func (n *SimulationNodeActor) onPodCreateCommand(msg *fornaxgrpc.PodCreate) erro
 
 // find pod actor and send a message to it, if pod actor does not exist, return error
 func (n *SimulationNodeActor) onPodTerminateCommand(msg *fornaxgrpc.PodTerminate) error {
+	klog.InfoS("Terminating Pod", "pod", msg.PodIdentifier, "node", n.node.V1Node.Name)
 	fpod := n.node.Pods.Get(msg.GetPodIdentifier())
 	if fpod == nil {
 		return fmt.Errorf("Pod: %s does not exist, fornax core is not in sync", msg.GetPodIdentifier())
@@ -353,6 +355,7 @@ func (n *SimulationNodeActor) onPodActiveCommand(msg *fornaxgrpc.PodActive) erro
 
 // find pod actor to let it open a session, if pod actor does not exist, return failure
 func (n *SimulationNodeActor) onSessionOpenCommand(msg *fornaxgrpc.SessionOpen) error {
+	klog.InfoS("Opening session", "session", msg.SessionIdentifier, "pod", msg.PodIdentifier, "node", n.node.V1Node.Name)
 	if n.state != node.NodeActorStateReady {
 		return fmt.Errorf("node is not in ready state to open a session")
 	}
@@ -376,6 +379,7 @@ func (n *SimulationNodeActor) onSessionOpenCommand(msg *fornaxgrpc.SessionOpen) 
 		fpod.Sessions[sessId] = fsess
 		fsess.Session.Status.SessionStatus = fornaxv1.SessionStatusAvailable
 		fsess.Session.Status.AvailableTime = util.NewCurrentMetaTime()
+		fsess.Session.Status.AvailableTimeMicro = time.Now().UnixMicro() - sess.Status.CreationTimeMicro
 		n.notify(n.fornoxCoreRef, session.BuildFornaxcoreGrpcSessionState(revision, fsess))
 	}
 	return nil
@@ -383,9 +387,9 @@ func (n *SimulationNodeActor) onSessionOpenCommand(msg *fornaxgrpc.SessionOpen) 
 
 // find pod actor to let it terminate a session, if pod actor does not exist, return failure
 func (n *SimulationNodeActor) onSessionCloseCommand(msg *fornaxgrpc.SessionClose) error {
+	klog.InfoS("Closing session", "session", msg.SessionIdentifier, "pod", msg.PodIdentifier, "node", n.node.V1Node.Name)
 	sessId := msg.GetSessionIdentifier()
 	podId := msg.GetPodIdentifier()
-
 	fpod := n.node.Pods.Get(podId)
 	if fpod == nil {
 		return fmt.Errorf("Pod: %s does not exist, can not terminate session", podId)

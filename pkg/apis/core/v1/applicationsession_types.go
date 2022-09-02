@@ -136,6 +136,12 @@ type ApplicationSessionStatus struct {
 
 	// +optional
 	CloseTime *metav1.Time `json:"closeTime,omitempty"`
+
+	// +optional, for metrics test
+	CreationTimeMicro int64 `json:"creationTimeMicro,omitempty"`
+
+	// +optional, for metrics test
+	AvailableTimeMicro int64 `json:"availableTimeMicro,omitempty"`
 }
 
 var _ resource.Object = &ApplicationSession{}

@@ -29,7 +29,7 @@ import (
 type PodManagerInterface interface {
 	AddPod(nodeId string, pod *v1.Pod) (*v1.Pod, error)
 	DeletePod(nodeId string, pod *v1.Pod) (*v1.Pod, error)
-	TerminatePod(pod *v1.Pod) (*v1.Pod, error)
+	TerminatePod(pod *v1.Pod) error
 	FindPod(identifier string) *v1.Pod
 	Watch(watcher chan<- interface{})
 }

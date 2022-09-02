@@ -246,14 +246,13 @@ func (pm *podManager) DeletePod(nodeId string, pod *v1.Pod) (*v1.Pod, error) {
 // if pod not scheduled yet, it's safe to just delete after gracefulPeriod,
 // when there is a race condition with pod scheduler when it report back after moving to terminating queeu,
 // pod will be terminate again, if pod is already scheduled, it wait for node agent report back
-func (pm *podManager) TerminatePod(pod *v1.Pod) (*v1.Pod, error) {
-	klog.InfoS("Terminate a pod as requested", "pod", util.Name(pod))
+func (pm *podManager) TerminatePod(pod *v1.Pod) error {
 	// try best to remove pod from schedule queue, if it does not exit, it's no op
 	pm.podScheduler.RemovePod(pod)
 
 	fornaxPodState := pm.podStatePool.findPod(util.Name(pod))
 	if fornaxPodState == nil {
-		return nil, PodNotFoundError
+		return PodNotFoundError
 	}
 
 	// if pod exist, and pod does not have deletion timestamp, set it
@@ -276,7 +275,7 @@ func (pm *podManager) TerminatePod(pod *v1.Pod) (*v1.Pod, error) {
 
 	if fornaxPodState.podState == PodStateTerminating {
 		// pod is already in terminating queue, return
-		return fornaxPodState.v1pod.DeepCopy(), nil
+		return nil
 	}
 
 	// not terminated yet, let node agent terminate and report back
@@ -286,7 +285,7 @@ func (pm *podManager) TerminatePod(pod *v1.Pod) (*v1.Pod, error) {
 		// pod is bound with node, let node agent terminate it before deletion
 		err := pm.nodeAgentClient.TerminatePod(fornaxPodState.nodeId, fornaxPodState.v1pod)
 		if err != nil {
-			return nil, err
+			return err
 		}
 	}
 
@@ -295,7 +294,7 @@ func (pm *podManager) TerminatePod(pod *v1.Pod) (*v1.Pod, error) {
 	fornaxPodState.podState = PodStateTerminating
 	pm.podStatePool.addPod(fornaxPodState)
 
-	return existpod, nil
+	return nil
 }
 
 func (pm *podManager) createPod(nodeId string, pod *v1.Pod, podState FornaxPodState) {
@@ -418,8 +417,6 @@ func (pm *podManager) pruneTerminatingPods() {
 				Pod:    pod.v1pod.DeepCopy(),
 				Type:   ie.PodEventTypeDelete,
 			}
-		} else {
-			klog.InfoS("A terminating pod", "pod", name, "phase", pod.v1pod.Status.Phase, "hostIp", pod.v1pod.Status.HostIP, "nodename", pod.nodeId, "deletion time", pod.v1pod.DeletionTimestamp, "grace second", *pod.v1pod.DeletionGracePeriodSeconds)
 		}
 	}
 }

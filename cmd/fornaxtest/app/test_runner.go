@@ -100,9 +100,9 @@ func Run(ctx context.Context, testConfig config.TestConfiguration) {
 			appName := fmt.Sprintf("echoserver%d", i)
 			switch testConfig.TestCase {
 			case config.AppFullCycleTest:
-				runAppFullCycleTest(namespace, appName, testConfig.NumOfSessionPerApp)
+				runAppFullCycleTest(namespace, appName, testConfig)
 			case config.SessionFullCycleTest:
-				runSessionFullSycleTest(namespace, appName, testConfig.NumOfSessionPerApp)
+				runSessionFullSycleTest(namespace, appName, testConfig)
 			case config.AppCreateDeleteTest:
 			case config.AppCreateTest:
 			}

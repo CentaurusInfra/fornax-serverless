@@ -244,6 +244,10 @@ kubectl version --client --output=yaml
 
 ### 3.2 Start Fornax Core API-Server And Node Agent
 1. Start API-Server
+```sh
+./bin/fornaxcore --etcd-servers=http://127.0.0.1:2379 --secure-port=9443 --standalone-debug-mode --bind-address=127.0.0.1
+```
+or
 ```script
 make run-fornaxcore-local
 ```

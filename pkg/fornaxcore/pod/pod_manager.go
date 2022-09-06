@@ -151,18 +151,6 @@ func (pm *podManager) Run(podScheduler podscheduler.PodScheduler) error {
 		}
 	}()
 
-	// use separate go routine, as pruneTerminatingPods will send envent to pm.podUpdates, it could stuck each otehr
-	klog.Info("starting pod manager summary")
-	go func() {
-		for {
-			select {
-			case <-pm.houseKeepingTicker.C:
-				pm.printPodSummary()
-				pm.pruneTerminatingPods()
-			}
-		}
-	}()
-
 	return nil
 }
 
@@ -346,18 +334,6 @@ func (pm *podManager) AddPod(nodeId string, pod *v1.Pod) (*v1.Pod, error) {
 		}
 		return existPod, nil
 	}
-}
-
-func (pm *podManager) pruneTerminatingPods() {
-}
-
-func (pm *podManager) printPodSummary() {
-	// klog.InfoS("pod summary:",
-	//  "running", pm.podStatePool.runningPods.Len(),
-	//  "pendingimpl", pm.podStatePool.pendingImplPods.Len(),
-	//  "pendingschedule", pm.podStatePool.pendingSchedulePods.Len(),
-	//  "terminating", pm.podStatePool.terminatingPods.Len(),
-	// )
 }
 
 func NewPodManager(ctx context.Context, nodeAgentProxy nodeagent.NodeAgentClient) *podManager {

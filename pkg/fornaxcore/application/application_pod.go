@@ -617,3 +617,14 @@ func (am *ApplicationManager) cleanupPodOfApplication(applicationKey string) err
 	}
 	return nil
 }
+
+func (am *ApplicationManager) printAppPodSummary(applicationKey string) {
+	pool := am.getApplicationPool(applicationKey)
+	if pool != nil {
+		summary := pool.summaryPod(am.podManager)
+		klog.InfoS("Application pod summary:", "summary", summary)
+	}
+}
+
+func (am *ApplicationManager) pruneTerminatingPods() {
+}

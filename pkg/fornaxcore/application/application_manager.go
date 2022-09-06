@@ -254,10 +254,6 @@ func (am *ApplicationManager) Run(ctx context.Context) {
 	}
 }
 
-func (am *ApplicationManager) PrintAppSummary() {
-	klog.InfoS("app summary:", "#app", len(am.applicationPools), "application update queue", am.applicationQueue.Len())
-}
-
 func (am *ApplicationManager) enqueueApplication(applicationKey string) {
 	am.applicationQueue.Add(applicationKey)
 }
@@ -539,4 +535,8 @@ func (am *ApplicationManager) calculateStatus(application *fornaxv1.Application,
 	}
 
 	return newStatus
+}
+
+func (am *ApplicationManager) printAppSummary() {
+	klog.InfoS("app summary:", "#app", len(am.applicationPools), "application update queue", am.applicationQueue.Len())
 }

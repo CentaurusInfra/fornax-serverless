@@ -307,7 +307,6 @@ func (nm *nodeMonitor) updateOrCreateNode(nodeId string, v1node *v1.Node, revisi
 		}
 		nm.nodeManager.SyncNodePodStates(nodeId, podStates)
 	}
-	klog.InfoS("Node state and its pod states synced", "node", nodeId, "revision", revision)
 
 	return nil
 }

@@ -379,7 +379,7 @@ func (n *SimulationNodeActor) onSessionOpenCommand(msg *fornaxgrpc.SessionOpen) 
 		fpod.Sessions[sessId] = fsess
 		fsess.Session.Status.SessionStatus = fornaxv1.SessionStatusAvailable
 		fsess.Session.Status.AvailableTime = util.NewCurrentMetaTime()
-		fsess.Session.Status.AvailableTimeMicro = time.Now().UnixMicro() - sess.Status.CreationTimeMicro
+		fsess.Session.Status.AvailableTimeMicro = time.Now().UnixMicro()
 		n.notify(n.fornoxCoreRef, session.BuildFornaxcoreGrpcSessionState(revision, fsess))
 	}
 	return nil

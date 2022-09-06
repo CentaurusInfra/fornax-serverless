@@ -25,7 +25,6 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/util/validation/field"
-	"k8s.io/client-go/tools/cache"
 	"sigs.k8s.io/apiserver-runtime/pkg/builder/resource"
 	"sigs.k8s.io/apiserver-runtime/pkg/builder/resource/resourcestrategy"
 )
@@ -138,9 +137,6 @@ type ApplicationSessionStatus struct {
 	CloseTime *metav1.Time `json:"closeTime,omitempty"`
 
 	// +optional, for metrics test
-	CreationTimeMicro int64 `json:"creationTimeMicro,omitempty"`
-
-	// +optional, for metrics test
 	AvailableTimeMicro int64 `json:"availableTimeMicro,omitempty"`
 }
 
@@ -181,15 +177,6 @@ func (in *ApplicationSession) Validate(ctx context.Context) field.ErrorList {
 		err := field.Error{
 			Type:  field.ErrorTypeRequired,
 			Field: "Spec.ApplicationName",
-		}
-		errorList = append(errorList, &err)
-	}
-
-	if namespace, _, err := cache.SplitMetaNamespaceKey(in.Spec.ApplicationName); err != nil || len(namespace) == 0 {
-		err := field.Error{
-			Type:   field.ErrorTypeInvalid,
-			Field:  "Spec.ApplicationName",
-			Detail: "ApplicationName is not a namespace key format, namespace/name",
 		}
 		errorList = append(errorList, &err)
 	}

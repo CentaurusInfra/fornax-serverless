@@ -45,8 +45,6 @@ const (
 	// The number of times we retry updating a Application's status.
 	DefaultApplicationSyncErrorRecycleDuration = 10 * time.Second
 
-	DefaultApplicationDesiredStateRecycleDuration = 1 * time.Second
-
 	// The number of workers sync application
 	DefaultNumOfApplicationWorkers = 4
 )
@@ -94,7 +92,7 @@ type ApplicationManager struct {
 	// A pool of pods grouped by application key
 	applicationPools map[string]*ApplicationPool
 	apiServerClient  fornaxclient.Interface
-	watcher          chan interface{}
+	updateChannel    chan interface{}
 	podManager       ie.PodManagerInterface
 	sessionManager   ie.SessionManagerInterface
 
@@ -110,12 +108,12 @@ func NewApplicationManager(ctx context.Context, podManager ie.PodManagerInterfac
 		applicationQueue: workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "fornaxv1.Application"),
 		applicationPools: map[string]*ApplicationPool{},
 		apiServerClient:  apiServerClient,
-		watcher:          make(chan interface{}, 100),
+		updateChannel:    make(chan interface{}, 500),
 		podManager:       podManager,
 		sessionManager:   sessionManager,
 	}
-	am.podManager.Watch(am.watcher)
-	am.sessionManager.Watch(am.watcher)
+	am.podManager.Watch(am.updateChannel)
+	am.sessionManager.Watch(am.updateChannel)
 	am.syncHandler = am.syncApplication
 
 	return am
@@ -238,7 +236,7 @@ func (am *ApplicationManager) Run(ctx context.Context) {
 			select {
 			case <-ctx.Done():
 				break
-			case update := <-am.watcher:
+			case update := <-am.updateChannel:
 				if pe, ok := update.(*ie.PodEvent); ok {
 					am.onPodEventFromNode(pe)
 				}
@@ -268,7 +266,7 @@ func (am *ApplicationManager) enqueueApplication(applicationKey string) {
 func (am *ApplicationManager) onApplicationAddEvent(obj interface{}) {
 	application := obj.(*fornaxv1.Application)
 	applicationKey := util.Name(application)
-	klog.Infof("Adding application %s", applicationKey)
+	klog.Infof("Creating application %s", applicationKey)
 
 	am.getOrCreateApplicationPool(applicationKey)
 	am.enqueueApplication(applicationKey)
@@ -383,17 +381,16 @@ func (am *ApplicationManager) syncApplication(ctx context.Context, applicationKe
 			numOfDesiredPod = 0
 			action = fornaxv1.DeploymentActionDeleteInstance
 			if syncErr != nil {
-				// do not calculate status for a not found application, just retry
 				am.applicationQueue.AddAfter(applicationKey, DefaultApplicationSyncErrorRecycleDuration)
 				return nil
 			}
 		}
 	} else if application != nil {
 		if application.DeletionTimestamp == nil {
-			// 1/ sync session assign pending session to exist running pods firstly and cleanup timedout sessions,
-			syncErr = am.syncApplicationSessions(application, applicationKey)
+			// 1, sync session assign pending session to exist running pods firstly and cleanup timedout sessions,
+			syncErr = am.syncApplicationSessions(applicationKey, application)
 
-			// 2/ determine how many pods required for remaining pending sessions
+			// 2, determine how many pods required for remaining pending sessions
 			if syncErr == nil {
 				occupiedPods, idlePendingPods, idleRunningPods := am.groupApplicationPods(applicationKey)
 				numOfIdlePod := len(idleRunningPods) + len(idlePendingPods)
@@ -407,7 +404,7 @@ func (am *ApplicationManager) syncApplication(ctx context.Context, applicationKe
 				} else if numOfDesiredIdlePod < numOfIdlePod {
 					action = fornaxv1.DeploymentActionDeleteInstance
 				}
-				syncErr = am.syncApplicationPods(application, numOfDesiredIdlePod, numOfIdlePod, append(idlePendingPods, idleRunningPods...))
+				syncErr = am.syncApplicationPods(applicationKey, application, numOfDesiredIdlePod, numOfIdlePod, append(idlePendingPods, idleRunningPods...))
 			}
 		} else {
 			numOfDesiredPod = 0

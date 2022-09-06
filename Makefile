@@ -85,7 +85,7 @@ APISERVER-BOOT = $(shell pwd)/bin/apiserver-boot
 run-fornaxcore-local: build ## Download apiserver-boot cmd locally if necessary.
 	# $(call go-get-tool,$(APISERVER-BOOT),sigs.k8s.io/apiserver-builder-alpha/cmd/apiserver-boot@v1.23.0)
 	# $(APISERVER-BOOT) run local --run etcd,fornaxcore
-	@bin/fornaxcore --etcd-servers=http://127.0.0.1:2379 --secure-port=9443 --standalone-debug-mode --bind-address=127.0.0.1
+	@bin/fornaxcore --etcd-servers=http://127.0.0.1:2379 --secure-port=9443 --standalone-debug-mode --bind-address=127.0.0.1 --feature-gates=APIPriorityAndFairness=false
 
 .PHONY: docker-build
 docker-build: test ## Build docker image

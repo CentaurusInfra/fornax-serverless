@@ -20,6 +20,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"strconv"
 	"sync"
 	"time"
 
@@ -66,14 +67,11 @@ var (
 		}},
 		ConfigData: map[string]string{},
 		ScalingPolicy: fornaxv1.ScalingPolicy{
-			MinimumInstance:   0,
-			MaximumInstance:   5000,
-			Burst:             50,
-			ScalingPolicyType: "idle_session_number",
-			IdleSessionNumThreshold: &fornaxv1.IdelSessionNumThreshold{
-				HighWaterMark: 10,
-				LowWaterMark:  3,
-			},
+			MinimumInstance:         0,
+			MaximumInstance:         5000,
+			Burst:                   50,
+			ScalingPolicyType:       "idle_session_number",
+			IdleSessionNumThreshold: &fornaxv1.IdelSessionNumThreshold{HighWaterMark: 0, LowWaterMark: 0},
 		},
 	}
 
@@ -81,7 +79,7 @@ var (
 	SessionWrapperEchoServerSessionSpec = &fornaxv1.ApplicationSessionSpec{
 		ApplicationName:               "",
 		SessionData:                   "session-data",
-		KillInstanceWhenSessionClosed: false,
+		KillInstanceWhenSessionClosed: true,
 		CloseGracePeriodSeconds:       &CloseGracePeriodSeconds,
 		OpenTimeoutSeconds:            10,
 	}
@@ -107,7 +105,7 @@ func cleanupAppFullCycleTest(namespace, appName string, sessions []string) {
 	instanceNum := application.Status.TotalInstances
 	deleteApplication(apiServerClient, namespace, appName)
 	for {
-		time.Sleep(500 * time.Millisecond)
+		time.Sleep(100 * time.Millisecond)
 		appl, err := describeApplication(apiServerClient, namespace, appName)
 		if err == nil && appl == nil {
 			fmt.Printf("Application: %s took %d micro second to teardown %d instances\n", appName, time.Now().Sub(delTime).Microseconds(), instanceNum)
@@ -116,7 +114,7 @@ func cleanupAppFullCycleTest(namespace, appName string, sessions []string) {
 		continue
 	}
 	// for _, v := range sessions {
-	// 	deleteSession(apiServerClient, namespace, v)
+	//  deleteSession(apiServerClient, namespace, v)
 	// }
 }
 
@@ -140,11 +138,10 @@ func createAndWaitForSessionSetup(application *fornaxv1.Application, namespace, 
 	wg := sync.WaitGroup{}
 	for i := 0; i < numOfSession; i++ {
 		sessName := fmt.Sprintf("%s-session-%s-%d", appName, sessionBaseName, i)
-		applicationKey := util.Name(application)
 		wg.Add(1)
 		func() {
 			defer wg.Done()
-			_, err := createSession(apiServerClient, namespace, sessName, applicationKey, SessionWrapperEchoServerSessionSpec)
+			_, err := createSession(apiServerClient, namespace, sessName, appName, SessionWrapperEchoServerSessionSpec)
 			if err != nil {
 				klog.ErrorS(err, "Failed to create session", "app", appName, "name", sessName)
 			} else {
@@ -160,14 +157,20 @@ func createAndWaitForSessionSetup(application *fornaxv1.Application, namespace, 
 
 func waitForAppSetup(namespace, appName string, numOfInstance int) {
 	for {
-		time.Sleep(500 * time.Millisecond)
+		time.Sleep(100 * time.Millisecond)
 		application, err := describeApplication(apiServerClient, namespace, appName)
 		if err != nil {
 			continue
 		}
 
 		if int(application.Status.ReadyInstances) >= numOfInstance {
-			fmt.Printf("Application: %s took %d micro second to setup %d instances\n", appName, time.Now().Sub(application.CreationTimestamp.Time).Microseconds(), application.Status.ReadyInstances)
+			ct := application.CreationTimestamp.UnixMicro()
+			if v, found := application.Labels[fornaxv1.LabelFornaxCoreCreationUnixMicro]; found {
+				t, _ := strconv.Atoi(v)
+				ct = int64(t)
+			}
+			at := time.Now().UnixMicro()
+			fmt.Printf("Application: %s took %d micro second to setup %d instances\n", appName, at-ct, application.Status.ReadyInstances)
 			break
 		}
 		continue
@@ -176,7 +179,7 @@ func waitForAppSetup(namespace, appName string, numOfInstance int) {
 
 func waitForSessionTearDown(namespace, appName string, sessions []string) {
 	for {
-		time.Sleep(500 * time.Millisecond)
+		time.Sleep(100 * time.Millisecond)
 		allTeardown := true
 		for _, sessName := range sessions {
 			sess, err := describeSession(apiServerClient, namespace, sessName)
@@ -200,7 +203,7 @@ func waitForSessionSetup(namespace, appName string, sessions []string) {
 	setupTimes := map[string]int64{}
 	timeoutSess := map[string]int64{}
 	for {
-		time.Sleep(500 * time.Millisecond)
+		time.Sleep(100 * time.Millisecond)
 		allSetup := true
 		for _, sessName := range sessions {
 			sess, err := describeSession(apiServerClient, namespace, sessName)
@@ -214,9 +217,14 @@ func waitForSessionSetup(namespace, appName string, sessions []string) {
 
 			switch sess.Status.SessionStatus {
 			case fornaxv1.SessionStatusAvailable:
-				t := sess.Status.AvailableTimeMicro
-				setupTimes[sessName] = t
-				fmt.Printf("Session: %s took %d micro second to setup\n", sessName, sess.Status.AvailableTimeMicro)
+				ct := sess.CreationTimestamp.UnixMicro()
+				if v, found := sess.Labels[fornaxv1.LabelFornaxCoreCreationUnixMicro]; found {
+					t, _ := strconv.Atoi(v)
+					ct = int64(t)
+				}
+				at := sess.Status.AvailableTimeMicro
+				setupTimes[sessName] = at
+				fmt.Printf("Session: %s took %d micro second to setup\n", sessName, at-ct)
 			case fornaxv1.SessionStatusTimeout:
 				t := time.Now().Sub(sess.CreationTimestamp.Time).Microseconds()
 				timeoutSess[sessName] = t
@@ -269,7 +277,9 @@ func createApplication(client fornaxclient.Interface, namespace, name string, ap
 			Name:         name,
 			GenerateName: name,
 			Namespace:    namespace,
-			Labels:       map[string]string{fornaxv1.LabelFornaxCoreApplication: name},
+			Labels: map[string]string{
+				fornaxv1.LabelFornaxCoreCreationUnixMicro: fmt.Sprint(time.Now().UnixMicro()),
+			},
 		},
 		Spec:   *appSpec.DeepCopy(),
 		Status: fornaxv1.ApplicationStatus{},
@@ -278,10 +288,10 @@ func createApplication(client fornaxclient.Interface, namespace, name string, ap
 	return appClient.Create(context.Background(), application, metav1.CreateOptions{})
 }
 
-func createSession(client fornaxclient.Interface, namespace, name, application string, sessionSpec *fornaxv1.ApplicationSessionSpec) (*fornaxv1.ApplicationSession, error) {
+func createSession(client fornaxclient.Interface, namespace, name, applicationName string, sessionSpec *fornaxv1.ApplicationSessionSpec) (*fornaxv1.ApplicationSession, error) {
 	appClient := client.CoreV1().ApplicationSessions(namespace)
 	spec := *sessionSpec.DeepCopy()
-	spec.ApplicationName = application
+	spec.ApplicationName = applicationName
 	session := &fornaxv1.ApplicationSession{
 		TypeMeta: metav1.TypeMeta{
 			Kind:       fornaxv1.ApplicationSessionKind.Kind,
@@ -291,13 +301,13 @@ func createSession(client fornaxclient.Interface, namespace, name, application s
 			Name:         name,
 			GenerateName: name,
 			Namespace:    namespace,
+			Labels: map[string]string{
+				fornaxv1.LabelFornaxCoreCreationUnixMicro: fmt.Sprint(time.Now().UnixMicro()),
+			},
 		},
 		Spec: spec,
-		Status: fornaxv1.ApplicationSessionStatus{
-			CreationTimeMicro: time.Now().UnixMicro(),
-		},
 	}
-	klog.InfoS("Session created", "application", application, "session", name)
+	klog.InfoS("Session created", "application", applicationName, "session", name)
 	return appClient.Create(context.Background(), session, metav1.CreateOptions{})
 }
 

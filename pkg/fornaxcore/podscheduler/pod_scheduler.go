@@ -17,10 +17,10 @@ limitations under the License.
 package podscheduler
 
 import (
-	"container/heap"
 	"context"
 	"fmt"
 	"math/rand"
+	"sort"
 	"sync"
 	"time"
 
@@ -67,14 +67,14 @@ func NodeNameKeyFunc(pj interface{}) string {
 	return pj.(*SchedulableNode).NodeId
 }
 
-func BuildNodePriorityQueue(policy *SchedulePolicy) *collection.PriorityQueue {
-	switch policy.NodeSortingMethod {
+func BuildNodeSortingFunc(sortingMethod NodeSortingMethod) collection.LessFunc {
+	switch sortingMethod {
 	case NodeSortingMethodMoreMemory:
-		return collection.NewPriorityQueue(MoreNodeMemorySortFunc, NodeNameKeyFunc)
+		return MoreNodeMemorySortFunc
 	case NodeSortingMethodLessLastUse:
-		return collection.NewPriorityQueue(LessNodeLastUseSortFunc, NodeNameKeyFunc)
+		return LessNodeLastUseSortFunc
 	default:
-		return collection.NewPriorityQueue(LessNodeLastUseSortFunc, NodeNameKeyFunc)
+		return LessNodeLastUseSortFunc
 	}
 }
 
@@ -93,7 +93,7 @@ type podScheduler struct {
 	scheduleQueue             *PodScheduleQueue
 	nodePool                  *SchedulableNodePool
 	ScheduleConditionBuilders []ConditionBuildFunc
-	policy                    SchedulePolicy
+	policy                    *SchedulePolicy
 }
 
 // RemovePod remove a pod from scheduling queue
@@ -179,7 +179,7 @@ func (ps *podScheduler) schedulePod(pod *v1.Pod) {
 	}
 
 	conditions := CalculateScheduleConditions(ps.ScheduleConditionBuilders, pod)
-	availableNodes := BuildNodePriorityQueue(&ps.policy)
+	availableNodes := []*SchedulableNode{}
 	nodes := ps.nodePool.GetNodes()
 	for _, node := range nodes {
 		allocatedResources := node.GetAllocatableResources()
@@ -193,21 +193,26 @@ func (ps *podScheduler) schedulePod(pod *v1.Pod) {
 		}
 
 		if goodNode {
-			heap.Push(availableNodes, node)
+			availableNodes = append(availableNodes, node)
 		}
 
-		if availableNodes.Len() >= ps.policy.NumOfEvaluatedNodes {
+		if len(availableNodes) >= ps.policy.NumOfEvaluatedNodes {
 			break
 		}
 	}
 
-	if availableNodes.Len() == 0 {
+	if len(availableNodes) == 0 {
 		// send pod to retry backoff queue
 		klog.InfoS("Can not find a node candidate for scheduling pod, retry later", "pod", podName)
 		ps.scheduleQueue.BackoffPod(pod, ps.policy.BackoffDuration)
 	} else {
-		// node := ps.selectNode(pod, availableNodes)
-		node := heap.Pop(availableNodes).(*SchedulableNode)
+		// sort candidates to use first one, eg more memory or least used
+		sortedNodes := &SortedNodes{
+			nodes:    availableNodes,
+			lessFunc: BuildNodeSortingFunc(ps.policy.NodeSortingMethod),
+		}
+		sort.Sort(sortedNodes)
+		node := sortedNodes.nodes[0]
 		fmt.Println(node.LastUsed.UnixNano())
 		if node == nil {
 			klog.InfoS("All node candidate do not met requirement, retry later", "pod", podName)
@@ -271,17 +276,18 @@ func (ps *podScheduler) updatePodOccupiedResourceList(snode *SchedulableNode, v1
 func (ps *podScheduler) printScheduleSummary() {
 	activeNum, retryNum := ps.scheduleQueue.Length()
 	klog.InfoS("Scheduler summary", "active queue length", activeNum, "backoff queue length", retryNum, "available nodes", ps.nodePool.size())
-	ps.nodePool.printSummary()
+	// ps.nodePool.printSummary()
 }
 
 func (ps *podScheduler) Run() {
 	klog.Info("starting pod scheduler")
-	// check active qeueue item, and schedule pod
 	go func() {
 		for {
 			if ps.stop {
 				break
 			} else {
+				// check active qeueue item, and schedule pod, we want to avoid resource conflict,
+				// use single routine to do real schedule, schedulePod must be very fast
 				pod := ps.scheduleQueue.NextPod()
 				if pod != nil {
 					ps.schedulePod(pod)
@@ -322,39 +328,38 @@ func (ps *podScheduler) Run() {
 					klog.Errorf("unknown node update type %T!\n", t)
 				}
 			case <-ticker.C:
-				// check backoff queue, move item to active queue if item exceed cool down time
+				ps.printScheduleSummary()
+				// we may use different sorting interval
+				ps.nodePool.SortNodes()
+
+				// move item from backoff queue to active queue if item exceed cool down time
 				if ps.scheduleQueue.backoffRetryQueue.queue.Len() > 0 {
-					klog.Info("check backoff schedule item and revive mature item")
 					ps.scheduleQueue.ReviveBackoffItem()
 				}
-				ps.printScheduleSummary()
 			}
 		}
 	}()
 }
 
-func NewPodScheduler(ctx context.Context, nodeAgent nodeagent.NodeAgentClient, nodeInfoP ie.NodeInfoProvider, podInfoP ie.PodInfoProvider) *podScheduler {
+func NewPodScheduler(ctx context.Context, nodeAgent nodeagent.NodeAgentClient, nodeInfoP ie.NodeInfoProvider, podInfoP ie.PodInfoProvider, policy *SchedulePolicy) *podScheduler {
 	ps := &podScheduler{
 		ctx:             ctx,
 		stop:            false,
-		updateCh:        make(chan interface{}, 100),
+		updateCh:        make(chan interface{}, 500),
 		nodeInfoP:       nodeInfoP,
 		nodeAgentClient: nodeAgent,
 		scheduleQueue:   NewScheduleQueue(),
 		nodePool: &SchedulableNodePool{
-			mu:          sync.Mutex{},
-			nodes:       map[string]*SchedulableNode{},
-			sortedNodes: []*SchedulableNode{},
+			mu:            sync.Mutex{},
+			nodes:         map[string]*SchedulableNode{},
+			sortedNodes:   []*SchedulableNode{},
+			sortingMethod: policy.NodeSortingMethod,
 		},
 		ScheduleConditionBuilders: []ConditionBuildFunc{
 			NewPodCPUCondition,
 			NewPodMemoryCondition,
 		},
-		policy: SchedulePolicy{
-			NumOfEvaluatedNodes: 30,
-			BackoffDuration:     10 * time.Second,
-			NodeSortingMethod:   NodeSortingMethodMoreMemory,
-		},
+		policy: policy,
 	}
 	nodeInfoP.Watch(ps.updateCh)
 	podInfoP.Watch(ps.updateCh)

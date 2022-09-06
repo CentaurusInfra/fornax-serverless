@@ -320,3 +320,8 @@ version = 2
 [plugins."io.containerd.grpc.v1.cri".containerd.runtimes.quark]
   runtime_type = "io.containerd.quark.v1"
 ```
+
+4. Test command
+```sh
+./bin/fornaxtest --test-case session_full_cycle --num-of-session-per-app 1 --num-of-init-pod-per-app 0 --burst-of-app-pods 10 --run-once
+```

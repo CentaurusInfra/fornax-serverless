@@ -41,21 +41,22 @@ import (
 	k8spodutil "k8s.io/kubernetes/pkg/api/v1/pod"
 )
 
-type FornaxPodState string
+type ApplicationPodState string
 
 const (
-	PodStatePending     FornaxPodState = "Pending"
-	PodStateRunning     FornaxPodState = "Running"
-	PodStateTerminating FornaxPodState = "Terminating"
+	DefaultPodPendingTimeoutDuration                     = 10 * time.Second
+	PodStatePending                  ApplicationPodState = "Pending"
+	PodStateRunning                  ApplicationPodState = "Running"
+	PodStateTerminating              ApplicationPodState = "Terminating"
 )
 
 type ApplicationPod struct {
 	podName  string
-	state    FornaxPodState
+	state    ApplicationPodState
 	sessions *collection.ConcurrentStringSet
 }
 
-func NewApplicationPod(podName string, state FornaxPodState) *ApplicationPod {
+func NewApplicationPod(podName string, state ApplicationPodState) *ApplicationPod {
 	return &ApplicationPod{
 		podName:  podName,
 		state:    state,
@@ -69,6 +70,26 @@ type ApplicationPodSummary struct {
 	deletingCount int32
 	idleCount     int32
 	runningCount  int32
+}
+
+func (pool *ApplicationPool) groupPodsByState(podManager ie.PodManagerInterface) (pendingPods []*v1.Pod, deletingPods []*v1.Pod, runningPods []*v1.Pod) {
+	pods := pool.podList()
+	for _, k := range pods {
+		pod := podManager.FindPod(k.podName)
+		if pod != nil {
+			if pod.DeletionTimestamp == nil {
+				if k8spodutil.IsPodReady(pod) {
+					runningPods = append(runningPods, pod)
+				} else {
+					pendingPods = append(pendingPods, pod)
+				}
+			} else {
+				deletingPods = append(deletingPods, pod)
+			}
+		}
+	}
+
+	return pendingPods, deletingPods, runningPods
 }
 
 func (pool *ApplicationPool) summaryPod(podManager ie.PodManagerInterface) ApplicationPodSummary {
@@ -177,11 +198,17 @@ func (am *ApplicationManager) onPodAddEventFromNode(pod *v1.Pod) {
 		return
 	} else {
 		pool := am.getOrCreateApplicationPool(applicationKey)
-		if pool.getPod(podName) != nil && pod.Status.Phase == v1.PodPending {
-			// this pod is just created by application itself, waiting for pod scheduled, no need to sync
+		ap := pool.getPod(podName)
+		if ap != nil && ap.state == PodStateTerminating {
+			// this pod was requested to terminate, and node did not do it, terminate again
+			am.podManager.TerminatePod(pod)
 			return
 		}
 		if util.PodIsPending(pod) {
+			if ap != nil && ap.state == PodStatePending {
+				// this pod is just created by application itself, waiting for pod scheduled, no need to sync
+				return
+			}
 			pool.addPod(podName, NewApplicationPod(podName, PodStatePending))
 		} else if util.PodIsRunning(pod) {
 			pool.addPod(podName, NewApplicationPod(podName, PodStateRunning))
@@ -616,14 +643,6 @@ func (am *ApplicationManager) cleanupPodOfApplication(applicationKey string) err
 		}
 	}
 	return nil
-}
-
-func (am *ApplicationManager) printAppPodSummary(applicationKey string) {
-	pool := am.getApplicationPool(applicationKey)
-	if pool != nil {
-		summary := pool.summaryPod(am.podManager)
-		klog.InfoS("Application pod summary:", "summary", summary)
-	}
 }
 
 func (am *ApplicationManager) pruneTerminatingPods() {

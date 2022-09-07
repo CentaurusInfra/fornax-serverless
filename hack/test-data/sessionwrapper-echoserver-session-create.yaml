@@ -5,7 +5,7 @@ metadata:
   labels:
     application: echoserver
 spec:
-  applicationName: game1/echoserver
+  applicationName: echoserver
   sessionData: my-session-data
   openTimeoutSeconds: 30
   closeGracePeriodSeconds: 30

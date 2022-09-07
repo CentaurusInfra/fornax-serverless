@@ -253,7 +253,7 @@ func (am *ApplicationManager) Run(ctx context.Context) {
 					am.onSessionEventFromNode(se)
 				}
 			case <-ticker.C:
-				am.sessionHouseKeeping()
+				am.HouseKeeping()
 			}
 		}
 	}()
@@ -513,33 +513,33 @@ func (am *ApplicationManager) calculateStatus(application *fornaxv1.Application,
 
 	// this will make status huge, and finally fail a etcd request, need to find another way to save these history
 	// if action == fornaxv1.DeploymentActionCreateInstance || action == fornaxv1.DeploymentActionDeleteInstance {
-	// 	if deploymentErr != nil {
-	// 		newStatus.DeploymentStatus = fornaxv1.DeploymentStatusFailure
-	// 	} else {
-	// 		newStatus.DeploymentStatus = fornaxv1.DeploymentStatusSuccess
-	// 	}
+	//  if deploymentErr != nil {
+	//    newStatus.DeploymentStatus = fornaxv1.DeploymentStatusFailure
+	//  } else {
+	//    newStatus.DeploymentStatus = fornaxv1.DeploymentStatusSuccess
+	//  }
 	//
-	// 	message := fmt.Sprintf("deploy application instance, total: %d, desired: %d, pending: %d, deleting: %d, ready: %d, idle: %d",
-	// 		newStatus.TotalInstances,
-	// 		newStatus.DesiredInstances,
-	// 		newStatus.PendingInstances,
-	// 		newStatus.DeletingInstances,
-	// 		newStatus.ReadyInstances,
-	// 		newStatus.IdleInstances)
+	//  message := fmt.Sprintf("deploy application instance, total: %d, desired: %d, pending: %d, deleting: %d, ready: %d, idle: %d",
+	//    newStatus.TotalInstances,
+	//    newStatus.DesiredInstances,
+	//    newStatus.PendingInstances,
+	//    newStatus.DeletingInstances,
+	//    newStatus.ReadyInstances,
+	//    newStatus.IdleInstances)
 	//
-	// 	if deploymentErr != nil {
-	// 		message = fmt.Sprintf("%s, error: %s", message, deploymentErr.Error())
-	// 	}
+	//  if deploymentErr != nil {
+	//    message = fmt.Sprintf("%s, error: %s", message, deploymentErr.Error())
+	//  }
 	//
-	// 	deploymentHistory := fornaxv1.DeploymentHistory{
-	// 		Action: action,
-	// 		UpdateTime: metav1.Time{
-	// 			Time: time.Now(),
-	// 		},
-	// 		Reason:  "sync application",
-	// 		Message: message,
-	// 	}
-	// 	newStatus.History = append(newStatus.History, deploymentHistory)
+	//  deploymentHistory := fornaxv1.DeploymentHistory{
+	//    Action: action,
+	//    UpdateTime: metav1.Time{
+	//      Time: time.Now(),
+	//    },
+	//    Reason:  "sync application",
+	//    Message: message,
+	//  }
+	//  newStatus.History = append(newStatus.History, deploymentHistory)
 	// }
 
 	return newStatus
@@ -547,4 +547,33 @@ func (am *ApplicationManager) calculateStatus(application *fornaxv1.Application,
 
 func (am *ApplicationManager) printAppSummary() {
 	klog.InfoS("app summary:", "#app", len(am.applicationPools), "application update queue", am.applicationQueue.Len())
+}
+
+func (am *ApplicationManager) HouseKeeping() error {
+	apps := am.applicationList()
+	klog.Info("Application house keeping")
+	for appKey, app := range apps {
+		podSummary := app.summaryPod(am.podManager)
+		sessionSummary := app.summarySession()
+		klog.InfoS("Application summary", "app", appKey, "pod", app.summaryPod(am.podManager), "session", app.summarySession())
+
+		if sessionSummary.timeoutCount > 0 {
+			_, _, _, timeoutSessions, _ := app.groupSessionsByState()
+			for _, v := range timeoutSessions {
+				am.changeSessionStatus(v, fornaxv1.SessionStatusTimeout)
+			}
+		}
+
+		pendingCutoff := time.Now().Add(-1 * DefaultPodPendingTimeoutDuration)
+		if podSummary.pendingCount > 0 {
+			pendingPods, _, _ := app.groupPodsByState(am.podManager)
+			for _, pod := range pendingPods {
+				if pod.CreationTimestamp.Time.Before(pendingCutoff) {
+					am.deleteApplicationPod(appKey, pod)
+				}
+			}
+		}
+	}
+
+	return nil
 }

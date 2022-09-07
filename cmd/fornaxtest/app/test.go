@@ -198,7 +198,7 @@ func waitForSessionTearDown(namespace, appName string, sessions []*TestSession) 
 func waitForSessionSetup(namespace, appName string, sessions []*TestSession) {
 	klog.Infof("waiting for %d sessions setup", len(sessions))
 	for {
-		time.Sleep(100 * time.Millisecond)
+		time.Sleep(10 * time.Millisecond)
 		allSetup := true
 		for _, ts := range sessions {
 			sessName := ts.session.Name
@@ -214,7 +214,7 @@ func waitForSessionSetup(namespace, appName string, sessions []*TestSession) {
 			switch sess.Status.SessionStatus {
 			case fornaxv1.SessionStatusAvailable:
 				ts.availableTimeMicro = sess.Status.AvailableTimeMicro
-				// ts.availableTimeMicro = time.Now().UnixMicro()
+				ts.availableTimeMicro = time.Now().UnixMicro()
 				ts.status = fornaxv1.SessionStatusAvailable
 			case fornaxv1.SessionStatusTimeout:
 				ts.status = fornaxv1.SessionStatusTimeout
@@ -235,7 +235,20 @@ func waitForSessionSetup(namespace, appName string, sessions []*TestSession) {
 	}
 }
 
-func runSessionFullSycleTest(namespace, appName string, testConfig config.TestConfiguration) {
+func createSessionTest(namespace, appName string, testConfig config.TestConfiguration) {
+	application, err := describeApplication(apiServerClient, namespace, appName)
+	if err != nil {
+		klog.ErrorS(err, "Failed to find application", "name", appName)
+		return
+	}
+	if application == nil {
+		application = createAndWaitForApplicationSetup(namespace, appName, testConfig)
+	}
+
+	createAndWaitForSessionSetup(application, namespace, appName, testConfig)
+}
+
+func runSessionFullCycleTest(namespace, appName string, testConfig config.TestConfiguration) {
 	application, err := describeApplication(apiServerClient, namespace, appName)
 	if err != nil {
 		klog.ErrorS(err, "Failed to find application", "name", appName)
@@ -248,7 +261,6 @@ func runSessionFullSycleTest(namespace, appName string, testConfig config.TestCo
 	sessions := createAndWaitForSessionSetup(application, namespace, appName, testConfig)
 	cleanupSessionFullCycleTest(namespace, appName, sessions)
 }
-
 func cleanupSessionFullCycleTest(namespace, appName string, sessions []*TestSession) {
 	for _, sess := range sessions {
 		go deleteSession(getApiServerClient(), namespace, sess.session.Name)

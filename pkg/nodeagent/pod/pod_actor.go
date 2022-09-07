@@ -453,7 +453,6 @@ func (a *PodActor) handleSessionState(s internal.SessionState) {
 	case types.SessionStateReady:
 		newStatus.SessionStatus = fornaxv1.SessionStatusAvailable
 		newStatus.AvailableTime = util.NewCurrentMetaTime()
-		newStatus.AvailableTimeMicro = time.Now().UnixMicro()
 	case types.SessionStateClosed:
 		newStatus.SessionStatus = fornaxv1.SessionStatusClosed
 		newStatus.CloseTime = util.NewCurrentMetaTime()

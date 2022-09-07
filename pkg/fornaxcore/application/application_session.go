@@ -154,6 +154,12 @@ func (am *ApplicationManager) onSessionEventFromNode(se *ie.SessionEvent) error 
 	pod := se.Pod
 	session := se.Session
 	newStatus := session.Status.DeepCopy()
+
+	// for perf test metrics
+	if session.Status.SessionStatus == fornaxv1.SessionStatusAvailable {
+		newStatus.AvailableTime = util.NewCurrentMetaTime()
+		newStatus.AvailableTimeMicro = time.Now().UnixMicro()
+	}
 	applicationKey := am.getSessionApplicationKey(session)
 	pool := am.getOrCreateApplicationPool(applicationKey)
 	oldCopy := pool.getSession(string(session.GetUID()))
@@ -463,24 +469,6 @@ func (am *ApplicationManager) closeApplicationSession(session *fornaxv1.Applicat
 		}
 	} else {
 		// no op
-	}
-
-	return nil
-}
-
-func (am *ApplicationManager) sessionHouseKeeping() error {
-	apps := am.applicationList()
-	klog.Info("Session house keeping")
-	for _, v := range apps {
-		_, _, _, timeoutSessions, _ := v.groupSessionsByState()
-		for _, v := range timeoutSessions {
-			am.changeSessionStatus(v, fornaxv1.SessionStatusTimeout)
-		}
-	}
-	klog.Info("Done session house keeping")
-
-	for k, v := range apps {
-		klog.InfoS("Application summary", "app", k, "pod", v.summaryPod(am.podManager), "session", v.summarySession())
 	}
 
 	return nil

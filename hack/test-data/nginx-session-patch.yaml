@@ -1,5 +1,5 @@
 spec:
-  applicationNamespacedName: game1/nginx
+  applicationNamespacedName: nginx
   sessionData: my-nginx1-session-data
   killInstanceWhenSessionClosed: true
   openTimeoutSeconds: 30

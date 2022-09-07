@@ -210,7 +210,7 @@ func (am *ApplicationManager) onPodDeleteEventFromNode(pod *v1.Pod) {
 	}
 
 	if len(applicationKey) == 0 {
-		klog.InfoS("Pod does not belong to any application, this pod should have been terminated", "pod", podName, "labels", pod.GetLabels())
+		klog.InfoS("Pod does not belong to any application, pod should be terminated", "pod", podName, "labels", pod.GetLabels())
 		return
 	} else {
 		pool := am.getOrCreateApplicationPool(applicationKey)

@@ -122,7 +122,7 @@ func (pool *ApplicationPool) groupSessionsByState() (pendingSessions, deletingSe
 			timeoutDuration = time.Duration(v.Spec.OpenTimeoutSeconds) * time.Second
 		}
 		pendingTimeoutTimeStamp := time.Now().Add(-1 * timeoutDuration)
-		if v.Status.SessionStatus == fornaxv1.SessionStatusClosing {
+		if util.SessionIsClosing(v) {
 			closingSessions = append(closingSessions, v)
 		} else if v.DeletionTimestamp != nil {
 			deletingSessions = append(deletingSessions, v)
@@ -154,7 +154,7 @@ func (am *ApplicationManager) onSessionEventFromNode(se *ie.SessionEvent) error 
 	session := se.Session
 	newStatus := session.Status.DeepCopy()
 	applicationKey := am.getSessionApplicationKey(session)
-	pool := am.getApplicationPool(applicationKey)
+	pool := am.getOrCreateApplicationPool(applicationKey)
 	oldCopy := pool.getSession(string(session.GetUID()))
 	if oldCopy == nil {
 		if util.SessionIsClosed(session) {
@@ -163,12 +163,16 @@ func (am *ApplicationManager) onSessionEventFromNode(se *ie.SessionEvent) error 
 			am.onApplicationSessionAddEvent(session)
 		}
 	} else {
+		if util.SessionIsOpen(session) && oldCopy.DeletionTimestamp != nil {
+			// session was requested to delete, save old copy's deletiontimestamp and close session
+			session.DeletionTimestamp = oldCopy.DeletionTimestamp
+			am.sessionManager.CloseSession(pod, session)
+		}
 		am.onApplicationSessionUpdateEvent(oldCopy, session)
 		// update session in go routine, this is persist status change to return by api server
 		go func() {
 			am.sessionManager.UpdateSessionStatus(oldCopy.DeepCopy(), newStatus)
 		}()
-
 	}
 
 	//termiante pod after sesion is closed
@@ -244,9 +248,10 @@ func (am *ApplicationManager) onApplicationSessionAddEvent(obj interface{}) {
 }
 
 // callback from Application informer when ApplicationSession is updated
+// or session status is reported back from node
 // if session in terminal state, remove this session from pool,
 // else add new copy into pool
-// do not need to sync application unless session is deleting or status change
+// do not need to sync application unless session is deleting or status changed
 func (am *ApplicationManager) onApplicationSessionUpdateEvent(old, cur interface{}) {
 	oldCopy := old.(*fornaxv1.ApplicationSession)
 	newCopy := cur.(*fornaxv1.ApplicationSession)
@@ -258,7 +263,7 @@ func (am *ApplicationManager) onApplicationSessionUpdateEvent(old, cur interface
 	applicationKey := am.getSessionApplicationKey(newCopy)
 	pool := am.getOrCreateApplicationPool(applicationKey)
 	if v := pool.getSession(string(newCopy.GetUID())); v != nil {
-		// use cached old copy in memory,
+		// use cached old copy in memory, we update memory first when received a session status change from node
 		oldCopy = v.DeepCopy()
 	}
 
@@ -278,9 +283,12 @@ func (am *ApplicationManager) onApplicationSessionDeleteEvent(obj interface{}) {
 	}
 
 	applicationKey := am.getSessionApplicationKey(session)
-	klog.InfoS("Application session deleted", "session", sessionKey, "status", session.Status, "finalizer", session.Finalizers)
 	am.updateSessionPool(applicationKey, session, true)
-	am.enqueueApplication(applicationKey)
+	// delete a closed or timeout session does not impact application at all, no need to sync
+	if !util.SessionInTerminalState(session) {
+		klog.InfoS("Application session deleted", "session", sessionKey, "status", session.Status, "finalizer", session.Finalizers)
+		am.enqueueApplication(applicationKey)
+	}
 }
 
 // return sum of of all in use, idle, pending session, and all pending sessions
@@ -366,33 +374,43 @@ func (am *ApplicationManager) syncApplicationSessions(applicationKey string, app
 // if session is still in pending, change status to timeout
 // if session is not open or pending, just delete since it's already in a terminal state
 func (am *ApplicationManager) deleteApplicationSession(applicationKey string, session *fornaxv1.ApplicationSession) error {
-	// sessionId := util.Name(session)
 	sessionId := string(session.GetUID())
-	// in terminal or pending state, just delete
-	pool := am.getApplicationPool(applicationKey)
-	if pool == nil {
-		return nil
-	}
-
-	if util.SessionIsOpen(session) {
+	if util.SessionIsClosing(session) {
+		// already request to close, wait for report back
 		// TODO, if pod never report, session should be closed
-		return am.closeApplicationSession(session)
-	} else if util.SessionIsPending(session) {
-		err := am.changeSessionStatus(session, fornaxv1.SessionStatusTimeout)
+		return nil
+	} else if util.SessionIsOpen(session) {
+		if session.DeletionTimestamp == nil {
+			session.DeletionTimestamp = util.NewCurrentMetaTime()
+		}
+		err := am.closeApplicationSession(session)
 		if err != nil {
 			return err
+		} else {
+			// do not persist closing state, it's transit and kept in memory
+			session.Status.SessionStatus = fornaxv1.SessionStatusClosing
 		}
 	} else {
-		// no op
-	}
+		// in terminal or pending state, just delete it from pool
+		pool := am.getApplicationPool(applicationKey)
+		if pool == nil {
+			return nil
+		}
 
-	if session.Status.PodReference != nil {
-		pod := pool.getPod(session.Status.PodReference.Name)
-		if pod != nil {
-			pod.sessions.Delete(sessionId)
+		if util.SessionIsPending(session) {
+			if err := am.changeSessionStatus(session, fornaxv1.SessionStatusTimeout); err != nil {
+				return err
+			}
+
+			if session.Status.PodReference != nil {
+				pod := pool.getPod(session.Status.PodReference.Name)
+				if pod != nil {
+					pod.sessions.Delete(sessionId)
+				}
+			}
+			pool.deleteSession(sessionId)
 		}
 	}
-	pool.deleteSession(sessionId)
 	return nil
 }
 
@@ -433,8 +451,10 @@ func (am *ApplicationManager) closeApplicationSession(session *fornaxv1.Applicat
 			if pod != nil {
 				// ideally this state should report back from node, set it here to avoid calling node to close session multiple times
 				// if node report back different status, then app will call close session again
-				session.Status.SessionStatus = fornaxv1.SessionStatusClosing
-				return am.sessionManager.CloseSession(pod, session)
+				err := am.sessionManager.CloseSession(pod, session)
+				if err != nil {
+					return err
+				}
 			} else {
 				// how to handle it, this case could happen when FornaxCore restart
 				// it have not get all pods reported by node, and client want to close a session
@@ -468,12 +488,11 @@ func (am *ApplicationManager) sessionHouseKeeping() error {
 // It update open session to closed and pending session to timedout,
 // and does not try to call node to close session, as session does not exist at all on node when pod deleted
 func (am *ApplicationManager) cleanupSessionOnDeletedPod(pool *ApplicationPool, podName string) error {
-	klog.Infof("Delete all sessions of deleted pod %s", podName)
 	sessions := pool.sessionList()
 	podSessions := []*fornaxv1.ApplicationSession{}
 	for _, v := range sessions {
 		if v.Status.PodReference != nil && v.Status.PodReference.Name == podName {
-			klog.Infof("Delete sessions %s", util.Name(v))
+			klog.Infof("Delete sessions %s on deleted pod %s", util.Name(v), podName)
 			pool.deleteSession(string(v.GetUID()))
 			podSessions = append(podSessions, v)
 		}

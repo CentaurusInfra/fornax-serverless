@@ -99,10 +99,10 @@ func runAppFullCycleTest(namespace, appName string, testConfig config.TestConfig
 	cleanupAppFullCycleTest(namespace, appName, sessions)
 }
 
-func cleanupAppFullCycleTest(namespace, appName string, sessions []string) {
-	delTime := time.Now()
+func cleanupAppFullCycleTest(namespace, appName string, sessions []*TestSession) {
 	application, _ := describeApplication(apiServerClient, namespace, appName)
 	instanceNum := application.Status.TotalInstances
+	delTime := time.Now()
 	deleteApplication(apiServerClient, namespace, appName)
 	for {
 		time.Sleep(100 * time.Millisecond)
@@ -131,21 +131,28 @@ func createAndWaitForApplicationSetup(namespace, appName string, testConfig conf
 	return application
 }
 
-func createAndWaitForSessionSetup(application *fornaxv1.Application, namespace, appName string, testConfig config.TestConfiguration) []string {
-	sessions := []string{}
+type TestSession struct {
+	session            *fornaxv1.ApplicationSession
+	creationTimeMicro  int64
+	availableTimeMicro int64
+	status             fornaxv1.SessionStatus
+}
+
+func createAndWaitForSessionSetup(application *fornaxv1.Application, namespace, appName string, testConfig config.TestConfiguration) []*TestSession {
+	sessions := []*TestSession{}
 	sessionBaseName := uuid.New().String()
 	numOfSession := testConfig.NumOfSessionPerApp
 	wg := sync.WaitGroup{}
 	for i := 0; i < numOfSession; i++ {
 		sessName := fmt.Sprintf("%s-session-%s-%d", appName, sessionBaseName, i)
 		wg.Add(1)
-		func() {
+		go func() {
 			defer wg.Done()
-			_, err := createSession(apiServerClient, namespace, sessName, appName, SessionWrapperEchoServerSessionSpec)
+			ts, err := createSession(getApiServerClient(), namespace, sessName, appName, SessionWrapperEchoServerSessionSpec)
 			if err != nil {
 				klog.ErrorS(err, "Failed to create session", "app", appName, "name", sessName)
 			} else {
-				sessions = append(sessions, sessName)
+				sessions = append(sessions, ts)
 			}
 		}()
 	}
@@ -177,12 +184,12 @@ func waitForAppSetup(namespace, appName string, numOfInstance int) {
 	}
 }
 
-func waitForSessionTearDown(namespace, appName string, sessions []string) {
+func waitForSessionTearDown(namespace, appName string, sessions []*TestSession) {
 	for {
 		time.Sleep(100 * time.Millisecond)
 		allTeardown := true
-		for _, sessName := range sessions {
-			sess, err := describeSession(apiServerClient, namespace, sessName)
+		for _, ts := range sessions {
+			sess, err := describeSession(apiServerClient, namespace, ts.session.Name)
 
 			if err != nil {
 				allTeardown = false
@@ -199,14 +206,13 @@ func waitForSessionTearDown(namespace, appName string, sessions []string) {
 	}
 }
 
-func waitForSessionSetup(namespace, appName string, sessions []string) {
-	setupTimes := map[string]int64{}
-	timeoutSess := map[string]int64{}
+func waitForSessionSetup(namespace, appName string, sessions []*TestSession) {
 	for {
 		time.Sleep(100 * time.Millisecond)
 		allSetup := true
-		for _, sessName := range sessions {
-			sess, err := describeSession(apiServerClient, namespace, sessName)
+		for _, ts := range sessions {
+			sessName := ts.session.Name
+			sess, err := describeSession(getApiServerClient(), namespace, sessName)
 			if err != nil {
 				allSetup = false
 				break
@@ -217,22 +223,13 @@ func waitForSessionSetup(namespace, appName string, sessions []string) {
 
 			switch sess.Status.SessionStatus {
 			case fornaxv1.SessionStatusAvailable:
-				ct := sess.CreationTimestamp.UnixMicro()
-				if v, found := sess.Labels[fornaxv1.LabelFornaxCoreCreationUnixMicro]; found {
-					t, _ := strconv.Atoi(v)
-					ct = int64(t)
-				}
-				at := sess.Status.AvailableTimeMicro
-				setupTimes[sessName] = at
-				fmt.Printf("Session: %s took %d micro second to setup\n", sessName, at-ct)
+				ts.availableTimeMicro = sess.Status.AvailableTimeMicro
+				// ts.availableTimeMicro = time.Now().UnixMicro()
+				ts.status = fornaxv1.SessionStatusAvailable
 			case fornaxv1.SessionStatusTimeout:
-				t := time.Now().Sub(sess.CreationTimestamp.Time).Microseconds()
-				timeoutSess[sessName] = t
-				fmt.Printf("Session: %s timeout\n", sessName)
+				ts.status = fornaxv1.SessionStatusTimeout
 			case fornaxv1.SessionStatusClosed:
-				t := sess.Status.CloseTime.Sub(sess.CreationTimestamp.Time).Microseconds()
-				setupTimes[sessName] = t
-				fmt.Printf("Session: %s closed\n", sessName)
+				ts.status = fornaxv1.SessionStatusClosed
 			default:
 				allSetup = false
 				break
@@ -240,6 +237,9 @@ func waitForSessionSetup(namespace, appName string, sessions []string) {
 		}
 
 		if allSetup {
+			for _, v := range sessions {
+				fmt.Printf("Session: %s took %d micro second to setup\n, status %s", v.session.Name, v.availableTimeMicro-v.creationTimeMicro, v.status)
+			}
 			break
 		}
 	}
@@ -259,9 +259,9 @@ func runSessionFullSycleTest(namespace, appName string, testConfig config.TestCo
 	cleanupSessionFullCycleTest(namespace, appName, sessions)
 }
 
-func cleanupSessionFullCycleTest(namespace, appName string, sessions []string) {
-	for _, sessName := range sessions {
-		deleteSession(apiServerClient, namespace, sessName)
+func cleanupSessionFullCycleTest(namespace, appName string, sessions []*TestSession) {
+	for _, sess := range sessions {
+		deleteSession(apiServerClient, namespace, sess.session.Name)
 	}
 	waitForSessionTearDown(namespace, appName, sessions)
 }
@@ -288,7 +288,7 @@ func createApplication(client fornaxclient.Interface, namespace, name string, ap
 	return appClient.Create(context.Background(), application, metav1.CreateOptions{})
 }
 
-func createSession(client fornaxclient.Interface, namespace, name, applicationName string, sessionSpec *fornaxv1.ApplicationSessionSpec) (*fornaxv1.ApplicationSession, error) {
+func createSession(client fornaxclient.Interface, namespace, name, applicationName string, sessionSpec *fornaxv1.ApplicationSessionSpec) (*TestSession, error) {
 	appClient := client.CoreV1().ApplicationSessions(namespace)
 	spec := *sessionSpec.DeepCopy()
 	spec.ApplicationName = applicationName
@@ -307,8 +307,17 @@ func createSession(client fornaxclient.Interface, namespace, name, applicationNa
 		},
 		Spec: spec,
 	}
+	creationTimeMicro := time.Now().UnixMicro()
+	session, err := appClient.Create(context.Background(), session, metav1.CreateOptions{})
+	if err != nil {
+		return nil, err
+	}
 	klog.InfoS("Session created", "application", applicationName, "session", name)
-	return appClient.Create(context.Background(), session, metav1.CreateOptions{})
+	return &TestSession{
+		session:            session,
+		creationTimeMicro:  creationTimeMicro,
+		availableTimeMicro: 0,
+	}, nil
 }
 
 func deleteApplication(client fornaxclient.Interface, namespace, name string) error {

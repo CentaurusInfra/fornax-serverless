@@ -352,6 +352,13 @@ func (am *ApplicationManager) cleanupDeletedApplication(applicationKey string) e
 				return err
 			}
 		}
+
+		// if a application does not have any pod or session, remove it from application pool to save memory
+		if pool.podLength() == 0 && pool.sessionLength() == 0 {
+			klog.InfoS("Application pool is empty, remove", "application", applicationKey)
+			// remove this application from pool
+			am.deleteApplicationPool(applicationKey)
+		}
 	}
 	return nil
 }
@@ -417,15 +424,6 @@ func (am *ApplicationManager) syncApplication(ctx context.Context, applicationKe
 	if syncErr != nil {
 		klog.ErrorS(syncErr, "Failed to sync application, requeue", "application", applicationKey)
 		am.applicationQueue.AddAfter(applicationKey, DefaultApplicationSyncErrorRecycleDuration)
-	} else {
-		// if a application does not have any pod or session, remove it from application pool to save memory
-		pool := am.getApplicationPool(applicationKey)
-		if pool != nil {
-			if pool.podLength() == 0 && pool.sessionLength() == 0 {
-				// remove this application from pool
-				am.deleteApplicationPool(applicationKey)
-			}
-		}
 	}
 
 	return syncErr

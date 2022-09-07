@@ -100,7 +100,17 @@ func (pm *HostPortRange) allocateHostPort(node *v1.Node, containerPorts []*v1.Co
 	}
 
 	// if we got here, we are not able to allocate host port for all container ports, rollback allocated slots
-	pm.deallocateHostPort(containerPorts)
+	for _, v := range containerPorts {
+		if v.HostPort > 0 {
+			slotNo := (v.HostPort - pm.startingPort) / HostPortNumPerRange
+			if pm.rangeSlots[slotNo] != nil {
+				pm.rangeSlots[slotNo].allocatedPorts -= 1
+				if pm.rangeSlots[slotNo].allocatedPorts <= 0 {
+					pm.rangeSlots[slotNo] = nil
+				}
+			}
+		}
+	}
 	return InSufficientHostPortError
 }
 
@@ -212,6 +222,6 @@ func GetContainerPorts(pod *v1.Pod) []v1.ContainerPort {
 
 func NewNodePortManager(nodeConfig *config.NodeConfiguration) *nodePortManager {
 	return &nodePortManager{
-		portRange: NewHostPortRange(nodeConfig.MaxContainerPerPod, nodeConfig.NodePortStartingNo),
+		portRange: NewHostPortRange(nodeConfig.MaxPods, nodeConfig.NodePortStartingNo),
 	}
 }

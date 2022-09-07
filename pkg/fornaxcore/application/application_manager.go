@@ -63,7 +63,16 @@ func NewApplicationPool() *ApplicationPool {
 	}
 }
 
-func GetApplication(lister listerv1.ApplicationLister, applicationKey string) (*fornaxv1.Application, error) {
+func GetApplication(apiServerClient fornaxclient.Interface, applicationKey string) (*fornaxv1.Application, error) {
+	namespace, name, err := cache.SplitMetaNamespaceKey(applicationKey)
+	if err != nil {
+		klog.ErrorS(err, "Application key is not a valid meta namespace key, skip", "application", applicationKey)
+		return nil, err
+	}
+	return apiServerClient.CoreV1().Applications(namespace).Get(context.Background(), name, metav1.GetOptions{})
+}
+
+func GetApplicationCache(lister listerv1.ApplicationLister, applicationKey string) (*fornaxv1.Application, error) {
 	namespace, name, err := cache.SplitMetaNamespaceKey(applicationKey)
 	if err != nil {
 		klog.ErrorS(err, "Application key is not a valid meta namespace key, skip", "application", applicationKey)
@@ -91,7 +100,6 @@ type ApplicationManager struct {
 
 	// A pool of pods grouped by application key
 	applicationPools map[string]*ApplicationPool
-	apiServerClient  fornaxclient.Interface
 	updateChannel    chan interface{}
 	podManager       ie.PodManagerInterface
 	sessionManager   ie.SessionManagerInterface
@@ -103,11 +111,10 @@ type ApplicationManager struct {
 
 // NewApplicationManager init ApplicationInformer and ApplicationSessionInformer,
 // and start to listen to pod event from node
-func NewApplicationManager(ctx context.Context, podManager ie.PodManagerInterface, sessionManager ie.SessionManagerInterface, apiServerClient fornaxclient.Interface) *ApplicationManager {
+func NewApplicationManager(ctx context.Context, podManager ie.PodManagerInterface, sessionManager ie.SessionManagerInterface) *ApplicationManager {
 	am := &ApplicationManager{
 		applicationQueue: workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "fornaxv1.Application"),
 		applicationPools: map[string]*ApplicationPool{},
-		apiServerClient:  apiServerClient,
 		updateChannel:    make(chan interface{}, 500),
 		podManager:       podManager,
 		sessionManager:   sessionManager,
@@ -125,12 +132,12 @@ func (am *ApplicationManager) deleteApplicationPool(applicationKey string) {
 	delete(am.applicationPools, applicationKey)
 }
 
-func (am *ApplicationManager) applicationList() []*ApplicationPool {
+func (am *ApplicationManager) applicationList() map[string]*ApplicationPool {
 	am.appmu.RLock()
 	defer am.appmu.RUnlock()
-	apps := []*ApplicationPool{}
-	for _, v := range am.applicationPools {
-		apps = append(apps, v)
+	apps := map[string]*ApplicationPool{}
+	for k, v := range am.applicationPools {
+		apps[k] = v
 	}
 
 	return apps
@@ -159,7 +166,8 @@ func (am *ApplicationManager) getOrCreateApplicationPool(applicationKey string) 
 	}
 }
 
-func (am *ApplicationManager) initApplicationInformer(ctx context.Context, apiServerClient fornaxclient.Interface) {
+func (am *ApplicationManager) initApplicationInformer(ctx context.Context) {
+	apiServerClient := util.GetFornaxCoreApiClient()
 	appInformerFactory := externalversions.NewSharedInformerFactory(apiServerClient, 10*time.Minute)
 
 	applicationInformer := appInformerFactory.Core().V1().Applications()
@@ -184,12 +192,13 @@ func (am *ApplicationManager) initApplicationInformer(ctx context.Context, apiSe
 	am.applicationIndexer = applicationInformer.Informer().GetIndexer()
 	am.applicationLister = applicationInformer.Lister()
 	am.aplicationListerSynced = applicationInformer.Informer().HasSynced
-	am.applicationStatusManager = NewApplicationStatusManager(am.apiServerClient, am.applicationLister)
+	am.applicationStatusManager = NewApplicationStatusManager(am.applicationLister)
 	am.applicationStatusManager.Run(ctx)
 	appInformerFactory.Start(ctx.Done())
 }
 
-func (am *ApplicationManager) initApplicationSessionInformer(ctx context.Context, apiServerClient fornaxclient.Interface) {
+func (am *ApplicationManager) initApplicationSessionInformer(ctx context.Context) {
+	apiServerClient := util.GetFornaxCoreApiClient()
 	sessionInformerFactory := externalversions.NewSharedInformerFactory(apiServerClient, 10*time.Minute)
 	applicationSessionInformer := sessionInformerFactory.Core().V1().ApplicationSessions()
 	applicationSessionInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
@@ -220,17 +229,17 @@ func (am *ApplicationManager) initApplicationSessionInformer(ctx context.Context
 func (am *ApplicationManager) Run(ctx context.Context) {
 	klog.Info("Starting fornaxv1 application manager")
 
-	am.initApplicationInformer(ctx, am.apiServerClient)
+	am.initApplicationInformer(ctx)
 	cache.WaitForNamedCacheSync(fornaxv1.ApplicationKind.Kind, ctx.Done(), am.aplicationListerSynced)
 
-	am.initApplicationSessionInformer(ctx, am.apiServerClient)
+	am.initApplicationSessionInformer(ctx)
 	cache.WaitForNamedCacheSync(fornaxv1.ApplicationSessionKind.Kind, ctx.Done(), am.aplicationSessionListerSynced)
 
 	go func() {
 		defer utilruntime.HandleCrash()
 		defer am.applicationQueue.ShutDown()
 		defer klog.Info("Shutting down fornaxv1 application manager")
-		ticker := time.NewTicker(DefaultSessionOpenTimeoutDuration)
+		ticker := time.NewTicker(HouseKeepingDuration)
 
 		for {
 			select {
@@ -377,7 +386,7 @@ func (am *ApplicationManager) syncApplication(ctx context.Context, applicationKe
 	var syncErr error
 	var numOfDesiredPod int
 	var action fornaxv1.DeploymentAction
-	application, syncErr := GetApplication(am.applicationLister, applicationKey)
+	application, syncErr := GetApplicationCache(am.applicationLister, applicationKey)
 	if syncErr != nil {
 		if apierrors.IsNotFound(syncErr) {
 			syncErr = am.cleanupDeletedApplication(applicationKey)
@@ -491,7 +500,7 @@ func (am *ApplicationManager) calculateStatus(application *fornaxv1.Application,
 		application.Status.IdleInstances == poolSummary.idleCount &&
 		application.Status.DeletingInstances == poolSummary.deletingCount &&
 		application.Status.PendingInstances == poolSummary.pendingCount &&
-		application.Status.ReadyInstances == poolSummary.readyCount {
+		application.Status.RunningInstances == poolSummary.runningCount {
 		return newStatus
 	}
 
@@ -500,37 +509,38 @@ func (am *ApplicationManager) calculateStatus(application *fornaxv1.Application,
 	newStatus.PendingInstances = poolSummary.pendingCount
 	newStatus.DeletingInstances = poolSummary.deletingCount
 	newStatus.IdleInstances = poolSummary.idleCount
-	newStatus.ReadyInstances = poolSummary.readyCount
+	newStatus.RunningInstances = poolSummary.runningCount
 
-	if action == fornaxv1.DeploymentActionCreateInstance || action == fornaxv1.DeploymentActionDeleteInstance {
-		if deploymentErr != nil {
-			newStatus.DeploymentStatus = fornaxv1.DeploymentStatusFailure
-		} else {
-			newStatus.DeploymentStatus = fornaxv1.DeploymentStatusSuccess
-		}
-
-		message := fmt.Sprintf("deploy application instance, total: %d, desired: %d, pending: %d, deleting: %d, ready: %d, idle: %d",
-			newStatus.TotalInstances,
-			newStatus.DesiredInstances,
-			newStatus.PendingInstances,
-			newStatus.DeletingInstances,
-			newStatus.ReadyInstances,
-			newStatus.IdleInstances)
-
-		if deploymentErr != nil {
-			message = fmt.Sprintf("%s, error: %s", message, deploymentErr.Error())
-		}
-
-		deploymentHistory := fornaxv1.DeploymentHistory{
-			Action: action,
-			UpdateTime: metav1.Time{
-				Time: time.Now(),
-			},
-			Reason:  "sync application",
-			Message: message,
-		}
-		newStatus.History = append(newStatus.History, deploymentHistory)
-	}
+	// this will make status huge, and finally fail a etcd request, need to find another way to save these history
+	// if action == fornaxv1.DeploymentActionCreateInstance || action == fornaxv1.DeploymentActionDeleteInstance {
+	// 	if deploymentErr != nil {
+	// 		newStatus.DeploymentStatus = fornaxv1.DeploymentStatusFailure
+	// 	} else {
+	// 		newStatus.DeploymentStatus = fornaxv1.DeploymentStatusSuccess
+	// 	}
+	//
+	// 	message := fmt.Sprintf("deploy application instance, total: %d, desired: %d, pending: %d, deleting: %d, ready: %d, idle: %d",
+	// 		newStatus.TotalInstances,
+	// 		newStatus.DesiredInstances,
+	// 		newStatus.PendingInstances,
+	// 		newStatus.DeletingInstances,
+	// 		newStatus.ReadyInstances,
+	// 		newStatus.IdleInstances)
+	//
+	// 	if deploymentErr != nil {
+	// 		message = fmt.Sprintf("%s, error: %s", message, deploymentErr.Error())
+	// 	}
+	//
+	// 	deploymentHistory := fornaxv1.DeploymentHistory{
+	// 		Action: action,
+	// 		UpdateTime: metav1.Time{
+	// 			Time: time.Now(),
+	// 		},
+	// 		Reason:  "sync application",
+	// 		Message: message,
+	// 	}
+	// 	newStatus.History = append(newStatus.History, deploymentHistory)
+	// }
 
 	return newStatus
 }

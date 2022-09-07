@@ -26,15 +26,12 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apiserver/pkg/registry/generic"
 	"k8s.io/apiserver/pkg/registry/generic/registry"
-	"k8s.io/client-go/rest"
-	"k8s.io/client-go/tools/clientcmd"
 	"k8s.io/klog/v2"
 	"sigs.k8s.io/apiserver-runtime/pkg/builder"
 
 	// +kubebuilder:scaffold:resource-imports
 
 	fornaxv1 "centaurusinfra.io/fornax-serverless/pkg/apis/core/v1"
-	fornaxclient "centaurusinfra.io/fornax-serverless/pkg/client/clientset/versioned"
 	"centaurusinfra.io/fornax-serverless/pkg/fornaxcore/application"
 	grpc_server "centaurusinfra.io/fornax-serverless/pkg/fornaxcore/grpc/server"
 	"centaurusinfra.io/fornax-serverless/pkg/fornaxcore/node"
@@ -65,25 +62,12 @@ func main() {
 		}
 	}
 
-	var kubeconfig *rest.Config
-	if root, err := os.Getwd(); err == nil {
-		kubeconfigPath := root + "/kubeconfig"
-		if kubeconfig, err = clientcmd.BuildConfigFromFlags("", kubeconfigPath); err != nil {
-			klog.ErrorS(err, "Failed to construct kube rest config")
-			os.Exit(-1)
-		}
-	} else {
-		klog.ErrorS(err, "Failed to get working dir")
-		os.Exit(-1)
-	}
-	apiServerClient := fornaxclient.NewForConfigOrDie(kubeconfig)
-
 	// new fornaxcore grpc grpcServer which implement node agent proxy
 	grpcServer := grpc_server.NewGrpcServer()
 
 	// start node and pod manager
 	podManager := pod.NewPodManager(context.Background(), grpcServer)
-	sessionManager := session.NewSessionManager(context.Background(), grpcServer, podManager, apiServerClient)
+	sessionManager := session.NewSessionManager(context.Background(), grpcServer, podManager)
 	nodeManager := node.NewNodeManager(context.Background(), node.DefaultStaleNodeTimeout, grpcServer, podManager, sessionManager)
 	podScheduler := podscheduler.NewPodScheduler(context.Background(), grpcServer, nodeManager, podManager,
 		&podscheduler.SchedulePolicy{
@@ -108,7 +92,7 @@ func main() {
 
 	// start application manager at last as it require api server
 	klog.Info("starting application manager")
-	appManager := application.NewApplicationManager(context.Background(), podManager, sessionManager, apiServerClient)
+	appManager := application.NewApplicationManager(context.Background(), podManager, sessionManager)
 	go appManager.Run(context.Background())
 
 	// start api server

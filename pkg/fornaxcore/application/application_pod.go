@@ -68,7 +68,7 @@ type ApplicationPodSummary struct {
 	pendingCount  int32
 	deletingCount int32
 	idleCount     int32
-	readyCount    int32
+	runningCount  int32
 }
 
 func (pool *ApplicationPool) summaryPod(podManager ie.PodManagerInterface) ApplicationPodSummary {
@@ -80,7 +80,7 @@ func (pool *ApplicationPool) summaryPod(podManager ie.PodManagerInterface) Appli
 		if pod != nil {
 			if pod.DeletionTimestamp == nil {
 				if k8spodutil.IsPodReady(pod) {
-					summary.readyCount += 1
+					summary.runningCount += 1
 				} else {
 					summary.pendingCount += 1
 				}
@@ -92,7 +92,7 @@ func (pool *ApplicationPool) summaryPod(podManager ie.PodManagerInterface) Appli
 			}
 		} else {
 			// when node have not sync its pod state, let's assume pod come from session pod reference holders are ready
-			summary.readyCount += 1
+			summary.runningCount += 1
 			if k.sessions.Len() == 0 {
 				summary.idleCount += 1
 			}

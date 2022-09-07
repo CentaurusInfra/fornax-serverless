@@ -23,7 +23,6 @@ import (
 	"time"
 
 	fornaxv1 "centaurusinfra.io/fornax-serverless/pkg/apis/core/v1"
-	fornaxclient "centaurusinfra.io/fornax-serverless/pkg/client/clientset/versioned"
 	listerv1 "centaurusinfra.io/fornax-serverless/pkg/client/listers/core/v1"
 	"centaurusinfra.io/fornax-serverless/pkg/util"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -43,15 +42,13 @@ type ApplicationStatusUpdate struct {
 }
 
 type ApplicationStatusManager struct {
-	apiServerClient   fornaxclient.Interface
 	applicationLister listerv1.ApplicationLister
 	statusUpdate      chan ApplicationStatusUpdate
 	appStatus         map[string]*fornaxv1.ApplicationStatus
 }
 
-func NewApplicationStatusManager(apiServerClient fornaxclient.Interface, appLister listerv1.ApplicationLister) *ApplicationStatusManager {
+func NewApplicationStatusManager(appLister listerv1.ApplicationLister) *ApplicationStatusManager {
 	return &ApplicationStatusManager{
-		apiServerClient:   apiServerClient,
 		applicationLister: appLister,
 		statusUpdate:      make(chan ApplicationStatusUpdate, 500),
 		appStatus:         map[string]*fornaxv1.ApplicationStatus{},
@@ -83,30 +80,30 @@ func (asm *ApplicationStatusManager) Run(ctx context.Context) {
 					asm.appStatus[update.name] = update.status
 				}
 
-				updatedError := false
-				updated := []string{}
-				for k, v := range asm.appStatus {
-					if k == FornaxCore_ApplicationStatusManager_Retry {
+				hasError := false
+				updatedApps := []string{}
+				for app, status := range asm.appStatus {
+					if app == FornaxCore_ApplicationStatusManager_Retry {
 						// FornaxCore_ApplicationStatusManager_Retry app is fake application sinal used to trigger retry
 						continue
 					}
-					err := asm.updateApplicationStatus(k, v)
+					err := asm.updateApplicationStatus(app, status)
 					if err == nil {
-						updated = append(updated, k)
+						updatedApps = append(updatedApps, app)
 					} else {
-						updatedError = true
-						klog.ErrorS(err, "Failed to update application status", "application", k)
+						hasError = true
+						klog.ErrorS(err, "Failed to update application status", "application", app)
 					}
 				}
-				for _, v := range updated {
+				for _, v := range updatedApps {
 					delete(asm.appStatus, v)
 				}
 
+				time.Sleep(50 * time.Millisecond)
 				// a trick to retry, all failed status update are still in map, send a fake update to retry,
 				// it's bit risky, if some guy put a lot of event into channel before we can put a retry signal, it will stuck
-				// we make a 500 capacity channel and check channel current length must be zero could mitigate a bit
-				if updatedError {
-					time.Sleep(100 * time.Millisecond)
+				// checking channel current length must be zero could mitigate a bit
+				if hasError {
 					if len(asm.statusUpdate) == 0 {
 						asm.statusUpdate <- ApplicationStatusUpdate{
 							name:   FornaxCore_ApplicationStatusManager_Retry,
@@ -132,7 +129,8 @@ func (asm *ApplicationStatusManager) updateApplicationStatus(applicationKey stri
 	var updateErr error
 	var updatedApplication *fornaxv1.Application
 
-	application, updateErr := GetApplication(asm.applicationLister, applicationKey)
+	apiServerClient := util.GetFornaxCoreApiClient()
+	application, updateErr := GetApplication(apiServerClient, applicationKey)
 	if updateErr != nil {
 		if apierrors.IsNotFound(updateErr) {
 			return nil
@@ -141,17 +139,18 @@ func (asm *ApplicationStatusManager) updateApplicationStatus(applicationKey stri
 	}
 
 	if reflect.DeepEqual(application.Status, *newStatus) {
+		klog.Infof("Application status has no change", "newStatus", *newStatus, "oldStatus", application.Status)
 		return nil
 	}
 
-	client := asm.apiServerClient.CoreV1().Applications(application.Namespace)
+	client := apiServerClient.CoreV1().Applications(application.Namespace)
 	for i := 0; i <= UPDATE_RETRIES; i++ {
 		klog.Infof(fmt.Sprintf("Updating application status for %s, ", util.Name(application)) +
 			fmt.Sprintf("totalInstances %d->%d, ", application.Status.TotalInstances, newStatus.TotalInstances) +
 			fmt.Sprintf("desiredInstances %d->%d, ", application.Status.DesiredInstances, newStatus.DesiredInstances) +
 			fmt.Sprintf("pendingInstances %d->%d, ", application.Status.PendingInstances, newStatus.PendingInstances) +
 			fmt.Sprintf("deletingInstances %d->%d, ", application.Status.DeletingInstances, newStatus.DeletingInstances) +
-			fmt.Sprintf("readyInstances %d->%d, ", application.Status.ReadyInstances, newStatus.ReadyInstances) +
+			fmt.Sprintf("runningInstances %d->%d, ", application.Status.RunningInstances, newStatus.RunningInstances) +
 			fmt.Sprintf("idleInstances %d->%d, ", application.Status.IdleInstances, newStatus.IdleInstances))
 
 		updatedApplication = application.DeepCopy()

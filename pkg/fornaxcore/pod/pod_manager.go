@@ -40,7 +40,6 @@ var (
 )
 
 const (
-	DefaultPodManagerHouseKeepingDuration      = 10 * time.Second
 	DefaultDeletionGracefulSeconds             = int64(30)
 	DefaultNotScheduledDeletionGracefulSeconds = int64(5)
 )
@@ -109,13 +108,12 @@ func (pool *PodStatePool) addPod(p *PodWithFornaxNodeState) {
 }
 
 type podManager struct {
-	ctx                context.Context
-	houseKeepingTicker *time.Ticker
-	podUpdates         chan *ie.PodEvent
-	watchers           []chan<- interface{}
-	podStatePool       *PodStatePool
-	podScheduler       podscheduler.PodScheduler
-	nodeAgentClient    nodeagent.NodeAgentClient
+	ctx             context.Context
+	podUpdates      chan *ie.PodEvent
+	watchers        []chan<- interface{}
+	podStatePool    *PodStatePool
+	podScheduler    podscheduler.PodScheduler
+	nodeAgentClient nodeagent.NodeAgentClient
 }
 
 // FindPod implements PodManager
@@ -155,21 +153,22 @@ func (pm *podManager) Run(podScheduler podscheduler.PodScheduler) error {
 }
 
 // DeletePod is called by node manager when it found a pod does not exist anymore
-// and pod phase is should PodFailed or PodTerminated and remove it from memory
+// or from TerminatePod method if pod is not scheduled yet
+// pod phase is should not in PodRunning
 func (pm *podManager) DeletePod(nodeId string, pod *v1.Pod) (*v1.Pod, error) {
 	// remove pod from schedule queue, if it does not exit, it's no op
 	pm.podScheduler.RemovePod(pod)
-
-	if util.PodNotTerminated(pod) {
-		return nil, PodNotTerminatedYetError
-	}
 
 	oldPodState := pm.podStatePool.findPod(util.Name(pod))
 	if oldPodState == nil {
 		return nil, PodNotFoundError
 	}
 
-	// if pod exist, and pod does not have deletion timestamp, set it
+	if util.PodIsRunning(oldPodState.v1pod) {
+		return nil, PodNotTerminatedYetError
+	}
+
+	// pod does not have deletion timestamp, set it
 	existpod := oldPodState.v1pod
 	if existpod.GetDeletionTimestamp() == nil {
 		if pod.DeletionTimestamp != nil {
@@ -182,17 +181,18 @@ func (pm *podManager) DeletePod(nodeId string, pod *v1.Pod) (*v1.Pod, error) {
 	pm.podStatePool.deletePod(oldPodState)
 	pm.podUpdates <- &ie.PodEvent{
 		NodeId: nodeId,
-		Pod:    pod.DeepCopy(),
+		Pod:    existpod.DeepCopy(),
 		Type:   ie.PodEventTypeDelete,
 	}
 
 	return existpod, nil
 }
 
-// TerminatePod is called to terminate a pod, pod is move to terminating queue until a gracefulPeriod
-// if pod not scheduled yet, it's safe to just delete after gracefulPeriod,
-// when there is a race condition with pod scheduler when it report back after moving to terminating queeu,
-// pod will be terminate again, if pod is already scheduled, it wait for node agent report back
+// TerminatePod is called by pod ower to terminate a pod, pod is move to terminating queue until a gracefulPeriod
+// if pod is already scheduled, call node agent to terminate and  wait for node agent report back
+// if pod not scheduled yet, just delete
+// there could be a race condition with pod scheduler if node have not report back after sending to it
+// pod will be terminate again by pod owner when node report this pod back,
 func (pm *podManager) TerminatePod(pod *v1.Pod) error {
 	// try best to remove pod from schedule queue, if it does not exit, it's no op
 	pm.podScheduler.RemovePod(pod)
@@ -202,28 +202,32 @@ func (pm *podManager) TerminatePod(pod *v1.Pod) error {
 		return PodNotFoundError
 	}
 	existpod := fornaxPodState.v1pod
-	if existpod.DeletionTimestamp != nil {
-		// already in deleting state, no op here, two cases
-		// 1/ node have not been report back
-		// 2/ node did not receive request, but pod will be deleted if it report back
-		return nil
+
+	if len(fornaxPodState.nodeId) == 0 && len(existpod.Status.HostIP) == 0 {
+		pm.DeletePod("", pod)
 	}
+
+	// if existpod.DeletionTimestamp != nil {
+	//  // already in deleting state, no op here, two cases
+	//  // 1/ node have not been report back
+	//  // 2/ node did not receive request, but pod will be deleted if it report back
+	//  return nil
+	// }
 
 	// if pod exist, and pod does not have deletion timestamp, set it
 	if existpod.GetDeletionTimestamp() == nil {
+		existpod.DeletionTimestamp = util.NewCurrentMetaTime()
 		if pod.DeletionTimestamp != nil {
 			existpod.DeletionTimestamp = pod.GetDeletionTimestamp()
-		} else {
-			existpod.DeletionTimestamp = util.NewCurrentMetaTime()
 		}
 	}
 
 	gracePeriod := DefaultDeletionGracefulSeconds
-	if len(existpod.Status.HostIP) == 0 {
-		gracePeriod = DefaultNotScheduledDeletionGracefulSeconds
-	}
 	if existpod.DeletionGracePeriodSeconds == nil {
 		existpod.DeletionGracePeriodSeconds = &gracePeriod
+		if pod.DeletionGracePeriodSeconds != nil {
+			existpod.DeletionGracePeriodSeconds = pod.GetDeletionGracePeriodSeconds()
+		}
 	}
 
 	// not terminated yet, let node agent terminate and report back
@@ -317,8 +321,8 @@ func (pm *podManager) AddPod(nodeId string, pod *v1.Pod) (*v1.Pod, error) {
 		} else if len(nodeId) > 0 {
 			// pod is reported back by node agent and pod owner have determinted pod should be deleted,
 			// termiante this pod
-			if existPod.DeletionTimestamp != nil && pod.DeletionTimestamp == nil {
-				klog.InfoS("Terminate a running pod which has delete timestamp", "pod", util.Name(pod))
+			if existPod.DeletionTimestamp != nil && util.PodNotTerminated(pod) {
+				klog.InfoS("Terminate a running pod which was request to terminate", "pod", util.Name(pod))
 				err := pm.nodeAgentClient.TerminatePod(nodeId, pod)
 				if err != nil {
 					return nil, err
@@ -338,10 +342,9 @@ func (pm *podManager) AddPod(nodeId string, pod *v1.Pod) (*v1.Pod, error) {
 
 func NewPodManager(ctx context.Context, nodeAgentProxy nodeagent.NodeAgentClient) *podManager {
 	return &podManager{
-		ctx:                ctx,
-		houseKeepingTicker: time.NewTicker(DefaultPodManagerHouseKeepingDuration),
-		podUpdates:         make(chan *ie.PodEvent, 100),
-		watchers:           []chan<- interface{}{},
+		ctx:        ctx,
+		podUpdates: make(chan *ie.PodEvent, 100),
+		watchers:   []chan<- interface{}{},
 		podStatePool: &PodStatePool{
 			pods: PodPool{pods: map[string]*PodWithFornaxNodeState{}}},
 		nodeAgentClient: nodeAgentProxy,

@@ -28,7 +28,6 @@ import (
 	ie "centaurusinfra.io/fornax-serverless/pkg/fornaxcore/internal"
 	fornaxpod "centaurusinfra.io/fornax-serverless/pkg/fornaxcore/pod"
 	"centaurusinfra.io/fornax-serverless/pkg/util"
-	fornaxutil "centaurusinfra.io/fornax-serverless/pkg/util"
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/klog/v2"
 )
@@ -104,7 +103,7 @@ func (nm *nodeManager) SyncNodePodStates(nodeId string, podStates []*grpc.PodSta
 	var err error
 	nodeWS := nm.nodes.get(nodeId)
 	if nodeWS == nil {
-		// TODO, node supposed to exist
+		// this is a situation could not happen, just for safety check
 		return
 	}
 
@@ -112,7 +111,7 @@ func (nm *nodeManager) SyncNodePodStates(nodeId string, podStates []*grpc.PodSta
 	existingPodNames := nodeWS.Pods.GetKeys()
 	reportedPods := map[string]bool{}
 	for _, podState := range podStates {
-		podName := fornaxutil.Name(podState.GetPod())
+		podName := util.Name(podState.GetPod())
 		reportedPods[podName] = true
 		err = nm.handleAPodState(nodeId, nodeWS, podState.GetPod().DeepCopy())
 		if err != nil {
@@ -123,6 +122,8 @@ func (nm *nodeManager) SyncNodePodStates(nodeId string, podStates []*grpc.PodSta
 	// reverse lookup, find deleted pods
 	deletedPods := []string{}
 	for _, podName := range existingPodNames {
+		// could have a race condition, pod scheduler just send a pod request to node and node was reporting state before it received request
+		// need to check a grace period, creation time stamp is not good one if pod stay in pod scheduler for a while
 		if _, found := reportedPods[podName]; !found {
 			pod := nm.podManager.FindPod(podName)
 			if pod != nil {
@@ -146,7 +147,7 @@ func (nm *nodeManager) SyncNodePodStates(nodeId string, podStates []*grpc.PodSta
 }
 
 func (nm *nodeManager) handleAPodState(nodeId string, fornaxnode *ie.FornaxNodeWithState, newStatePod *v1.Pod) error {
-	podName := fornaxutil.Name(newStatePod)
+	podName := util.Name(newStatePod)
 
 	// even a pod is terminated status, we still keep it in podmanager, it got deleted until next time pod does not report it again
 	_, err := nm.podManager.AddPod(nodeId, newStatePod)
@@ -164,7 +165,7 @@ func (nm *nodeManager) handleAPodState(nodeId string, fornaxnode *ie.FornaxNodeW
 // it also return daemon pods node should initialize before taking service pods
 func (nm *nodeManager) SetupNode(nodeId string, node *v1.Node) (fornaxnode *ie.FornaxNodeWithState, err error) {
 	if nodeWS := nm.nodes.get(nodeId); nodeWS != nil {
-		fornaxutil.MergeNodeStatus(nodeWS.Node, node)
+		util.MergeNodeStatus(nodeWS.Node, node)
 
 		// reassign cidrs if control plane changed
 		cidrs := nm.nodePodCidrManager.GetCidr(node)
@@ -215,7 +216,7 @@ func (nm *nodeManager) CreateNode(nodeId string, node *v1.Node) (fornaxNode *ie.
 
 	daemons := nm.nodeDaemonManager.GetDaemons(fornaxNode)
 	fornaxNode.DaemonPods = daemons
-	nm.nodes.add(fornaxutil.Name(node), fornaxNode)
+	nm.nodes.add(util.Name(node), fornaxNode)
 	nm.nodeUpdates <- &ie.NodeEvent{
 		NodeId: nodeId,
 		Node:   fornaxNode.Node.DeepCopy(),
@@ -237,7 +238,7 @@ func (nm *nodeManager) UpdateNode(nodeId string, node *v1.Node) (*ie.FornaxNodeW
 		if oldNodeWSState == nodeWS.State && node.ResourceVersion == nodeWS.Node.ResourceVersion {
 			return nodeWS, nil
 		}
-		fornaxutil.MergeNodeStatus(nodeWS.Node, node)
+		util.MergeNodeStatus(nodeWS.Node, node)
 		nm.nodeUpdates <- &ie.NodeEvent{
 			NodeId: nodeId,
 			Node:   nodeWS.Node.DeepCopy(),

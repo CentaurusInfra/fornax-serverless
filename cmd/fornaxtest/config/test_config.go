@@ -34,11 +34,11 @@ const (
 	AppFullCycleTest     = "app_full_cycle"     // create app, create session, and delete app
 	SessionFullCycleTest = "session_full_cycle" // create app, continously create session and delete session, delete app at last
 	AppCreateTest        = "app_create"         // create app only
-	AppCreateDeleteTest  = "app_create_delete"  // create app and delete app
+	SessionCreateTest    = "session_create"     // create session only
 )
 
 func AddConfigFlags(flagSet *pflag.FlagSet, simuConfig *TestConfiguration) {
-	flagSet.StringVar(&simuConfig.TestCase, "test-case", simuConfig.TestCase, "which test is running, app_full_cycle,session_full_cycle")
+	flagSet.StringVar(&simuConfig.TestCase, "test-case", simuConfig.TestCase, "which test is running, app_full_cycle,session_full_cycle,session_create")
 	flagSet.IntVar(&simuConfig.NumOfApps, "num-of-app", simuConfig.NumOfApps, "how many applications are simulated")
 	flagSet.IntVar(&simuConfig.NumOfInitPodsPerApp, "num-of-init-pod-per-app", simuConfig.NumOfInitPodsPerApp, "how many applications pods are precreated when create app")
 	flagSet.IntVar(&simuConfig.BurstOfPods, "burst-of-app-pods", simuConfig.BurstOfPods, "maximum pods are allowed in one batch for a application")

@@ -99,15 +99,16 @@ func Run(ctx context.Context, testConfig config.TestConfiguration) {
 		wg := sync.WaitGroup{}
 		for i := 0; i < testConfig.NumOfApps; i++ {
 			wg.Add(1)
-			namespace := fmt.Sprintf("game%d", i)
+			namespace := "fornaxtest"
 			appName := fmt.Sprintf("echoserver%d", i)
 			go func() {
 				switch testConfig.TestCase {
 				case config.AppFullCycleTest:
 					runAppFullCycleTest(namespace, appName, testConfig)
 				case config.SessionFullCycleTest:
-					runSessionFullSycleTest(namespace, appName, testConfig)
-				case config.AppCreateDeleteTest:
+					runSessionFullCycleTest(namespace, appName, testConfig)
+				case config.SessionCreateTest:
+					createSessionTest(namespace, appName, testConfig)
 				case config.AppCreateTest:
 				}
 				wg.Done()

@@ -21,7 +21,6 @@ import (
 	"fmt"
 	"os"
 	"strconv"
-	"sync"
 	"time"
 
 	"centaurusinfra.io/fornax-serverless/cmd/fornaxtest/config"
@@ -79,7 +78,7 @@ var (
 	SessionWrapperEchoServerSessionSpec = &fornaxv1.ApplicationSessionSpec{
 		ApplicationName:               "",
 		SessionData:                   "session-data",
-		KillInstanceWhenSessionClosed: true,
+		KillInstanceWhenSessionClosed: false,
 		CloseGracePeriodSeconds:       &CloseGracePeriodSeconds,
 		OpenTimeoutSeconds:            10,
 	}
@@ -109,13 +108,10 @@ func cleanupAppFullCycleTest(namespace, appName string, sessions []*TestSession)
 		appl, err := describeApplication(apiServerClient, namespace, appName)
 		if err == nil && appl == nil {
 			fmt.Printf("Application: %s took %d micro second to teardown %d instances\n", appName, time.Now().Sub(delTime).Microseconds(), instanceNum)
-			break
+			return
 		}
 		continue
 	}
-	// for _, v := range sessions {
-	//  deleteSession(apiServerClient, namespace, v)
-	// }
 }
 
 func createAndWaitForApplicationSetup(namespace, appName string, testConfig config.TestConfiguration) *fornaxv1.Application {
@@ -142,27 +138,18 @@ func createAndWaitForSessionSetup(application *fornaxv1.Application, namespace, 
 	sessions := []*TestSession{}
 	sessionBaseName := uuid.New().String()
 	numOfSession := testConfig.NumOfSessionPerApp
-	wg := sync.WaitGroup{}
 	for i := 0; i < numOfSession; i++ {
-		sessName := fmt.Sprintf("%s-session-%s-%d", appName, sessionBaseName, i)
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			ts, err := createSession(getApiServerClient(), namespace, sessName, appName, SessionWrapperEchoServerSessionSpec)
-			if err != nil {
-				klog.ErrorS(err, "Failed to create session", "app", appName, "name", sessName)
-			} else {
-				sessions = append(sessions, ts)
-			}
-		}()
+		sessName := fmt.Sprintf("%s-%s-session-%d", appName, sessionBaseName, i)
+		ts, _ := createSession(getApiServerClient(), namespace, sessName, appName, SessionWrapperEchoServerSessionSpec)
+		sessions = append(sessions, ts)
 	}
-	wg.Wait()
 
 	waitForSessionSetup(namespace, appName, sessions)
 	return sessions
 }
 
 func waitForAppSetup(namespace, appName string, numOfInstance int) {
+	klog.Infof("waiting for app %s/%s setup", namespace, appName)
 	for {
 		time.Sleep(100 * time.Millisecond)
 		application, err := describeApplication(apiServerClient, namespace, appName)
@@ -170,14 +157,14 @@ func waitForAppSetup(namespace, appName string, numOfInstance int) {
 			continue
 		}
 
-		if int(application.Status.ReadyInstances) >= numOfInstance {
+		if int(application.Status.RunningInstances) >= numOfInstance {
 			ct := application.CreationTimestamp.UnixMicro()
 			if v, found := application.Labels[fornaxv1.LabelFornaxCoreCreationUnixMicro]; found {
 				t, _ := strconv.Atoi(v)
 				ct = int64(t)
 			}
 			at := time.Now().UnixMicro()
-			fmt.Printf("Application: %s took %d micro second to setup %d instances\n", appName, at-ct, application.Status.ReadyInstances)
+			fmt.Printf("Application: %s took %d micro second to setup %d instances\n", appName, at-ct, application.Status.RunningInstances)
 			break
 		}
 		continue
@@ -185,11 +172,12 @@ func waitForAppSetup(namespace, appName string, numOfInstance int) {
 }
 
 func waitForSessionTearDown(namespace, appName string, sessions []*TestSession) {
+	klog.Infof("waiting for %d sessions teardown", len(sessions))
 	for {
 		time.Sleep(100 * time.Millisecond)
 		allTeardown := true
 		for _, ts := range sessions {
-			sess, err := describeSession(apiServerClient, namespace, ts.session.Name)
+			sess, err := describeSession(getApiServerClient(), namespace, ts.session.Name)
 
 			if err != nil {
 				allTeardown = false
@@ -197,16 +185,18 @@ func waitForSessionTearDown(namespace, appName string, sessions []*TestSession) 
 			}
 			if sess != nil {
 				allTeardown = false
+				break
 			}
 		}
 
 		if allTeardown {
-			break
+			return
 		}
 	}
 }
 
 func waitForSessionSetup(namespace, appName string, sessions []*TestSession) {
+	klog.Infof("waiting for %d sessions setup", len(sessions))
 	for {
 		time.Sleep(100 * time.Millisecond)
 		allSetup := true
@@ -238,7 +228,7 @@ func waitForSessionSetup(namespace, appName string, sessions []*TestSession) {
 
 		if allSetup {
 			for _, v := range sessions {
-				fmt.Printf("Session: %s took %d micro second to setup\n, status %s", v.session.Name, v.availableTimeMicro-v.creationTimeMicro, v.status)
+				fmt.Printf("Session: %s took %d micro second to setup, status %s\n", v.session.Name, v.availableTimeMicro-v.creationTimeMicro, v.status)
 			}
 			break
 		}
@@ -261,7 +251,7 @@ func runSessionFullSycleTest(namespace, appName string, testConfig config.TestCo
 
 func cleanupSessionFullCycleTest(namespace, appName string, sessions []*TestSession) {
 	for _, sess := range sessions {
-		deleteSession(apiServerClient, namespace, sess.session.Name)
+		go deleteSession(getApiServerClient(), namespace, sess.session.Name)
 	}
 	waitForSessionTearDown(namespace, appName, sessions)
 }

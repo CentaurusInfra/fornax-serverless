@@ -22,7 +22,6 @@ import (
 	"reflect"
 
 	fornaxv1 "centaurusinfra.io/fornax-serverless/pkg/apis/core/v1"
-	fornaxclient "centaurusinfra.io/fornax-serverless/pkg/client/clientset/versioned"
 	"centaurusinfra.io/fornax-serverless/pkg/fornaxcore/grpc/nodeagent"
 	ie "centaurusinfra.io/fornax-serverless/pkg/fornaxcore/internal"
 	"centaurusinfra.io/fornax-serverless/pkg/util"
@@ -37,15 +36,13 @@ var _ ie.SessionManagerInterface = &sessionManager{}
 type sessionManager struct {
 	ctx             context.Context
 	nodeAgentClient nodeagent.NodeAgentClient
-	apiServerClient fornaxclient.Interface
 	podManager      ie.PodManagerInterface
 	watchers        []chan<- interface{}
 }
 
-func NewSessionManager(ctx context.Context, nodeAgentProxy nodeagent.NodeAgentClient, podManager ie.PodManagerInterface, apiServerClient fornaxclient.Interface) *sessionManager {
+func NewSessionManager(ctx context.Context, nodeAgentProxy nodeagent.NodeAgentClient, podManager ie.PodManagerInterface) *sessionManager {
 	mgr := &sessionManager{
 		ctx:             ctx,
-		apiServerClient: apiServerClient,
 		nodeAgentClient: nodeAgentProxy,
 		podManager:      podManager,
 	}
@@ -92,10 +89,11 @@ func (sm *sessionManager) UpdateSessionStatus(session *fornaxv1.ApplicationSessi
 		return nil
 	}
 
+	apiServerClient := util.GetFornaxCoreApiClient()
 	var updateErr error
 	updatedSession := session.DeepCopy()
 	updatedSession.Status = *newStatus
-	client := sm.apiServerClient.CoreV1().ApplicationSessions(session.Namespace)
+	client := apiServerClient.CoreV1().ApplicationSessions(session.Namespace)
 	for i := 0; i <= 3; i++ {
 		updatedSession, updateErr = client.UpdateStatus(context.TODO(), updatedSession, metav1.UpdateOptions{})
 		if updateErr == nil {
@@ -113,18 +111,19 @@ func (sm *sessionManager) UpdateSessionStatus(session *fornaxv1.ApplicationSessi
 	return nil
 }
 
-func (sm *sessionManager) UpdateSessionFinalizer(sess *fornaxv1.ApplicationSession) error {
-	client := sm.apiServerClient.CoreV1().ApplicationSessions(sess.Namespace)
-	session := sess.DeepCopy()
-	if util.SessionIsOpen(session) {
-		util.AddFinalizer(&session.ObjectMeta, fornaxv1.FinalizerOpenSession)
+func (sm *sessionManager) UpdateSessionFinalizer(session *fornaxv1.ApplicationSession) error {
+	apiServerClient := util.GetFornaxCoreApiClient()
+	client := apiServerClient.CoreV1().ApplicationSessions(session.Namespace)
+	updatedSession := session.DeepCopy()
+	if util.SessionIsOpen(updatedSession) {
+		util.AddFinalizer(&updatedSession.ObjectMeta, fornaxv1.FinalizerOpenSession)
 	} else {
-		util.RemoveFinalizer(&session.ObjectMeta, fornaxv1.FinalizerOpenSession)
+		util.RemoveFinalizer(&updatedSession.ObjectMeta, fornaxv1.FinalizerOpenSession)
 	}
 
-	if len(sess.Finalizers) != len(session.Finalizers) {
+	if len(session.Finalizers) != len(updatedSession.Finalizers) {
 		for i := 0; i <= 3; i++ {
-			_, err := client.Update(context.TODO(), session, metav1.UpdateOptions{})
+			_, err := client.Update(context.TODO(), updatedSession, metav1.UpdateOptions{})
 			if err == nil {
 				break
 			}

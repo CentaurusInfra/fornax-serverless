@@ -32,6 +32,7 @@ import (
 const (
 	DefaultSessionPendingTimeoutDuration = 5 * time.Second
 	DefaultSessionOpenTimeoutDuration    = 10 * time.Second
+	HouseKeepingDuration                 = 1 * time.Minute
 )
 
 type ApplicationSessionSummary struct {
@@ -60,7 +61,7 @@ func (pool *ApplicationPool) sessionList() []*fornaxv1.ApplicationSession {
 	return keys
 }
 
-func (pool *ApplicationPool) summarySessions() ApplicationSessionSummary {
+func (pool *ApplicationPool) summarySession() ApplicationSessionSummary {
 	summary := ApplicationSessionSummary{}
 	sessions := pool.sessionList()
 	for _, v := range sessions {
@@ -170,9 +171,7 @@ func (am *ApplicationManager) onSessionEventFromNode(se *ie.SessionEvent) error 
 		}
 		am.onApplicationSessionUpdateEvent(oldCopy, session)
 		// update session in go routine, this is persist status change to return by api server
-		go func() {
-			am.sessionManager.UpdateSessionStatus(oldCopy.DeepCopy(), newStatus)
-		}()
+		am.sessionManager.UpdateSessionStatus(oldCopy.DeepCopy(), newStatus)
 	}
 
 	//termiante pod after sesion is closed
@@ -294,7 +293,7 @@ func (am *ApplicationManager) onApplicationSessionDeleteEvent(obj interface{}) {
 // return sum of of all in use, idle, pending session, and all pending sessions
 func (am *ApplicationManager) getTotalAndPendingSessionNum(applicationKey string) (int, int) {
 	if pool := am.getApplicationPool(applicationKey); pool != nil {
-		summary := pool.summarySessions()
+		summary := pool.summarySession()
 		return int(summary.idleCount + summary.inUseCount + summary.pendingCount + summary.startingCount + summary.deletingCount), int(summary.pendingCount)
 	}
 	return 0, 0
@@ -479,6 +478,10 @@ func (am *ApplicationManager) sessionHouseKeeping() error {
 		}
 	}
 	klog.Info("Done session house keeping")
+
+	for k, v := range apps {
+		klog.InfoS("Application summary", "app", k, "pod", v.summaryPod(am.podManager), "session", v.summarySession())
+	}
 
 	return nil
 }

@@ -99,6 +99,5 @@ func (pq *PriorityQueue) List() []interface{} {
 	for _, v := range pq.indexes {
 		items = append(items, v.elem)
 	}
-
 	return items
 }

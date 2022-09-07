@@ -76,6 +76,7 @@ func (asm *ApplicationStatusManager) Run(ctx context.Context) {
 				// the later one is supposed to be newer status, so, we only keep newer status,
 				// after received all updates in channel, update latest status of application
 				asm.appStatus[update.name] = update.status
+				klog.Infof("Try to update application", "status", *update.status)
 				remainingLen := len(asm.statusUpdate)
 				for i := 0; i < remainingLen; i++ {
 					update := <-asm.statusUpdate
@@ -123,6 +124,7 @@ func (asm *ApplicationStatusManager) UpdateApplicationStatus(application *fornax
 		name:   util.Name(application),
 		status: newStatus.DeepCopy(),
 	}
+	klog.Infof("Send application status message", "status", *newStatus, "len", len(asm.statusUpdate))
 }
 
 // updateApplicationStatus attempts to update the Status of the given Application and return updated Application

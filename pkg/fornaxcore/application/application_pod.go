@@ -41,14 +41,24 @@ import (
 	k8spodutil "k8s.io/kubernetes/pkg/api/v1/pod"
 )
 
+type FornaxPodState string
+
+const (
+	PodStatePending     FornaxPodState = "Pending"
+	PodStateRunning     FornaxPodState = "Running"
+	PodStateTerminating FornaxPodState = "Terminating"
+)
+
 type ApplicationPod struct {
 	podName  string
+	state    FornaxPodState
 	sessions *collection.ConcurrentStringSet
 }
 
-func NewApplicationPod(podName string) *ApplicationPod {
+func NewApplicationPod(podName string, state FornaxPodState) *ApplicationPod {
 	return &ApplicationPod{
 		podName:  podName,
+		state:    state,
 		sessions: collection.NewConcurrentSet(),
 	}
 }
@@ -92,6 +102,15 @@ func (pool *ApplicationPool) summaryPod(podManager ie.PodManagerInterface) Appli
 	return summary
 }
 
+func (pool *ApplicationPool) getPod(podName string) *ApplicationPod {
+	pool.mu.RLock()
+	defer pool.mu.RUnlock()
+	if v, found := pool.pods[podName]; found {
+		return v
+	}
+	return nil
+}
+
 func (pool *ApplicationPool) addPod(identifier string, pod *ApplicationPod) *ApplicationPod {
 	pool.mu.Lock()
 	defer pool.mu.Unlock()
@@ -125,26 +144,26 @@ func (pool *ApplicationPool) podList() []*ApplicationPod {
 	return keys
 }
 
-func (appc *ApplicationManager) onPodEventFromNode(podEvent *ie.PodEvent) {
+func (am *ApplicationManager) onPodEventFromNode(podEvent *ie.PodEvent) {
 	klog.InfoS("Received a pod event", "pod", util.Name(podEvent.Pod), "type", podEvent.Type, "phase", podEvent.Pod.Status.Phase, "condition", k8spodutil.IsPodReady(podEvent.Pod))
 	if _, found := podEvent.Pod.Labels[fornaxv1.LabelFornaxCoreNodeDaemon]; !found {
 		switch podEvent.Type {
 		case ie.PodEventTypeCreate:
-			appc.onPodAddEventFromNode(podEvent.Pod)
+			am.onPodAddEventFromNode(podEvent.Pod)
 		case ie.PodEventTypeDelete:
-			appc.onPodDeleteEventFromNode(podEvent.Pod)
+			am.onPodDeleteEventFromNode(podEvent.Pod)
 		case ie.PodEventTypeUpdate:
-			appc.onPodAddEventFromNode(podEvent.Pod)
+			am.onPodAddEventFromNode(podEvent.Pod)
 		case ie.PodEventTypeTerminate:
-			appc.onPodDeleteEventFromNode(podEvent.Pod)
+			am.onPodDeleteEventFromNode(podEvent.Pod)
 		}
 	}
 }
 
 // When a pod is created or updated, add this pod reference to app pods pool
-func (appc *ApplicationManager) onPodAddEventFromNode(pod *v1.Pod) {
+func (am *ApplicationManager) onPodAddEventFromNode(pod *v1.Pod) {
 	podName := util.Name(pod)
-	applicationKey, err := appc.getPodApplicationKey(pod)
+	applicationKey, err := am.getPodApplicationKey(pod)
 	if err != nil {
 		klog.ErrorS(err, "Can not find application for pod, try best to use label", "pod", podName)
 		if label, found := pod.GetLabels()[fornaxv1.LabelFornaxCoreApplication]; !found {
@@ -153,29 +172,36 @@ func (appc *ApplicationManager) onPodAddEventFromNode(pod *v1.Pod) {
 	}
 
 	if len(applicationKey) == 0 {
-		klog.InfoS("Pod does not belong to any application, this pod should be terminated and deleted", "pod", podName, "labels", pod.GetLabels())
+		klog.InfoS("Pod does not belong to any application, should be terminated", "pod", podName, "labels", pod.GetLabels())
+		am.podManager.TerminatePod(pod)
 		return
 	} else {
-		pool := appc.getOrCreateApplicationPool(applicationKey)
+		pool := am.getOrCreateApplicationPool(applicationKey)
 		if pool.getPod(podName) != nil && pod.Status.Phase == v1.PodPending {
 			// this pod is just created by application itself, waiting for pod scheduled, no need to sync
 			return
 		}
-		pool.addPod(podName, NewApplicationPod(podName))
+		if util.PodIsPending(pod) {
+			pool.addPod(podName, NewApplicationPod(podName, PodStatePending))
+		} else if util.PodIsRunning(pod) {
+			pool.addPod(podName, NewApplicationPod(podName, PodStateRunning))
+		} else {
+			// do not add terminated pod
+		}
 	}
-	appc.enqueueApplication(applicationKey)
+	am.enqueueApplication(applicationKey)
 }
 
 // When a pod is deleted, find application that manages it and remove pod reference from its pod pool
-func (appc *ApplicationManager) onPodDeleteEventFromNode(pod *v1.Pod) {
+func (am *ApplicationManager) onPodDeleteEventFromNode(pod *v1.Pod) {
 	podName := util.Name(pod)
 	if pod.DeletionTimestamp == nil {
 		klog.InfoS("Pod does not have deletion timestamp, or pod is still alive, should add it", "pod", podName)
-		appc.onPodAddEventFromNode(pod)
+		am.onPodAddEventFromNode(pod)
 		return
 	}
 
-	applicationKey, err := appc.getPodApplicationKey(pod)
+	applicationKey, err := am.getPodApplicationKey(pod)
 	if err != nil {
 		klog.ErrorS(err, "Can not find application for pod, try best to use label", "pod", podName)
 		if label, found := pod.GetLabels()[fornaxv1.LabelFornaxCoreApplication]; !found {
@@ -184,41 +210,51 @@ func (appc *ApplicationManager) onPodDeleteEventFromNode(pod *v1.Pod) {
 	}
 
 	if len(applicationKey) == 0 {
-		klog.InfoS("Pod does not belong to any application, this pod should have been terminated", "pod", podName, "labels", pod.GetLabels())
+		klog.InfoS("Pod does not belong to any application, pod should be terminated", "pod", podName, "labels", pod.GetLabels())
 		return
 	} else {
-		pool := appc.getOrCreateApplicationPool(applicationKey)
+		pool := am.getOrCreateApplicationPool(applicationKey)
 		pool.deletePod(podName)
-		appc.cleanupSessionOnDeletedPod(pool, podName)
+		am.cleanupSessionOnDeletedPod(pool, podName)
 	}
 	// enqueue application to evaluate application status
-	appc.enqueueApplication(applicationKey)
+	am.enqueueApplication(applicationKey)
 }
 
-func (appc *ApplicationManager) deleteApplicationPod(applicationKey string, pod *v1.Pod) error {
+func (am *ApplicationManager) deleteApplicationPod(applicationKey string, pod *v1.Pod) error {
 	podName := util.Name(pod)
-	klog.InfoS("Delete a application pod", "application", applicationKey, "pod", podName)
-	err := appc.podManager.TerminatePod(pod)
+	pool := am.getApplicationPool(applicationKey)
+	if pool == nil {
+		return nil
+	}
+
+	podState := pool.getPod(podName)
+	if podState == nil || podState.state == PodStateTerminating {
+		return nil
+	}
+
+	err := am.podManager.TerminatePod(pod)
 	if err != nil {
 		if err == fornaxpod.PodNotFoundError {
-			if pool := appc.getApplicationPool(applicationKey); pool != nil {
-				pool.deletePod(podName)
-			}
+			pool.deletePod(podName)
 		} else {
-			klog.ErrorS(err, "Failed to delete Pod", "application", applicationKey, "pod", podName)
+			klog.ErrorS(err, "Failed to delete application pod", "application", applicationKey, "pod", podName)
 			return err
 		}
+	} else {
+		podState.state = PodStateTerminating
+		klog.InfoS("Delete a application pod", "application", applicationKey, "pod", podName)
 	}
 
 	return nil
 }
 
-func (appc *ApplicationManager) createApplicationPod(application *fornaxv1.Application) (*v1.Pod, error) {
+func (am *ApplicationManager) createApplicationPod(application *fornaxv1.Application) (*v1.Pod, error) {
 	// assign a unique name and uuid for pod
 	uid := uuid.New()
 	name := fmt.Sprintf("%s-%s-%d", application.Name, rand.String(16), uid.ClockSequence())
-	podTemplate := appc.getPodApplicationPodTemplate(uid, name, application)
-	pod, err := appc.podManager.AddPod("", podTemplate)
+	podTemplate := am.getPodApplicationPodTemplate(uid, name, application)
+	pod, err := am.podManager.AddPod("", podTemplate)
 	if err != nil {
 		return nil, err
 	}
@@ -229,7 +265,7 @@ func (appc *ApplicationManager) createApplicationPod(application *fornaxv1.Appli
 // getPodApplicationPodTemplate will translate application container spec to a pod spec,
 // it add application specific environment variables
 // to enable container to setup session connection with node and client
-func (appc *ApplicationManager) getPodApplicationPodTemplate(uid uuid.UUID, name string, application *fornaxv1.Application) *v1.Pod {
+func (am *ApplicationManager) getPodApplicationPodTemplate(uid uuid.UUID, name string, application *fornaxv1.Application) *v1.Pod {
 	enableServiceLinks := false
 	setHostnameAsFQDN := false
 	mountServiceAccount := false
@@ -350,12 +386,12 @@ func (appc *ApplicationManager) getPodApplicationPodTemplate(uid uuid.UUID, name
 	return pod
 }
 
-func (appc *ApplicationManager) getPodsToBeDelete(applicationKey string, idlePods []*ApplicationPod, numOfDesiredDelete int) []*v1.Pod {
+func (am *ApplicationManager) getPodsToBeDelete(applicationKey string, idlePods []*ApplicationPod, numOfDesiredDelete int) []*v1.Pod {
 	podsToDelete := []*v1.Pod{}
 	candidates := 0
 	// add pod not yet scheduled
 	for _, p := range idlePods {
-		pod := appc.podManager.FindPod(p.podName)
+		pod := am.podManager.FindPod(p.podName)
 		if len(pod.Status.HostIP) == 0 {
 			podsToDelete = append(podsToDelete, pod)
 			candidates += 1
@@ -367,7 +403,7 @@ func (appc *ApplicationManager) getPodsToBeDelete(applicationKey string, idlePod
 
 	// add pod still pending node agent return status
 	for _, p := range idlePods {
-		pod := appc.podManager.FindPod(p.podName)
+		pod := am.podManager.FindPod(p.podName)
 		if pod.Status.Phase == v1.PodPending {
 			podsToDelete = append(podsToDelete, pod)
 			candidates += 1
@@ -379,7 +415,7 @@ func (appc *ApplicationManager) getPodsToBeDelete(applicationKey string, idlePod
 
 	// add pod status is unknown
 	for _, p := range idlePods {
-		pod := appc.podManager.FindPod(p.podName)
+		pod := am.podManager.FindPod(p.podName)
 		if pod.Status.Phase == v1.PodUnknown {
 			podsToDelete = append(podsToDelete, pod)
 			candidates += 1
@@ -391,7 +427,7 @@ func (appc *ApplicationManager) getPodsToBeDelete(applicationKey string, idlePod
 
 	// pick running pod
 	for _, p := range idlePods {
-		pod := appc.podManager.FindPod(p.podName)
+		pod := am.podManager.FindPod(p.podName)
 		if pod.Status.Phase == v1.PodRunning {
 			podsToDelete = append(podsToDelete, pod)
 			candidates += 1
@@ -403,24 +439,15 @@ func (appc *ApplicationManager) getPodsToBeDelete(applicationKey string, idlePod
 	return podsToDelete
 }
 
-func (pool *ApplicationPool) getPod(podName string) *ApplicationPod {
-	pool.mu.RLock()
-	defer pool.mu.RUnlock()
-	if v, found := pool.pods[podName]; found {
-		return v
-	}
-	return nil
-}
-
-func (appc *ApplicationManager) groupApplicationPods(applicationKey string) (occupiedPods, idlePendingPods, idleRunningPods []*ApplicationPod) {
-	if pool := appc.getApplicationPool(applicationKey); pool != nil {
+func (am *ApplicationManager) groupApplicationPods(applicationKey string) (occupiedPods, idlePendingPods, idleRunningPods []*ApplicationPod) {
+	if pool := am.getApplicationPool(applicationKey); pool != nil {
 		pods := pool.podList()
 		for _, v := range pods {
 			if v.sessions.Len() > 0 {
 				occupiedPods = append(occupiedPods, v)
 				continue
 			}
-			pod := appc.podManager.FindPod(v.podName)
+			pod := am.podManager.FindPod(v.podName)
 			if pod != nil && pod.DeletionTimestamp == nil {
 				// exclude pods have been requested to delete from active pods to avoid double count
 				if util.PodIsRunning(pod) {
@@ -434,14 +461,10 @@ func (appc *ApplicationManager) groupApplicationPods(applicationKey string) (occ
 	return occupiedPods, idlePendingPods, idleRunningPods
 }
 
-func (appc *ApplicationManager) syncApplicationPods(application *fornaxv1.Application, numOfDesiredPod, numOfIdlePod int, idlePods []*ApplicationPod) error {
-	desiredAddition := numOfDesiredPod - numOfIdlePod
-	applicationKey, err := cache.MetaNamespaceKeyFunc(application)
-	if err != nil {
-		klog.ErrorS(err, "Couldn't get key for application", "application", application)
-		return err
-	}
+func (am *ApplicationManager) syncApplicationPods(applicationKey string, application *fornaxv1.Application, numOfDesiredPod, numOfIdlePod int, idlePods []*ApplicationPod) error {
+	var err error
 
+	desiredAddition := numOfDesiredPod - numOfIdlePod
 	applicationBurst := util.ApplicationScalingBurst(application)
 	if desiredAddition > 0 {
 		if desiredAddition > applicationBurst {
@@ -449,11 +472,11 @@ func (appc *ApplicationManager) syncApplicationPods(application *fornaxv1.Applic
 		}
 
 		klog.InfoS("Creating pods", "application", applicationKey, "addition", desiredAddition)
-		appPool := appc.getOrCreateApplicationPool(applicationKey)
+		appPool := am.getOrCreateApplicationPool(applicationKey)
 		createdPods := []*v1.Pod{}
 		createErrors := []error{}
 		for i := 0; i < desiredAddition; i++ {
-			pod, err := appc.createApplicationPod(application)
+			pod, err := am.createApplicationPod(application)
 			if err != nil {
 				klog.ErrorS(err, "Create pod failed", "application", applicationKey)
 				if apierrors.HasStatusCause(err, v1.NamespaceTerminatingCause) {
@@ -462,7 +485,7 @@ func (appc *ApplicationManager) syncApplicationPods(application *fornaxv1.Applic
 				createErrors = append(createErrors, err)
 				continue
 			}
-			appPool.addPod(util.Name(pod), NewApplicationPod(util.Name(pod)))
+			appPool.addPod(util.Name(pod), NewApplicationPod(util.Name(pod), PodStatePending))
 			createdPods = append(createdPods, pod)
 		}
 
@@ -479,9 +502,9 @@ func (appc *ApplicationManager) syncApplicationPods(application *fornaxv1.Applic
 
 		// Choose which Pods to delete, preferring those in earlier phases of startup.
 		deleteErrors := []error{}
-		podsToDelete := appc.getPodsToBeDelete(applicationKey, idlePods, desiredSubstraction)
+		podsToDelete := am.getPodsToBeDelete(applicationKey, idlePods, desiredSubstraction)
 		for _, pod := range podsToDelete {
-			err := appc.deleteApplicationPod(applicationKey, pod)
+			err := am.deleteApplicationPod(applicationKey, pod)
 			if err != nil {
 				deleteErrors = append(deleteErrors, err)
 			}
@@ -497,14 +520,14 @@ func (appc *ApplicationManager) syncApplicationPods(application *fornaxv1.Applic
 }
 
 // getPodApplicationKey returns Application Key of pod using LabelFornaxCoreApplication
-func (appc *ApplicationManager) getPodApplicationKey(pod *v1.Pod) (string, error) {
+func (am *ApplicationManager) getPodApplicationKey(pod *v1.Pod) (string, error) {
 	if applicationLabel, found := pod.GetLabels()[fornaxv1.LabelFornaxCoreApplication]; !found {
 		klog.Warningf("Pod %s does not have fornaxv1 application label:%s", util.Name(pod), fornaxv1.LabelFornaxCoreApplication)
 		return "", nil
 	} else {
 		namespace, name, err := cache.SplitMetaNamespaceKey(applicationLabel)
 		if err == nil {
-			application, err := appc.applicationLister.Applications(namespace).Get(name)
+			application, err := am.applicationLister.Applications(namespace).Get(name)
 			if err != nil {
 				if apierrors.IsNotFound(err) {
 					return "", nil
@@ -521,7 +544,7 @@ func (appc *ApplicationManager) getPodApplicationKey(pod *v1.Pod) (string, error
 			return applicationKey, nil
 		} else {
 			// check application with same label
-			applications, err := appc.applicationLister.List(labels.SelectorFromValidatedSet(labels.Set{fornaxv1.LabelFornaxCoreApplication: applicationLabel}))
+			applications, err := am.applicationLister.List(labels.SelectorFromValidatedSet(labels.Set{fornaxv1.LabelFornaxCoreApplication: applicationLabel}))
 			if err != nil {
 				return "", err
 			}
@@ -563,18 +586,18 @@ func (appc *ApplicationManager) getPodApplicationKey(pod *v1.Pod) (string, error
 // cleanupPodOfApplication if a application is being deleted,
 // terminate all pods which are still alive and delete pods from application pod pool if it does not exist anymore in Pod Manager
 // when alive pods reported as terminated by Node Agent, then application can be eventually deleted
-func (appc *ApplicationManager) cleanupPodOfApplication(applicationKey string) error {
+func (am *ApplicationManager) cleanupPodOfApplication(applicationKey string) error {
 	klog.Infof("Cleanup all pods of application %s", applicationKey)
 	deleteErrors := []error{}
 	podsToDelete := []string{}
-	if pool := appc.getApplicationPool(applicationKey); pool != nil {
+	if pool := am.getApplicationPool(applicationKey); pool != nil {
 		pods := pool.podList()
 		for _, k := range pods {
-			pod := appc.podManager.FindPod(k.podName)
+			pod := am.podManager.FindPod(k.podName)
 			if pod == nil {
 				podsToDelete = append(podsToDelete, k.podName)
 			} else {
-				err := appc.deleteApplicationPod(applicationKey, pod)
+				err := am.deleteApplicationPod(applicationKey, pod)
 				if err != nil {
 					deleteErrors = append(deleteErrors, err)
 				}
@@ -583,7 +606,7 @@ func (appc *ApplicationManager) cleanupPodOfApplication(applicationKey string) e
 
 		// these pods can be delete just as no longer exist in Pod Manager
 		for _, k := range podsToDelete {
-			if pool := appc.getApplicationPool(applicationKey); pool != nil {
+			if pool := am.getApplicationPool(applicationKey); pool != nil {
 				pool.deletePod(k)
 			}
 		}
@@ -593,4 +616,15 @@ func (appc *ApplicationManager) cleanupPodOfApplication(applicationKey string) e
 		}
 	}
 	return nil
+}
+
+func (am *ApplicationManager) printAppPodSummary(applicationKey string) {
+	pool := am.getApplicationPool(applicationKey)
+	if pool != nil {
+		summary := pool.summaryPod(am.podManager)
+		klog.InfoS("Application pod summary:", "summary", summary)
+	}
+}
+
+func (am *ApplicationManager) pruneTerminatingPods() {
 }

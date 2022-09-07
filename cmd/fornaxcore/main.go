@@ -20,6 +20,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"time"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -84,7 +85,12 @@ func main() {
 	podManager := pod.NewPodManager(context.Background(), grpcServer)
 	sessionManager := session.NewSessionManager(context.Background(), grpcServer, podManager, apiServerClient)
 	nodeManager := node.NewNodeManager(context.Background(), node.DefaultStaleNodeTimeout, grpcServer, podManager, sessionManager)
-	podScheduler := podscheduler.NewPodScheduler(context.Background(), grpcServer, nodeManager, podManager)
+	podScheduler := podscheduler.NewPodScheduler(context.Background(), grpcServer, nodeManager, podManager,
+		&podscheduler.SchedulePolicy{
+			NumOfEvaluatedNodes: 200,
+			BackoffDuration:     10 * time.Second,
+			NodeSortingMethod:   podscheduler.NodeSortingMethodMoreMemory,
+		})
 	podManager.Run(podScheduler)
 	podScheduler.Run()
 	nodeManager.Run()

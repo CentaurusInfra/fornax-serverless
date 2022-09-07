@@ -45,6 +45,10 @@ func SessionIsClosed(session *fornaxv1.ApplicationSession) bool {
 	return session.Status.SessionStatus == fornaxv1.SessionStatusClosed
 }
 
+func SessionIsClosing(session *fornaxv1.ApplicationSession) bool {
+	return session.DeletionTimestamp != nil && session.Status.SessionStatus == fornaxv1.SessionStatusClosing
+}
+
 func SessionIsPending(session *fornaxv1.ApplicationSession) bool {
 	return session.DeletionTimestamp == nil && (session.Status.SessionStatus == fornaxv1.SessionStatusPending || session.Status.SessionStatus == fornaxv1.SessionStatusUnspecified)
 }

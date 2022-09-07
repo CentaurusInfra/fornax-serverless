@@ -21,6 +21,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"sync"
 	"time"
 
 	"centaurusinfra.io/fornax-serverless/cmd/fornaxtest/config"
@@ -95,18 +96,24 @@ func Run(ctx context.Context, testConfig config.TestConfiguration) {
 	klog.InfoS("Golang settings", "GOGC", os.Getenv("GOGC"), "GOMAXPROCS", os.Getenv("GOMAXPROCS"), "GOTRACEBACK", os.Getenv("GOTRACEBACK"))
 
 	RunTest := func() {
+		wg := sync.WaitGroup{}
 		for i := 0; i < testConfig.NumOfApps; i++ {
+			wg.Add(1)
 			namespace := fmt.Sprintf("game%d", i)
 			appName := fmt.Sprintf("echoserver%d", i)
-			switch testConfig.TestCase {
-			case config.AppFullCycleTest:
-				runAppFullCycleTest(namespace, appName, testConfig)
-			case config.SessionFullCycleTest:
-				runSessionFullSycleTest(namespace, appName, testConfig)
-			case config.AppCreateDeleteTest:
-			case config.AppCreateTest:
-			}
+			go func() {
+				switch testConfig.TestCase {
+				case config.AppFullCycleTest:
+					runAppFullCycleTest(namespace, appName, testConfig)
+				case config.SessionFullCycleTest:
+					runSessionFullSycleTest(namespace, appName, testConfig)
+				case config.AppCreateDeleteTest:
+				case config.AppCreateTest:
+				}
+				wg.Done()
+			}()
 		}
+		wg.Wait()
 	}
 
 	logs.InitLogs()

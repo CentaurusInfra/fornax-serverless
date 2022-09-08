@@ -108,9 +108,13 @@ func cleanupAppFullCycleTest(namespace, appName string, sessions []*TestSession)
 		appl, err := describeApplication(apiServerClient, namespace, appName)
 		if err == nil && appl == nil {
 			fmt.Printf("Application: %s took %d micro second to teardown %d instances\n", appName, time.Now().Sub(delTime).Microseconds(), instanceNum)
-			return
+			break
 		}
 		continue
+	}
+
+	for _, v := range sessions {
+		deleteSession(getApiServerClient(), v.session.Namespace, v.session.Name)
 	}
 }
 
@@ -174,23 +178,25 @@ func waitForAppSetup(namespace, appName string, numOfInstance int) {
 func waitForSessionTearDown(namespace, appName string, sessions []*TestSession) {
 	klog.Infof("waiting for %d sessions teardown", len(sessions))
 	for {
-		time.Sleep(100 * time.Millisecond)
+		time.Sleep(10 * time.Millisecond)
 		allTeardown := true
 		for _, ts := range sessions {
+			if ts.status == fornaxv1.SessionStatusClosed {
+				continue
+			}
 			sess, err := describeSession(getApiServerClient(), namespace, ts.session.Name)
 
-			if err != nil {
+			if err != nil || sess != nil {
 				allTeardown = false
-				break
 			}
-			if sess != nil {
-				allTeardown = false
-				break
+
+			if sess == nil {
+				ts.status = fornaxv1.SessionStatusClosed
 			}
 		}
 
 		if allTeardown {
-			return
+			break
 		}
 	}
 }
@@ -201,28 +207,27 @@ func waitForSessionSetup(namespace, appName string, sessions []*TestSession) {
 		time.Sleep(10 * time.Millisecond)
 		allSetup := true
 		for _, ts := range sessions {
-			sessName := ts.session.Name
-			sess, err := describeSession(getApiServerClient(), namespace, sessName)
-			if err != nil {
-				allSetup = false
-				break
+			if ts.status != fornaxv1.SessionStatusPending {
+				continue
 			}
-			if sess == nil {
+			sess, err := describeSession(getApiServerClient(), namespace, ts.session.Name)
+			if err != nil || sess == nil {
+				allSetup = false
 				continue
 			}
 
 			switch sess.Status.SessionStatus {
 			case fornaxv1.SessionStatusAvailable:
 				ts.availableTimeMicro = sess.Status.AvailableTimeMicro
-				ts.availableTimeMicro = time.Now().UnixMicro()
-				ts.status = fornaxv1.SessionStatusAvailable
+				// ts.availableTimeMicro = time.Now().UnixMicro()
+				ts.status = sess.Status.SessionStatus
 			case fornaxv1.SessionStatusTimeout:
-				ts.status = fornaxv1.SessionStatusTimeout
+				ts.status = sess.Status.SessionStatus
 			case fornaxv1.SessionStatusClosed:
-				ts.status = fornaxv1.SessionStatusClosed
+				ts.status = sess.Status.SessionStatus
 			default:
 				allSetup = false
-				break
+				continue
 			}
 		}
 
@@ -309,16 +314,17 @@ func createSession(client fornaxclient.Interface, namespace, name, applicationNa
 		},
 		Spec: spec,
 	}
-	creationTimeMicro := time.Now().UnixMicro()
 	session, err := appClient.Create(context.Background(), session, metav1.CreateOptions{})
 	if err != nil {
 		return nil, err
 	}
+	creationTimeMicro := time.Now().UnixMicro()
 	klog.InfoS("Session created", "application", applicationName, "session", name)
 	return &TestSession{
 		session:            session,
 		creationTimeMicro:  creationTimeMicro,
 		availableTimeMicro: 0,
+		status:             fornaxv1.SessionStatusPending,
 	}, nil
 }
 

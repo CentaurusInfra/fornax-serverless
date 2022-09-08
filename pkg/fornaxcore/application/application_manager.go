@@ -404,19 +404,19 @@ func (am *ApplicationManager) syncApplication(ctx context.Context, applicationKe
 
 			// 2, determine how many pods required for remaining pending sessions
 			if syncErr == nil {
-				occupiedPods, idlePendingPods, idleRunningPods := am.groupApplicationPods(applicationKey)
-				numOfIdlePod := len(idleRunningPods) + len(idlePendingPods)
+				occupiedPods, pendingPods, idleRunningPods := am.getActiveApplicationPods(applicationKey)
+				numOfUnoccupiedPod := len(idleRunningPods) + len(pendingPods)
 				numOfOccupiedPod := len(occupiedPods)
 				_, numOfPendingSession := am.getTotalAndPendingSessionNum(applicationKey)
-				numOfDesiredIdlePod := am.calculateDesiredIdlePods(application, numOfOccupiedPod, numOfIdlePod, numOfPendingSession)
-				numOfDesiredPod = numOfOccupiedPod + numOfDesiredIdlePod
-				klog.InfoS("Sync application pod", "pending sessions", numOfPendingSession, "#curr-pods", numOfOccupiedPod+numOfIdlePod, "idle-pods", numOfIdlePod, "desired-idle-pods", numOfDesiredIdlePod)
-				if numOfDesiredIdlePod > numOfIdlePod {
+				numOfDesiredUnoccupiedPod := am.calculateDesiredIdlePods(application, numOfOccupiedPod, numOfUnoccupiedPod, numOfPendingSession)
+				numOfDesiredPod = numOfOccupiedPod + numOfDesiredUnoccupiedPod
+				klog.InfoS("Syncing application pod", "pending sessions", numOfPendingSession, "#curr-pods", numOfOccupiedPod+numOfUnoccupiedPod, "pending-pods", len(pendingPods), "idle-pods", len(idleRunningPods), "desired-pending+idle-pods", numOfDesiredUnoccupiedPod)
+				if numOfDesiredUnoccupiedPod > numOfUnoccupiedPod {
 					action = fornaxv1.DeploymentActionCreateInstance
-				} else if numOfDesiredIdlePod < numOfIdlePod {
+				} else if numOfDesiredUnoccupiedPod < numOfUnoccupiedPod {
 					action = fornaxv1.DeploymentActionDeleteInstance
 				}
-				syncErr = am.syncApplicationPods(applicationKey, application, numOfDesiredIdlePod, numOfIdlePod, append(idlePendingPods, idleRunningPods...))
+				syncErr = am.syncApplicationPods(applicationKey, application, numOfDesiredUnoccupiedPod, numOfUnoccupiedPod, append(pendingPods, idleRunningPods...))
 			}
 		} else {
 			numOfDesiredPod = 0
@@ -550,26 +550,43 @@ func (am *ApplicationManager) printAppSummary() {
 }
 
 func (am *ApplicationManager) HouseKeeping() error {
-	apps := am.applicationList()
+	appPools := am.applicationList()
 	klog.Info("Application house keeping")
-	for appKey, app := range apps {
-		podSummary := app.summaryPod(am.podManager)
-		sessionSummary := app.summarySession()
-		klog.InfoS("Application summary", "app", appKey, "pod", app.summaryPod(am.podManager), "session", app.summarySession())
+	for appKey, pool := range appPools {
+		podSummary := pool.summaryPod(am.podManager)
+		sessionSummary := pool.summarySession()
+		klog.InfoS("Application summary", "app", appKey, "pod", podSummary, "session", sessionSummary)
 
 		if sessionSummary.timeoutCount > 0 {
-			_, _, _, timeoutSessions, _ := app.groupSessionsByState()
+			_, _, _, timeoutSessions, _ := pool.groupSessionsByState()
 			for _, v := range timeoutSessions {
 				am.changeSessionStatus(v, fornaxv1.SessionStatusTimeout)
 			}
 		}
 
-		pendingCutoff := time.Now().Add(-1 * DefaultPodPendingTimeoutDuration)
-		if podSummary.pendingCount > 0 {
-			pendingPods, _, _ := app.groupPodsByState(am.podManager)
-			for _, pod := range pendingPods {
-				if pod.CreationTimestamp.Time.Before(pendingCutoff) {
-					am.deleteApplicationPod(appKey, pod)
+		if podSummary.pendingCount > 0 || podSummary.deletingCount > 0 {
+			pendingPods, deletingPods, _ := pool.groupPodsByState()
+			pendingTimeoutCutoff := time.Now().Add(-1 * DefaultPodPendingTimeoutDuration)
+			for _, name := range pendingPods {
+				pod := am.podManager.FindPod(name)
+				if pod != nil {
+					// only delete pending pods which scheduled but did not report back by node
+					if pod.CreationTimestamp.Time.Before(pendingTimeoutCutoff) && len(pod.Status.HostIP) > 0 {
+						am.deleteApplicationPod(appKey, pod, false)
+					}
+				} else {
+					pool.deletePod(name)
+				}
+			}
+
+			for _, name := range deletingPods {
+				pod := am.podManager.FindPod(name)
+				if pod != nil {
+					if pod.DeletionTimestamp.Time.Before(time.Now().Add(-1 * time.Duration(*pod.DeletionGracePeriodSeconds) * time.Second)) {
+						am.deleteApplicationPod(appKey, pod, true)
+					}
+				} else {
+					pool.deletePod(name)
 				}
 			}
 		}

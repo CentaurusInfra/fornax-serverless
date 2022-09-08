@@ -203,16 +203,12 @@ func (pm *podManager) TerminatePod(pod *v1.Pod) error {
 	}
 	existpod := fornaxPodState.v1pod
 
-	if len(fornaxPodState.nodeId) == 0 && len(existpod.Status.HostIP) == 0 {
+	// could be two chance, pod not scheduled at all, or pod is scheduled, but have not report back from node,
+	// there could be a race condition with scheduler when scheduler send a pod to node, but node have not report back,
+	// we decided to just delete this pod, when node report it back and app owner will determine should pod de deleted again
+	if len(fornaxPodState.nodeId) == 0 {
 		pm.DeletePod("", pod)
 	}
-
-	// if existpod.DeletionTimestamp != nil {
-	//  // already in deleting state, no op here, two cases
-	//  // 1/ node have not been report back
-	//  // 2/ node did not receive request, but pod will be deleted if it report back
-	//  return nil
-	// }
 
 	// if pod exist, and pod does not have deletion timestamp, set it
 	if existpod.GetDeletionTimestamp() == nil {
@@ -230,9 +226,7 @@ func (pm *podManager) TerminatePod(pod *v1.Pod) error {
 		}
 	}
 
-	// not terminated yet, let node agent terminate and report back
-	// there could be a race condition with scheduler when scheduler send to node, but node did not report back,
-	// when node report it back and podmanager will terminate it again since pod has deletion timestamp
+	// send to node agent terminate pod and report back
 	if len(fornaxPodState.nodeId) > 0 && util.PodNotTerminated(existpod) {
 		// pod is bound with node, let node agent terminate it before deletion
 		err := pm.nodeAgentClient.TerminatePod(fornaxPodState.nodeId, fornaxPodState.v1pod)
@@ -319,8 +313,7 @@ func (pm *podManager) AddPod(nodeId string, pod *v1.Pod) (*v1.Pod, error) {
 			}
 			pm.updatePod(nodeId, existPod, oldPodState)
 		} else if len(nodeId) > 0 {
-			// pod is reported back by node agent and pod owner have determinted pod should be deleted,
-			// termiante this pod
+			// pod is reported back by node agent but pod owner have determinted pod should be deleted, termiante this pod
 			if existPod.DeletionTimestamp != nil && util.PodNotTerminated(pod) {
 				klog.InfoS("Terminate a running pod which was request to terminate", "pod", util.Name(pod))
 				err := pm.nodeAgentClient.TerminatePod(nodeId, pod)
@@ -332,9 +325,8 @@ func (pm *podManager) AddPod(nodeId string, pod *v1.Pod) (*v1.Pod, error) {
 				pm.updatePod(nodeId, existPod, oldPodState)
 			}
 		} else {
-			// pod does not have host ip in status should be in pending schedule state,
-			// this case is more likely pod scheduler call pod manager again to create a pending schedule pod twice
-			pm.podScheduler.AddPod(existPod, 0)
+			// this case is more likely pod owner call pod manager again to create a pending schedule pod twice
+			pm.podScheduler.AddPod(existPod, 0*time.Second)
 		}
 		return existPod, nil
 	}

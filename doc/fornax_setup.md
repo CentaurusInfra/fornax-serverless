@@ -329,3 +329,7 @@ version = 2
 ```sh
 ./bin/fornaxtest --test-case session_full_cycle --num-of-session-per-app 1 --num-of-init-pod-per-app 0 --burst-of-app-pods 10 --run-once
 ```
+./bin/fornaxtest --test-case app_full_cycle --num-of-session-per-app 0 --num-of-init-pod-per-app 10 --burst-of-app-pods 100 --num-of-app 1 --run-once
+```sh
+
+```

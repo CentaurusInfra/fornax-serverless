@@ -107,7 +107,7 @@ func cleanupAppFullCycleTest(namespace, appName string, sessions []*TestSession)
 		time.Sleep(100 * time.Millisecond)
 		appl, err := describeApplication(apiServerClient, namespace, appName)
 		if err == nil && appl == nil {
-			fmt.Printf("Application: %s took %d micro second to teardown %d instances\n", appName, time.Now().Sub(delTime).Microseconds(), instanceNum)
+			klog.Infof("Application: %s took %d micro second to teardown %d instances\n", appName, time.Now().Sub(delTime).Microseconds(), instanceNum)
 			break
 		}
 		continue
@@ -120,7 +120,7 @@ func cleanupAppFullCycleTest(namespace, appName string, sessions []*TestSession)
 
 func createAndWaitForApplicationSetup(namespace, appName string, testConfig config.TestConfiguration) *fornaxv1.Application {
 	appSpec := SessionWrapperEchoServerSpec.DeepCopy()
-	appSpec.ScalingPolicy.Burst = uint32(testConfig.BurstOfPods)
+	appSpec.ScalingPolicy.Burst = uint32(testConfig.BurstOfPodPerApp)
 	appSpec.ScalingPolicy.MinimumInstance = uint32(testConfig.NumOfInitPodsPerApp)
 	application, err := createApplication(apiServerClient, namespace, appName, appSpec)
 	if err != nil {
@@ -168,7 +168,7 @@ func waitForAppSetup(namespace, appName string, numOfInstance int) {
 				ct = int64(t)
 			}
 			at := time.Now().UnixMicro()
-			fmt.Printf("Application: %s took %d micro second to setup %d instances\n", appName, at-ct, application.Status.RunningInstances)
+			klog.Infof("Application: %s took %d micro second to setup %d instances\n", appName, at-ct, application.Status.RunningInstances)
 			break
 		}
 		continue
@@ -233,7 +233,7 @@ func waitForSessionSetup(namespace, appName string, sessions []*TestSession) {
 
 		if allSetup {
 			for _, v := range sessions {
-				fmt.Printf("Session: %s took %d micro second to setup, status %s\n", v.session.Name, v.availableTimeMicro-v.creationTimeMicro, v.status)
+				klog.Infof("Session: %s took %d micro second to setup, status %s\n", v.session.Name, v.availableTimeMicro-v.creationTimeMicro, v.status)
 			}
 			break
 		}

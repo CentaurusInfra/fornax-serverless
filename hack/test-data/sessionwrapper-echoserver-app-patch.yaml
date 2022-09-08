@@ -1,8 +1,8 @@
 spec:
   scalingPolicy:
-    minimumInstance: 0
+    minimumInstance: 20
     maximumInstance: 30
-    burst: 1
+    burst: 50
     scalingPolicyType: idle_session_number
     idleSessionNumThreshold:
       highWaterMark: 0

@@ -30,7 +30,7 @@ import (
 	"k8s.io/klog/v2"
 
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
-	"k8s.io/apimachinery/pkg/util/wait"
+	// "k8s.io/apimachinery/pkg/util/wait"
 	utilfeature "k8s.io/apiserver/pkg/util/feature"
 	cliflag "k8s.io/component-base/cli/flag"
 	"k8s.io/component-base/logs"
@@ -93,7 +93,6 @@ func NewCommand() *cobra.Command {
 }
 
 func Run(ctx context.Context, testConfig config.TestConfiguration) {
-	klog.InfoS("Golang settings", "GOGC", os.Getenv("GOGC"), "GOMAXPROCS", os.Getenv("GOMAXPROCS"), "GOTRACEBACK", os.Getenv("GOTRACEBACK"))
 
 	RunTest := func() {
 		wg := sync.WaitGroup{}
@@ -119,10 +118,11 @@ func Run(ctx context.Context, testConfig config.TestConfiguration) {
 
 	logs.InitLogs()
 
-	if testConfig.RunOnce {
+	for i := 0; i < testConfig.NumOfTestCycle; i++ {
+		klog.Infof("--------Test %d begin--------\n", i+1)
 		RunTest()
-		os.Exit(0)
-	} else {
-		wait.Until(RunTest, 2*time.Second, ctx.Done())
+		time.Sleep(300 * time.Millisecond)
+		klog.Infof("--------Test %d end----------\n", i+1)
 	}
+	os.Exit(0)
 }

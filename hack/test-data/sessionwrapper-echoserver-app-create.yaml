@@ -6,9 +6,9 @@ metadata:
     name: sessionwrapper-echoserver
 spec:
   scalingPolicy:
-    minimumInstance: 1
-    maximumInstance: 30
-    burst: 1
+    minimumInstance: 10
+    maximumInstance: 100
+    burst: 50
     scalingPolicyType: idle_session_number
     idleSessionNumThreshold:
       highWaterMark: 3

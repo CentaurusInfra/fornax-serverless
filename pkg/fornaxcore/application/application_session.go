@@ -183,7 +183,7 @@ func (am *ApplicationManager) onSessionEventFromNode(se *ie.SessionEvent) error 
 	//termiante pod after sesion is closed
 	if session.Spec.KillInstanceWhenSessionClosed && newStatus.SessionStatus == fornaxv1.SessionStatusClosed && util.PodNotTerminated(pod) {
 		klog.InfoS("Terminate a pod as KillInstanceWhenSessionClosed is true", "pod", util.Name(pod), "session", util.Name(session))
-		am.deleteApplicationPod(applicationKey, pod)
+		am.deleteApplicationPod(applicationKey, pod, false)
 	}
 	return nil
 }
@@ -220,7 +220,7 @@ func (am *ApplicationManager) updateSessionPool(applicationKey string, session *
 	} else if deleted == false {
 		if session.Status.PodReference != nil {
 			podName := session.Status.PodReference.Name
-			pod := pool.addPod(podName, NewApplicationPod(podName, PodStateRunning))
+			pod := pool.addOrUpdatePod(podName, PodStateRunning)
 			pod.sessions.Add(sessionId)
 		}
 		pool.addSession(sessionId, session)
@@ -318,14 +318,14 @@ func (am *ApplicationManager) syncApplicationSessions(applicationKey string, app
 	if pool == nil {
 		return nil
 	}
-	_, _, idleRunningPods := am.groupApplicationPods(applicationKey)
+	_, _, idlePods := am.getActiveApplicationPods(applicationKey)
 	pendingSessions, deletingSessions, _, timeoutSessions, runningSessions := pool.groupSessionsByState()
-	klog.InfoS("Syncing pending application session", "application", applicationKey, "#running", len(runningSessions), "#pending", len(pendingSessions), "#deleting", len(deletingSessions), "#timeout", len(timeoutSessions), "#idleRunningPods", len(idleRunningPods))
+	klog.InfoS("Syncing application pending session", "application", applicationKey, "#running", len(runningSessions), "#pending", len(pendingSessions), "#deleting", len(deletingSessions), "#timeout", len(timeoutSessions), "#idleRunningPods", len(idlePods))
 
 	sessionErrors := []error{}
 	// 1/ assign pending sessions to idle pod
 	si := 0
-	for _, rp := range idleRunningPods {
+	for _, rp := range idlePods {
 		pod := am.podManager.FindPod(rp.podName)
 		if pod != nil {
 			// allow only one sssion for one pod for now

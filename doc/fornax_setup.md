@@ -294,7 +294,7 @@ kubectl delete applicationsession --kubeconfig kubeconfig --namespace game1 ngin
 kubectl --kubeconfig kubeconfig delete applicationsession --namespace game1 nginx-session2
 ```
 ```sh
-kubectl delete application --kubeconfig kubeconfig --namespace game1 echoserver1
+kubectl delete application --kubeconfig kubeconfig --namespace fornaxtest echoserver0
 ```
 
 4. Verify session is accessable using access point

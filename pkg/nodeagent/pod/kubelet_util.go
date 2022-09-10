@@ -13,6 +13,8 @@ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 See the License for the specific language governing permissions and
 limitations under the License.
 */
+
+// this file is mostly a copy from kubelet, and a few modification to use node configuration
 package pod
 
 import (

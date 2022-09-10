@@ -68,7 +68,7 @@ import (
 
 const (
 	ResourcePID v1.ResourceName = "pid"
-	MaxPID                      = 1000
+	MaxPID                      = 1000000
 )
 
 type ActivePodsFunc func() []*v1.Pod

@@ -23,7 +23,6 @@ import (
 	criv1 "k8s.io/cri-api/pkg/apis/runtime/v1"
 	"k8s.io/klog/v2"
 
-	podcontainer "centaurusinfra.io/fornax-serverless/pkg/nodeagent/pod/container"
 	cruntime "centaurusinfra.io/fornax-serverless/pkg/nodeagent/runtime"
 	"centaurusinfra.io/fornax-serverless/pkg/nodeagent/types"
 )
@@ -168,11 +167,6 @@ func (a *PodActor) terminateContainer(container *types.FornaxContainer) error {
 		"Pod", types.UniquePodName(pod),
 		"ContainerName", container.ContainerSpec.Name,
 	)
-
-	// 1/ verify container is stopped in runtime
-	if !podcontainer.ContainerExit(container.ContainerStatus) {
-		return fmt.Errorf("container %s is not stopped yet", container.ContainerSpec.Name)
-	}
 
 	err := a.dependencies.CRIRuntimeService.TerminateContainer(container.RuntimeContainer.Id)
 	if err != nil {

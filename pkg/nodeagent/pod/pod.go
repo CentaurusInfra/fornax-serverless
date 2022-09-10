@@ -238,7 +238,6 @@ func (a *PodActor) CleanupPod() (err error) {
 		return err
 	}
 
-	// Remove log directories for the pod
 	klog.InfoS("Remove Pod log dirs", "pod", types.UniquePodName(a.pod))
 	if err := CleanupPodLogDir(a.nodeConfig.PodLogRootPath, pod); err != nil {
 		klog.ErrorS(err, "Unable to remove pod log directories for pod", "pod", types.UniquePodName(a.pod))

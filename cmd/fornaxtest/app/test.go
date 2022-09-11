@@ -56,11 +56,11 @@ var (
 			Resources: v1.ResourceRequirements{
 				Limits: map[v1.ResourceName]resource.Quantity{
 					"memory": util.ResourceQuantity(50*1024*1024, v1.ResourceMemory),
-					"cpu":    util.ResourceQuantity(0.1*1000, v1.ResourceMemory),
+					"cpu":    util.ResourceQuantity(0.05*1000, v1.ResourceCPU),
 				},
 				Requests: map[v1.ResourceName]resource.Quantity{
 					"memory": util.ResourceQuantity(50*1024*1024, v1.ResourceMemory),
-					"cpu":    util.ResourceQuantity(0.1*1000, v1.ResourceMemory),
+					"cpu":    util.ResourceQuantity(0.05*1000, v1.ResourceCPU),
 				},
 			},
 		}},
@@ -153,7 +153,7 @@ func createAndWaitForSessionSetup(application *fornaxv1.Application, namespace, 
 }
 
 func waitForAppSetup(namespace, appName string, numOfInstance int) {
-	klog.Infof("waiting for app %s/%s setup", namespace, appName)
+	klog.Infof("waiting for %d pods of app %s setup", numOfInstance, appName)
 	for {
 		time.Sleep(100 * time.Millisecond)
 		application, err := describeApplication(apiServerClient, namespace, appName)
@@ -176,7 +176,7 @@ func waitForAppSetup(namespace, appName string, numOfInstance int) {
 }
 
 func waitForSessionTearDown(namespace, appName string, sessions []*TestSession) {
-	klog.Infof("waiting for %d sessions teardown", len(sessions))
+	klog.Infof("waiting for %d sessions of app %s teardown", len(sessions), appName)
 	for {
 		time.Sleep(10 * time.Millisecond)
 		allTeardown := true
@@ -202,7 +202,7 @@ func waitForSessionTearDown(namespace, appName string, sessions []*TestSession) 
 }
 
 func waitForSessionSetup(namespace, appName string, sessions []*TestSession) {
-	klog.Infof("waiting for %d sessions setup", len(sessions))
+	klog.Infof("waiting for %d sessions of app %s setup", len(sessions), appName)
 	for {
 		time.Sleep(10 * time.Millisecond)
 		allSetup := true

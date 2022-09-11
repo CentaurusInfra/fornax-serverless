@@ -122,7 +122,7 @@ func Run(ctx context.Context, testConfig config.TestConfiguration) {
 		klog.Infof("--------Test %d begin--------\n", i+1)
 		RunTest()
 		time.Sleep(300 * time.Millisecond)
-		klog.Infof("--------Test %d end----------\n", i+1)
+		klog.Infof("--------Test %d end----------\n\n", i+1)
 	}
 	os.Exit(0)
 }

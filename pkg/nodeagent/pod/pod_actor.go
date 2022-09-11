@@ -452,6 +452,7 @@ func (a *PodActor) handleSessionState(s internal.SessionState) {
 	session, found := a.pod.Sessions[s.SessionId]
 	if !found {
 		klog.Warningf("Received session state from unknown session %s", s.SessionId)
+		return
 	}
 	newStatus := session.Session.Status.DeepCopy()
 

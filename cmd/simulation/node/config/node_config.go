@@ -28,6 +28,7 @@ type SimulationNodeConfiguration struct {
 	NodeIP         string
 	FornaxCoreUrls []string
 	NumOfNode      int
+	PodConcurrency int
 }
 
 func AddConfigFlags(flagSet *pflag.FlagSet, nodeConfig *SimulationNodeConfiguration) {
@@ -36,6 +37,8 @@ func AddConfigFlags(flagSet *pflag.FlagSet, nodeConfig *SimulationNodeConfigurat
 	flagSet.StringArrayVar(&nodeConfig.FornaxCoreUrls, "fornaxcore-ip", nodeConfig.FornaxCoreUrls, "IPv4 addresses of the fornaxcores. must provided")
 
 	flagSet.IntVar(&nodeConfig.NumOfNode, "num-of-node", nodeConfig.NumOfNode, "how many nodes are simulated")
+
+	flagSet.IntVar(&nodeConfig.NumOfNode, "concurrency-of-pod-operation", nodeConfig.PodConcurrency, "how many pods are allowed to create or terminated in parallel")
 }
 
 func DefaultNodeConfiguration() (*SimulationNodeConfiguration, error) {
@@ -48,9 +51,10 @@ func DefaultNodeConfiguration() (*SimulationNodeConfiguration, error) {
 
 	return &SimulationNodeConfiguration{
 		NodeConfig:     *nodeConfig,
-		NumOfNode:      1,
-		FornaxCoreUrls: []string{fmt.Sprintf("%s:18001", nodeIp)},
 		NodeIP:         nodeIp,
+		FornaxCoreUrls: []string{fmt.Sprintf("%s:18001", nodeIp)},
+		NumOfNode:      1,
+		PodConcurrency: 5,
 	}, nil
 }
 

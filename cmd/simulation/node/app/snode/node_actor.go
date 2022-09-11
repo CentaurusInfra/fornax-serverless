@@ -424,7 +424,7 @@ func (n *SimulationNodeActor) onSessionCloseCommand(msg *fornaxgrpc.SessionClose
 			func() {
 				n.nodeMutex.Lock()
 				defer n.nodeMutex.Unlock()
-			time.Sleep(10 * time.Millisecond)
+				time.Sleep(10 * time.Millisecond)
 				revision := n.incrementNodeRevision()
 				fsess.Session.ResourceVersion = fmt.Sprint(revision)
 				fsess.Session.Status.SessionStatus = fornaxv1.SessionStatusClosed

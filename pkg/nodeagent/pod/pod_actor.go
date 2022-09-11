@@ -220,9 +220,9 @@ func (a *PodActor) create() error {
 // containers are notified to exit itself, and use onPodContainerStopped call back to get container status,
 // and recall this method to check if all container are finished, and finally set pod to terminted state
 // termiante method do no-op if pod state is already in terminating state unless forece retry is true
-func (a *PodActor) terminate(force bool) error {
+func (a *PodActor) terminate(forceTerminatePod bool) error {
 	pod := a.pod
-	klog.InfoS("Stopping container and terminating pod", "pod", types.UniquePodName(pod), "state", pod.FornaxPodState)
+	klog.InfoS("Stopping session, container and terminating pod", "pod", types.UniquePodName(pod), "state", pod.FornaxPodState, "force", forceTerminatePod)
 	if pod.Pod.DeletionTimestamp == nil {
 		pod.Pod.DeletionTimestamp = util.NewCurrentMetaTime()
 	}
@@ -231,17 +231,25 @@ func (a *PodActor) terminate(force bool) error {
 	}
 	pod.FornaxPodState = types.PodStateTerminating
 
-	if types.PodHasOpenSessions(pod) {
+	// if force terminate, then we will skip close session, the case is container already failed, and pod is already in terminating state
+	if types.PodHasOpenSessions(pod) && !forceTerminatePod {
 		klog.InfoS("Close open session before terminating pod", "pod", types.UniquePodName(pod), "#session", len(a.sessionActors))
+		errs := []error{}
 		for _, v := range a.sessionActors {
-			v.CloseSession()
+			err := v.CloseSession()
+			if err != nil {
+				errs = append(errs, err)
+			}
+		}
+		if len(errs) > 0 {
+			return fmt.Errorf("failed to close sessions")
 		}
 	} else {
 		gracefulPeriodSeconds := int64(0)
 		if pod.Pod.DeletionGracePeriodSeconds != nil {
 			gracefulPeriodSeconds = *pod.Pod.DeletionGracePeriodSeconds
 		}
-		terminated, err := a.TerminatePod(time.Duration(gracefulPeriodSeconds), force)
+		terminated, err := a.TerminatePod(time.Duration(gracefulPeriodSeconds), forceTerminatePod)
 		if err != nil {
 			klog.ErrorS(err, "Pod termination failed, state is left in terminating to retry later,", "pod", types.UniquePodName(pod))
 			return err
@@ -452,7 +460,6 @@ func (a *PodActor) handleSessionState(s internal.SessionState) {
 		newStatus.SessionStatus = fornaxv1.SessionStatusStarting
 	case types.SessionStateReady:
 		newStatus.SessionStatus = fornaxv1.SessionStatusAvailable
-		newStatus.AvailableTime = util.NewCurrentMetaTime()
 	case types.SessionStateClosed:
 		newStatus.SessionStatus = fornaxv1.SessionStatusClosed
 		newStatus.CloseTime = util.NewCurrentMetaTime()

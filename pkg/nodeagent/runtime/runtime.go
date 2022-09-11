@@ -30,7 +30,7 @@ import (
 )
 
 const (
-	DefaultTimeout = 5 * time.Second
+	DefaultTimeout = 10 * time.Second
 )
 
 var _ RuntimeService = &remoteRuntimeManager{}
@@ -192,10 +192,10 @@ func (r *remoteRuntimeManager) GetPodStatus(podSandboxID string, containerIDs []
 	}
 
 	for _, v := range containerIDs {
-		containerStatus, errr := r.GetContainerStatus(v)
-		if errr != nil {
+		containerStatus, err := r.GetContainerStatus(v)
+		if err != nil {
 			if !grpc_util.NotFoundError(err) {
-				return nil, errr
+				return nil, err
 			}
 		} else {
 			podStatus.ContainerStatuses[v] = containerStatus.RuntimeStatus

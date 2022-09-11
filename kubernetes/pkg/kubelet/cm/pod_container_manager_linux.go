@@ -86,8 +86,9 @@ func (m *PodContainerManagerImpl) EnsureExists(pod *v1.Pod) error {
 			podCgroupConfig.ResourceParameters.PidsLimit = &m.PodPidsLimit
 		}
 		if enforceMemoryQoS {
-			klog.V(4).InfoS("MemoryQoS config for pod", "pod", klog.KObj(pod), "unified", podCgroupConfig.ResourceParameters.Unified)
+			klog.InfoS("MemoryQoS config for pod", "pod", klog.KObj(pod), "unified", podCgroupConfig.ResourceParameters.Unified)
 		}
+		klog.InfoS("Cgroup config for pod", "pod", klog.KObj(pod), "cgroupname", podContainerName, "cgroupresource", *podCgroupConfig.ResourceParameters)
 		if err := m.CgroupManager.Create(podCgroupConfig); err != nil {
 			return fmt.Errorf("failed to create container for %v : %v", podContainerName, err)
 		}

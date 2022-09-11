@@ -6,9 +6,9 @@ metadata:
     name: sessionwrapper-echoserver
 spec:
   scalingPolicy:
-    minimumInstance: 10
-    maximumInstance: 100
-    burst: 50
+    minimumInstance: 110
+    maximumInstance: 200
+    burst: 5
     scalingPolicyType: idle_session_number
     idleSessionNumThreshold:
       highWaterMark: 3
@@ -22,10 +22,10 @@ spec:
       resources:
         requests:
           memory: "50M"
-          cpu: "0.1"
+          cpu: "10m"
         limits:
           memory: "50M"
-          cpu: "0.1"
+          cpu: "50m"
       ports:
         - containerPort: 80
           name: echoserver

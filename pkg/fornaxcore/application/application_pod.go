@@ -362,19 +362,7 @@ func (am *ApplicationManager) getPodApplicationPodTemplate(uid uuid.UUID, name s
 			OS:                        &v1.PodOS{},
 		},
 		Status: v1.PodStatus{
-			Phase:                      v1.PodPending,
-			Conditions:                 []v1.PodCondition{},
-			Message:                    "",
-			Reason:                     "",
-			NominatedNodeName:          "",
-			HostIP:                     "",
-			PodIP:                      "",
-			PodIPs:                     []v1.PodIP{},
-			StartTime:                  nil,
-			InitContainerStatuses:      []v1.ContainerStatus{},
-			ContainerStatuses:          []v1.ContainerStatus{},
-			QOSClass:                   "",
-			EphemeralContainerStatuses: []v1.ContainerStatus{},
+			Phase: v1.PodPending,
 		},
 	}
 	containers := []v1.Container{}

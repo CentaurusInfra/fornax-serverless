@@ -461,6 +461,7 @@ This is out of scope, left to the application developers' choice how to authenti
 
 ## Deployment
 ![fornax serverless deployment](pictures/architecture/fornax-deploy.jpg "fornax serverless deployment")
+
 There are a few deployment units in this system.
 
 | Unit | Deploy methods |

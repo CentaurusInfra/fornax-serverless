@@ -86,8 +86,8 @@ It help Fornax Serverless deploy standby containers with high density on a singl
 
 Ingress Gateway is a network entity providing access to applications running on nodes.
 
-##  Grpc protocol
- use grpc message to talk with each Node Agent and Ingress Gateway, here are all messages and interactive sequence
+##  Fornax Core Node Agent protocol
+Fornax Core use grpc channel to talk with each Node Agent and Ingress Gateway, here are all messages and interactive sequence
 
 ### Node to  messages
 - Configuration
@@ -129,7 +129,7 @@ Ingress Gateway is a network entity providing access to applications running on 
   - Session name
   - Session state, see session lifecycle management
 
-###  and Node Agent interaction sequence
+###  Fornax Cor and Node Agent interaction sequence
 
 it includes multiple interaction diagrams in below page
 

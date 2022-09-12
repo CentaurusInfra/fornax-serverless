@@ -36,8 +36,9 @@ __Public API__
 | Close application session | Mark the application session as finished |
 
 #### Performance targets
-|  | application session latency (99%) | Throughput (per sec) |
+|  | latency (99%) | Throughput (per sec) |
 |--| --------------------- | -------------------- |
+| application | 50ms | 100 applications |
 | application session| 50ms (with idle instance) <br> 1.5s (cold start mode, excluding app initialization delay) | 100 sessions |
 
 ## Resource Model
@@ -465,7 +466,7 @@ This is out of scope, left to the application developers' choice how to authenti
 There are a few deployment units in this system.
 
 | Unit | Deploy methods |
-| ------ | ----- | ----- |
+| ------ | ----- |
 | Fornax Core | Master/Slaves |
 | Etcd | Master/Slaves |
 | Ingress Gateway | Active/Load balance |

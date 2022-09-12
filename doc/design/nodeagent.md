@@ -211,8 +211,8 @@ NodeAgent-> FornaxCore: Pod state terminated
 @enduml
 ```
 
-##  Pod/Node Sync between FornaxCore and NodeAgent
-Every Node store its own resource spec and status of Node and Pods on this Node, Nodes and Pods state are stored distributedly, 
+##  Workload resource sync between FornaxCore and NodeAgent
+Every Node store its own resource spec and status of Node and Pods and Sessions on this Node, Nodes and Pods state are stored distributedly, 
 FornaxCore use a list/watch method to keep inforamtion sync between FornaxCore and NodeAgents.
 List/watch method are implemented by three messages using grpc channel between Fornax Core and NodeAgent.
 

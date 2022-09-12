@@ -1,36 +1,49 @@
-# fornax-serverless
+# Fornax serverless
 
 ## Scope
-### Goals
-Fornax-Serverless is targeted as general serverless application management platform within an edge site. It features a lightweight, cost-effective, highly elastic, permanent and secure serverless application management system.   
- ![image](https://user-images.githubusercontent.com/16367914/161353804-8988914c-d719-4764-8a0c-de51e9ab073a.png)
+Fornax-Serverless is targeted as general platform hosting serverless application or function. It features a lightweight, cost-effective, and secure serverless platform.
 
-* Support serverless application (stateful/stateless)
-	for both stateful and stateless applications, Fornax-serverless manages their lifecycle in serverless fashion, so as app developers not to concern themselves of server capacity plan and ops operation. Users pay per-use, not per resource allocation. It manages the application life cycles from creation, to scheduling, launching, and scaling, and termination.
-	Stateful application each has its own life cycle. When an app is has no active user sessions, it enters zombie state, and Fornax-serverless will reap it and release the resource. Stateless application has no state; Fornax-serverless will decrease running instances when user requests decrease, particularly will have 0 instance(zero-cost) if no user request is being processed.
-*  Manage cluster resources
-	for cluster resources, Fornax-serverless, as edge site orchestrator, abstracts away the compute/storage/network, so as application developers not to take care of hardware maintenance and OS upgrade. It manages hardware resources automatically, with minimum overhead.
-*  Use Quark as container runtime
-	application runs as Quark containers. Fornax-serverless leverages Quark’s unique Standby/Ready mode to minimize idle footprint and optimize cold start latency.
-*  Secure execution: network isolation/multi-tenancy
-	as a shared application orchestration system, Fornax-serverless provides network isolation and multi-tenancy required by secure environment.
+* Serverless application
 
-### No-goals
-1. support lambda like serverless function
-1. support event-triggering
-1. provide direct support for global resource management
+Application is defined by api by a client, a application does not have instance deployed until a application session is created.
+when session is created, a instance is automatically deployed in fleet, and a session endpoint is created in ingress gateway to access this session.
+when session is closed, its instance and endpoint are also destroyed. Each application session will has its own instance, and its own session endpoint
+After a session is setup. client access it's session via ingress gateway using session endpoint.
+In a multiple tenant environment, network policy is used to prohibit session accessible from other tenants.
 
-### Terms
-* Stateful application
-Each stateful application is different as it has own state. Users of stateful application need to access the specific interesting instance. Its lifecycle is generally controlled by application itself with the help of the management system. Particularly when application decides to stop the execution, the system has a way to get notified and then is able to release the resource it occupied. In order to facilitate such stateful application life cycle management, there should be specific mechanism (TBD) presented by system for application to notify the significant life cycle events. Stateful application is specified in format of application model (TBD).
+* Serverless function
 
-* Stateless application
-Stateless application does not have states, so its instances can be on/off anytime. System could turn off its instance anytime. Stateless application is specified in format of application model (TBD), with the execution code as container image.
+Function is defined as application also, A Function gateway is responsible for create application for function, and create session to serve function call requests.
+When a function call arrive API gateway, API gateway will open a new session or pick a existing session to issue this function request.
+Sessions could be warm up by Function gateway to improve latency.
 
-* Function
-Function, in context of serverless, typically is specified as a body of source code for one specific function. Fornax-serverless does not support it for now.
+## Fornax serverless Components 
 
-### Get Start With Fornax-Serverless
-See our documentation on [Get Start](https://github.com/CentaurusInfra/fornax-serverless/blob/main/doc/get_start.md), You can setup and practice Fornax-Serverless application. 
+Here is a overview of system components.
 
- 
+![fornax serverless overview](doc/design/pictures/architecture/fornax.jpg)
+
+Fornax serverless has only two major components, Fornax Core and Node Agent.
+Fornax Core is control plane which provide api server, application and sessions scheduler, node register and resource monitor. 
+It drive applciation instance and session implementation on every node and scale up application instances according sessions demand. 
+there is only one Fornax Core required, user can always deploy a few more Fornax Core instance to ensure high availability. 
+
+Node Agent is deployed on each node which application instance is deployed on, it implements application instance on node and open session on instance.
+On each Node, there is also a session server deployed within NodeAgent,
+each application instance must use a session SDK to talk with session server on node to get session request and ensure session state are monitored.
+
+Application instance is deployed as a container. Fornax sererless Node Agent use CRI and containerd to deploy containers,
+and choose Quark as container runtime,
+Quark runtime is a secured light weight container runtime. it has fast start latency and low memory footprint.
+Quark runtime also support hibernate container when container is idle, and fastly bring container back when request arrive. 
+It help Fornax Serverless deploy standby containers with high density on a single node and reduce container cold start latency.
+
+Ingress gateway works as a NAT gateway, is responsible for forward network traffic to Container service port.
+Depends on network solution, there could be a multiple Ingress gateways or single Ingress gateways deployed outside each node.
+It also can leverage node using port mapping if node itself has a externally accessible network address
+
+Function gateway is a customer defined function, currently, it's not included in this project scope.
+
+
+## Get Start With Fornax-Serverless
+See our documentation on [Get Start](https://github.com/CentaurusInfra/fornax-serverless/blob/main/doc/get_start.md), You can setup and practice Fornax-Serverless application.

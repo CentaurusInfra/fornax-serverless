@@ -177,10 +177,10 @@ func (a *PodActor) podHandler(msg message.ActorMessage) (interface{}, error) {
 		a.lastError = nil
 		if a.pod.FornaxPodState == types.PodStateTerminated {
 			a.lastError = a.cleanup()
-			if a.lastError != nil {
-				return nil, a.lastError
+			if a.lastError == nil {
+				// only notify if cleanup did not fail, no need to send uncleaned pod to fornax core, it could still running
+				a.notify(a.supervisor, internal.PodStatusChange{Pod: a.pod})
 			}
-			a.notify(a.supervisor, internal.PodStatusChange{Pod: a.pod})
 		} else {
 			// do not notify fornax core in transit state to avoid unnecessary pod state sync
 			if oldPodState != a.pod.FornaxPodState && !types.PodInTransitState(a.pod) {
@@ -189,7 +189,7 @@ func (a *PodActor) podHandler(msg message.ActorMessage) (interface{}, error) {
 			}
 		}
 
-		return nil, nil
+		return nil, a.lastError
 	}
 }
 
@@ -410,6 +410,7 @@ func (a *PodActor) createSession(state types.SessionState, s *fornaxv1.Applicati
 
 // build a session actor to start session and monitor session state
 func (a *PodActor) onSessionOpenCommand(msg internal.SessionOpen) (err error) {
+	klog.InfoS("Open session", "Pod", a.pod.Identifier, "session", msg.SessionId)
 	if a.pod.FornaxPodState != types.PodStateRunning {
 		return fmt.Errorf("Pod: %s is not in running state, can not open session", msg.SessionId)
 	}
@@ -423,22 +424,26 @@ func (a *PodActor) onSessionOpenCommand(msg internal.SessionOpen) (err error) {
 
 	sess := a.createSession(types.SessionStateStarting, msg.Session.DeepCopy())
 	a.pod.Sessions[msg.SessionId] = sess
-	if err = a.dependencies.PodStore.PutPod(a.pod); err == nil {
-		sactor := session.NewSessionActor(sess, a.dependencies.SessionService, a.innerActor.Reference())
-		err = sactor.OpenSession()
+
+	sactor := session.NewSessionActor(sess, a.dependencies.SessionService, a.innerActor.Reference())
+	err = sactor.OpenSession()
+	if err == nil {
 		a.sessionActors[msg.SessionId] = sactor
+		// save could fail but it's better to continue,
+		// and pod has another chance to save sessions when session service report back
+		a.dependencies.PodStore.PutPod(a.pod)
 	}
 
 	if err != nil {
 		klog.ErrorS(err, "Failed to open session", "session", msg.SessionId)
-		return err
 	}
 
-	return nil
+	return err
 }
 
 // find session actor to let it terminate a session, if pod actor does not exist, return failure
 func (a *PodActor) onSessionCloseCommand(msg internal.SessionClose) error {
+	klog.InfoS("Close session", "Pod", a.pod.Identifier, "session", msg.SessionId)
 	if sActor, found := a.sessionActors[msg.SessionId]; !found {
 		return fmt.Errorf("Session does not exist, %s", msg.SessionId)
 	} else {
@@ -480,7 +485,7 @@ func (a *PodActor) handleSessionState(s internal.SessionState) {
 	}
 
 	if !reflect.DeepEqual(session.Session.Status, *newStatus) {
-		klog.InfoS("Session status changed", "old status", session.Session.Status, "new status", *newStatus)
+		klog.InfoS("Session status changed", "session", s.SessionId, "old status", session.Session.Status, "new status", *newStatus)
 		session.Session.Status = *newStatus
 		a.notify(a.supervisor, internal.SessionStatusChange{Session: session})
 	}

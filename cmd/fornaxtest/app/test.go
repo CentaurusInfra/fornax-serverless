@@ -20,6 +20,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"sort"
 	"strconv"
 	"time"
 
@@ -39,6 +40,8 @@ import (
 )
 
 var (
+	allTestSessions = TestSessionArray{}
+
 	apiServerClient = getApiServerClient()
 
 	SessionWrapperEchoServerSpec = &fornaxv1.ApplicationSpec{
@@ -94,6 +97,7 @@ func runAppFullCycleTest(namespace, appName string, testConfig config.TestConfig
 		application = createAndWaitForApplicationSetup(namespace, appName, testConfig)
 	}
 
+	time.Sleep(1 * time.Second)
 	sessions := createAndWaitForSessionSetup(application, namespace, appName, testConfig)
 	cleanupAppFullCycleTest(namespace, appName, sessions)
 }
@@ -138,14 +142,33 @@ type TestSession struct {
 	status             fornaxv1.SessionStatus
 }
 
+type TestSessionArray []*TestSession
+
+func (sn TestSessionArray) Len() int {
+	return len(sn)
+}
+
+//so, sort latency from smaller to lager value
+func (sn TestSessionArray) Less(i, j int) bool {
+	return sn[i].availableTimeMicro-sn[i].creationTimeMicro < sn[j].availableTimeMicro-sn[j].creationTimeMicro
+}
+
+func (sn TestSessionArray) Swap(i, j int) {
+	sn[i], sn[j] = sn[j], sn[i]
+}
 func createAndWaitForSessionSetup(application *fornaxv1.Application, namespace, appName string, testConfig config.TestConfiguration) []*TestSession {
 	sessions := []*TestSession{}
 	sessionBaseName := uuid.New().String()
 	numOfSession := testConfig.NumOfSessionPerApp
+	staggerNum := numOfSession / 5
 	for i := 0; i < numOfSession; i++ {
 		sessName := fmt.Sprintf("%s-%s-session-%d", appName, sessionBaseName, i)
 		ts, _ := createSession(getApiServerClient(), namespace, sessName, appName, SessionWrapperEchoServerSessionSpec)
 		sessions = append(sessions, ts)
+		// create sessions in 5 batchs, every batch interval 200 milli seconds, we want to control rate in a second
+		if i > 0 && i%staggerNum == 0 {
+			time.Sleep(200 * time.Millisecond)
+		}
 	}
 
 	waitForSessionSetup(namespace, appName, sessions)
@@ -178,30 +201,41 @@ func waitForAppSetup(namespace, appName string, numOfInstance int) {
 func waitForSessionTearDown(namespace, appName string, sessions []*TestSession) {
 	klog.Infof("waiting for %d sessions of app %s teardown", len(sessions), appName)
 	for {
-		time.Sleep(10 * time.Millisecond)
-		allTeardown := true
-		for _, ts := range sessions {
-			if ts.status == fornaxv1.SessionStatusClosed {
-				continue
-			}
-			sess, err := describeSession(getApiServerClient(), namespace, ts.session.Name)
-
-			if err != nil || sess != nil {
-				allTeardown = false
-			}
-
-			if sess == nil {
-				ts.status = fornaxv1.SessionStatusClosed
-			}
+		time.Sleep(100 * time.Millisecond)
+		app, err := describeApplication(getApiServerClient(), namespace, appName)
+		if err != nil {
+			continue
 		}
 
-		if allTeardown {
+		if app == nil || app.Status.RunningInstances-app.Status.IdleInstances == 0 {
+			// all instance are release or recreated
 			break
 		}
+
+		// allTeardown := true
+		// for _, ts := range sessions {
+		//  if ts.status == fornaxv1.SessionStatusClosed {
+		//    continue
+		//  }
+		//  sess, err := describeSession(getApiServerClient(), namespace, ts.session.Name)
+		//
+		//  if err != nil || sess != nil {
+		//    allTeardown = false
+		//  }
+		//
+		//  if sess == nil {
+		//    ts.status = fornaxv1.SessionStatusClosed
+		//  }
+		// }
+		//
+		// if allTeardown {
+		//  break
+		// }
 	}
+
 }
 
-func waitForSessionSetup(namespace, appName string, sessions []*TestSession) {
+func waitForSessionSetup(namespace, appName string, sessions TestSessionArray) {
 	klog.Infof("waiting for %d sessions of app %s setup", len(sessions), appName)
 	for {
 		time.Sleep(10 * time.Millisecond)
@@ -238,6 +272,8 @@ func waitForSessionSetup(namespace, appName string, sessions []*TestSession) {
 			break
 		}
 	}
+
+	allTestSessions = append(allTestSessions, sessions...)
 }
 
 func createSessionTest(namespace, appName string, testConfig config.TestConfiguration) {
@@ -314,11 +350,11 @@ func createSession(client fornaxclient.Interface, namespace, name, applicationNa
 		},
 		Spec: spec,
 	}
+	creationTimeMicro := time.Now().UnixMicro()
 	session, err := appClient.Create(context.Background(), session, metav1.CreateOptions{})
 	if err != nil {
 		return nil, err
 	}
-	creationTimeMicro := time.Now().UnixMicro()
 	klog.InfoS("Session created", "application", applicationName, "session", name)
 	return &TestSession{
 		session:            session,
@@ -379,4 +415,30 @@ func getApiServerClient() *fornaxclient.Clientset {
 	}
 
 	return nil
+}
+
+func summarySessionTestResult(sessions TestSessionArray) {
+	klog.Infof("--------%d Sessions created ----------\n", len(sessions))
+	failedSession := 0
+	timeoutSession := 0
+	successSession := 0
+	for _, v := range sessions {
+		if v.status == fornaxv1.SessionStatusClosed {
+			failedSession += 1
+		}
+		if v.status == fornaxv1.SessionStatusAvailable {
+			successSession += 1
+		}
+		if v.status == fornaxv1.SessionStatusTimeout {
+			timeoutSession += 1
+		}
+	}
+	klog.Infof("%d success, %d failed, %d timeout", successSession, failedSession, timeoutSession)
+	sort.Sort(sessions)
+	p99 := sessions[len(sessions)*99/100]
+	p90 := sessions[len(sessions)*90/100]
+	p50 := sessions[len(sessions)*50/100]
+	klog.Infof("Session setup time: p99 %d", p99.availableTimeMicro-p99.creationTimeMicro)
+	klog.Infof("Session setup time: p90 %d", p90.availableTimeMicro-p90.creationTimeMicro)
+	klog.Infof("Session setup time: p50 %d", p50.availableTimeMicro-p50.creationTimeMicro)
 }

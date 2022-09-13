@@ -399,7 +399,7 @@ func (n *SimulationNodeActor) onSessionOpenCommand(msg *fornaxgrpc.SessionOpen) 
 		func() {
 			n.nodeMutex.Lock()
 			defer n.nodeMutex.Unlock()
-			time.Sleep(10 * time.Millisecond)
+			time.Sleep(30 * time.Millisecond)
 			revision := n.incrementNodeRevision()
 			sess.ResourceVersion = fmt.Sprint(revision)
 			fpod.Sessions[sessId] = fsess
@@ -424,7 +424,7 @@ func (n *SimulationNodeActor) onSessionCloseCommand(msg *fornaxgrpc.SessionClose
 			func() {
 				n.nodeMutex.Lock()
 				defer n.nodeMutex.Unlock()
-				time.Sleep(10 * time.Millisecond)
+				time.Sleep(30 * time.Millisecond)
 				revision := n.incrementNodeRevision()
 				fsess.Session.ResourceVersion = fmt.Sprint(revision)
 				fsess.Session.Status.SessionStatus = fornaxv1.SessionStatusClosed

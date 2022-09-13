@@ -130,7 +130,7 @@ func DefaultNodeConfiguration() (*NodeConfiguration, error) {
 		ContainerRuntimeEndpoint: DefaultContainerRuntimeEndpoint,
 		CgroupRoot:               DefaultCgroupRoot,
 		CgroupDriver:             DefaultCgroupDriver,
-		DatabaseURL:              fmt.Sprintf("%s/db/%s", DefaultRootPath, DefaultDBName),
+		DatabaseURL:              fmt.Sprintf("file:%s/db/%s?cache=shared&mode=rwc", DefaultRootPath, DefaultDBName),
 		FornaxCoreUrls:           []string{},
 		Hostname:                 hostname,
 		MaxPods:                  DefaultMaxPods,

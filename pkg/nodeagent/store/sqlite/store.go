@@ -88,7 +88,6 @@ func (s *sqLiteStore) DelObject(identifier string) error {
 	return nil
 }
 
-// PutObject implements Store
 func (s *sqLiteStore) PutObject(identifier string, obj interface{}) error {
 	var sqlobjtext string
 	var err error

@@ -62,10 +62,10 @@ var _ SessionServer = &grpcServer{}
 type grpcServer struct {
 	mu sync.RWMutex
 	// session state callback and heartbeat map by session id
-	stateHeartbeats map[string]*SessionStateHeartbeat
+	sessionHeartbeats map[string]*SessionStateHeartbeat
 
 	// pod's get message connection by pod id
-	getMessageClients map[string]*GetSessionMessageClient
+	sessionClients map[string]*GetSessionMessageClient
 
 	session_grpc.UnimplementedSessionServiceServer
 }
@@ -107,10 +107,19 @@ func (g *grpcServer) Run(ctx context.Context, port int32) error {
 	return nil
 }
 
-func (g *grpcServer) getSession(sessionId string) *SessionStateHeartbeat {
+func (g *grpcServer) getSessionClient(podId string) *GetSessionMessageClient {
 	g.mu.RLock()
 	defer g.mu.RUnlock()
-	if s, found := g.stateHeartbeats[sessionId]; found {
+	if s, found := g.sessionClients[podId]; found {
+		return s
+	}
+	return nil
+}
+
+func (g *grpcServer) getSessionHeartbeat(sessionId string) *SessionStateHeartbeat {
+	g.mu.RLock()
+	defer g.mu.RUnlock()
+	if s, found := g.sessionHeartbeats[sessionId]; found {
 		return s
 	}
 	return nil
@@ -120,7 +129,7 @@ func (g *grpcServer) getSessions() []*SessionStateHeartbeat {
 	g.mu.RLock()
 	defer g.mu.RUnlock()
 	sessions := []*SessionStateHeartbeat{}
-	for _, s := range g.stateHeartbeats {
+	for _, s := range g.sessionHeartbeats {
 		sessions = append(sessions, s)
 	}
 	return sessions
@@ -134,7 +143,7 @@ func (g *grpcServer) checkAndCleanSessionHeartbeat() {
 		heartbeatLastSeenCutoff := lastSeen.Add(DefaultSessionHeartBeatDuration)
 		if s.consectuivePingFailures > DefaultDeadSessionHeartbeatMissingThreshold {
 			// this session is considered as dead since it's not seen in past 3 heartbeat duration
-			g.forwardSessionState(s.podId, s.sessionId, internal.SessionState{
+			g.forwardSessionStateToPod(s.podId, s.sessionId, internal.SessionState{
 				SessionId:      s.sessionId,
 				SessionState:   types.SessionStateNoHeartbeat,
 				ClientSessions: []types.ClientSession{},
@@ -153,7 +162,7 @@ func (g *grpcServer) checkAndCleanSessionHeartbeat() {
 		g.mu.Lock()
 		defer g.mu.Unlock()
 		for _, v := range deadSession {
-			delete(g.stateHeartbeats, v)
+			delete(g.sessionHeartbeats, v)
 		}
 	}
 }
@@ -181,7 +190,6 @@ func (g *grpcServer) GetMessage(identifier *session_grpc.PodIdentifier, server s
 			messageSeq += 1
 			seq := fmt.Sprintf("%d", messageSeq)
 			msg.MessageIdentifier = seq
-			klog.InfoS("Send a messge to pod", "pod", identifier, "message", msg.GetMessageType())
 			if err := server.Send(msg); err != nil {
 				klog.ErrorS(err, "Failed to send message via GetMessage stream", "pod", identifier.GetPodId())
 				close(ch)
@@ -213,7 +221,7 @@ func (g *grpcServer) PutMessage(ctx context.Context, message *session_grpc.Sessi
 		case session_grpc.SessionState_STATE_INITIALIZING:
 			msg.SessionState = types.SessionStateStarting
 		}
-		g.forwardSessionState(podId, sessionId, msg)
+		g.forwardSessionStateToPod(podId, sessionId, msg)
 		if msg.SessionState == types.SessionStateClosed {
 			g.removeClosedSession(sessionId)
 		}
@@ -226,7 +234,7 @@ func (g *grpcServer) PutMessage(ctx context.Context, message *session_grpc.Sessi
 
 // CloseSession dispatch a SessionClose event to pod
 func (g *grpcServer) CloseSession(podId, sessionId string, graceSeconds uint16) error {
-	session := g.getSession(sessionId)
+	session := g.getSessionHeartbeat(sessionId)
 	if session == nil {
 		return sessionservice.SessionNotFound
 	}
@@ -250,7 +258,7 @@ func (g *grpcServer) CloseSession(podId, sessionId string, graceSeconds uint16) 
 		MessageBody: &body,
 	}
 
-	err := g.sendGrpcMessage(podId, m)
+	err := g.sendGrpcMessageToPod(podId, m)
 	if err != nil {
 		klog.ErrorS(err, "Failed to dispatch close session message to pod", "pod", podId, "session", sessionId)
 		return err
@@ -260,7 +268,7 @@ func (g *grpcServer) CloseSession(podId, sessionId string, graceSeconds uint16) 
 
 // OpenSession dispatch a SessionOpen event to pod
 func (g *grpcServer) OpenSession(podId, sessionId string, sessionData string, stateCallbackFunc func(internal.SessionState)) error {
-	heartbeat := g.getSession(sessionId)
+	heartbeat := g.getSessionHeartbeat(sessionId)
 	if heartbeat != nil {
 		return sessionservice.SessionAlreadyExist
 	}
@@ -282,7 +290,7 @@ func (g *grpcServer) OpenSession(podId, sessionId string, sessionData string, st
 		},
 	}
 
-	err := g.sendGrpcMessage(podId, m)
+	err := g.sendGrpcMessageToPod(podId, m)
 	if err != nil {
 		klog.ErrorS(err, "Failed to dispatch open session message to pod", "pod", podId, "session", sessionId)
 		return err
@@ -292,7 +300,7 @@ func (g *grpcServer) OpenSession(podId, sessionId string, sessionData string, st
 
 // PingSession send ping message to pod/session, and create heartbeat to get session state callback
 func (g *grpcServer) PingSession(podId, sessionId string, stateCallbackFunc func(internal.SessionState)) error {
-	heartbeat := g.getSession(sessionId)
+	heartbeat := g.getSessionHeartbeat(sessionId)
 	if heartbeat == nil {
 		// ideally it should have been saved, when node agent crash, data lost, session actor will reping to recreate state callback func
 		heartbeat = g.createHeartBeat(podId, sessionId, stateCallbackFunc)
@@ -313,13 +321,11 @@ func (g *grpcServer) PingSession(podId, sessionId string, stateCallbackFunc func
 		MessageBody: &body,
 	}
 
-	return g.sendGrpcMessage(podId, m)
+	return g.sendGrpcMessageToPod(podId, m)
 }
 
-func (g *grpcServer) sendGrpcMessage(podId string, msg *session_grpc.SessionMessage) error {
-	g.mu.RLock()
-	defer g.mu.RUnlock()
-	if client, found := g.getMessageClients[podId]; found {
+func (g *grpcServer) sendGrpcMessageToPod(podId string, msg *session_grpc.SessionMessage) error {
+	if client := g.getSessionClient(podId); client != nil {
 		client.channel <- msg
 	} else {
 		return sessionservice.SessionStreamDisconnected
@@ -327,11 +333,9 @@ func (g *grpcServer) sendGrpcMessage(podId string, msg *session_grpc.SessionMess
 	return nil
 }
 
-// forwardSessionState forward SessionState sent by container to node agent via registered sessionStateCallback func
-func (g *grpcServer) forwardSessionState(podId, sessionId string, sessionState internal.SessionState) error {
-	g.mu.RLock()
-	defer g.mu.RUnlock()
-	if stateHeartbeat, found := g.stateHeartbeats[sessionId]; found {
+// forwardSessionStateToPod forward SessionState sent by container to node agent via registered sessionStateCallback func
+func (g *grpcServer) forwardSessionStateToPod(podId, sessionId string, sessionState internal.SessionState) error {
+	if stateHeartbeat := g.getSessionHeartbeat(sessionId); stateHeartbeat != nil {
 		stateHeartbeat.lastSeen = time.Now()
 		stateHeartbeat.consectuivePingFailures = 0
 		stateHeartbeat.stateCallback(sessionState)
@@ -345,7 +349,7 @@ func (g *grpcServer) forwardSessionState(podId, sessionId string, sessionState i
 func (g *grpcServer) removeClosedSession(sessionId string) {
 	g.mu.Lock()
 	defer g.mu.Unlock()
-	delete(g.stateHeartbeats, sessionId)
+	delete(g.sessionHeartbeats, sessionId)
 }
 
 func (g *grpcServer) createHeartBeat(podId, sessionId string, stateCallbackFunc func(internal.SessionState)) *SessionStateHeartbeat {
@@ -358,16 +362,16 @@ func (g *grpcServer) createHeartBeat(podId, sessionId string, stateCallbackFunc 
 		consectuivePingFailures: 0,
 		lastSeen:                time.Now(),
 	}
-	g.stateHeartbeats[sessionId] = heartbeat
+	g.sessionHeartbeats[sessionId] = heartbeat
 	return heartbeat
 }
 func (g *grpcServer) enlistPod(pod string, ch chan<- *session_grpc.SessionMessage) error {
 	g.mu.Lock()
 	defer g.mu.Unlock()
-	if _, ok := g.getMessageClients[pod]; ok {
+	if _, ok := g.sessionClients[pod]; ok {
 		return sessionservice.SessionStreamAlreadyEstablished
 	} else {
-		g.getMessageClients[pod] = &GetSessionMessageClient{
+		g.sessionClients[pod] = &GetSessionMessageClient{
 			podId:   pod,
 			channel: ch,
 		}
@@ -381,14 +385,14 @@ func (g *grpcServer) enlistPod(pod string, ch chan<- *session_grpc.SessionMessag
 func (g *grpcServer) delistPod(pod string) {
 	g.mu.Lock()
 	defer g.mu.Unlock()
-	delete(g.getMessageClients, pod)
+	delete(g.sessionClients, pod)
 }
 
 func NewSessionService() *grpcServer {
 	return &grpcServer{
 		mu:                                sync.RWMutex{},
-		stateHeartbeats:                   map[string]*SessionStateHeartbeat{},
-		getMessageClients:                 map[string]*GetSessionMessageClient{},
+		sessionHeartbeats:                 map[string]*SessionStateHeartbeat{},
+		sessionClients:                    map[string]*GetSessionMessageClient{},
 		UnimplementedSessionServiceServer: session_grpc.UnimplementedSessionServiceServer{},
 	}
 }

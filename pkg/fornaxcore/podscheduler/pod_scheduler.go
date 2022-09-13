@@ -49,6 +49,7 @@ const (
 	NodeSortingMethodLessUse     NodeSortingMethod = "less_use"      // choose node with less pods
 )
 
+// we want to use more memory node, so, lager value are put ahead in sorted list
 func MoreNodeMemorySortFunc(pi, pj interface{}) bool {
 	piResource := pi.(*SchedulableNode).GetAllocatableResources()
 	piResourceV, _ := piResource.Memory().AsInt64()
@@ -57,6 +58,7 @@ func MoreNodeMemorySortFunc(pi, pj interface{}) bool {
 	return piResourceV > pjResourceV
 }
 
+// we want to use less used node, so, smaller value are put ahead in sorted list
 func LessNodeLastUseSortFunc(pi, pj interface{}) bool {
 	piLastUsed := pi.(*SchedulableNode).LastUsed.UnixNano()
 	pjLastUsed := pj.(*SchedulableNode).LastUsed.UnixNano()
@@ -276,7 +278,7 @@ func (ps *podScheduler) updatePodOccupiedResourceList(snode *SchedulableNode, v1
 func (ps *podScheduler) printScheduleSummary() {
 	activeNum, retryNum := ps.scheduleQueue.Length()
 	klog.InfoS("Scheduler summary", "active queue length", activeNum, "backoff queue length", retryNum, "available nodes", ps.nodePool.size())
-	// ps.nodePool.printSummary()
+	ps.nodePool.printSummary()
 }
 
 func (ps *podScheduler) Run() {

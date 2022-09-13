@@ -438,7 +438,7 @@ func summarySessionTestResult(sessions TestSessionArray) {
 	p99 := sessions[len(sessions)*99/100]
 	p90 := sessions[len(sessions)*90/100]
 	p50 := sessions[len(sessions)*50/100]
-	klog.Infof("Session setup time: p99 %d", p99.availableTimeMicro-p99.creationTimeMicro)
-	klog.Infof("Session setup time: p90 %d", p90.availableTimeMicro-p90.creationTimeMicro)
-	klog.Infof("Session setup time: p50 %d", p50.availableTimeMicro-p50.creationTimeMicro)
+	klog.Infof("Session setup time: p99 %d micro seconds", p99.availableTimeMicro-p99.creationTimeMicro)
+	klog.Infof("Session setup time: p90 %d micro seconds", p90.availableTimeMicro-p90.creationTimeMicro)
+	klog.Infof("Session setup time: p50 %d micro seconds", p50.availableTimeMicro-p50.creationTimeMicro)
 }

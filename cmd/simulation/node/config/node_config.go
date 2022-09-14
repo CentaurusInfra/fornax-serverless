@@ -38,7 +38,7 @@ func AddConfigFlags(flagSet *pflag.FlagSet, nodeConfig *SimulationNodeConfigurat
 
 	flagSet.IntVar(&nodeConfig.NumOfNode, "num-of-node", nodeConfig.NumOfNode, "how many nodes are simulated")
 
-	flagSet.IntVar(&nodeConfig.NumOfNode, "concurrency-of-pod-operation", nodeConfig.PodConcurrency, "how many pods are allowed to create or terminated in parallel")
+	flagSet.IntVar(&nodeConfig.PodConcurrency, "concurrency-of-pod-operation", nodeConfig.PodConcurrency, "how many pods are allowed to create or terminated in parallel")
 }
 
 func DefaultNodeConfiguration() (*SimulationNodeConfiguration, error) {

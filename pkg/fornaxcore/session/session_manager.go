@@ -20,11 +20,14 @@ import (
 	"context"
 	"fmt"
 	"reflect"
+	"time"
 
 	fornaxv1 "centaurusinfra.io/fornax-serverless/pkg/apis/core/v1"
 	"centaurusinfra.io/fornax-serverless/pkg/fornaxcore/grpc/nodeagent"
 	ie "centaurusinfra.io/fornax-serverless/pkg/fornaxcore/internal"
 	"centaurusinfra.io/fornax-serverless/pkg/util"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/client-go/tools/cache"
 
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -33,11 +36,18 @@ import (
 
 var _ ie.SessionManagerInterface = &sessionManager{}
 
+type sessionStatus struct {
+	sessionName string
+	status      *fornaxv1.ApplicationSessionStatus
+}
+
 type sessionManager struct {
 	ctx             context.Context
 	nodeAgentClient nodeagent.NodeAgentClient
 	podManager      ie.PodManagerInterface
 	watchers        []chan<- interface{}
+	statusUpdateCh  chan *sessionStatus
+	sessionStatus   map[string]*sessionStatus
 }
 
 func NewSessionManager(ctx context.Context, nodeAgentProxy nodeagent.NodeAgentClient, podManager ie.PodManagerInterface) *sessionManager {
@@ -45,8 +55,66 @@ func NewSessionManager(ctx context.Context, nodeAgentProxy nodeagent.NodeAgentCl
 		ctx:             ctx,
 		nodeAgentClient: nodeAgentProxy,
 		podManager:      podManager,
+		statusUpdateCh:  make(chan *sessionStatus, 500),
+		sessionStatus:   map[string]*sessionStatus{},
 	}
 	return mgr
+}
+
+// Run receive session status from channel and update session status use api service client
+func (sm *sessionManager) Run(ctx context.Context) {
+	klog.Info("Starting fornaxv1 session status manager")
+
+	go func() {
+		defer klog.Info("Shutting down fornaxv1 session status manager")
+
+		FornaxCore_SessionStatusManager_Retry := "FornaxCore_SessionStatusManager_StatusUpdate_Retry"
+		for {
+			select {
+			case <-ctx.Done():
+				break
+			case update := <-sm.statusUpdateCh:
+				sm.sessionStatus[update.sessionName] = update
+				remainingLen := len(sm.statusUpdateCh)
+				for i := 0; i < remainingLen; i++ {
+					update := <-sm.statusUpdateCh
+					sm.sessionStatus[update.sessionName] = update
+				}
+
+				klog.InfoS("Session status size", "len", len(sm.sessionStatus))
+				hasError := false
+				updatedSessions := []string{}
+				for session, status := range sm.sessionStatus {
+					if session == FornaxCore_SessionStatusManager_Retry {
+						continue
+					}
+					err := sm.updateSessionStatus(status.sessionName, status.status)
+					if err == nil {
+						updatedSessions = append(updatedSessions, session)
+					} else {
+						hasError = true
+						klog.ErrorS(err, "Failed to update session status", "session", session)
+					}
+				}
+				for _, v := range updatedSessions {
+					delete(sm.sessionStatus, v)
+				}
+
+				time.Sleep(50 * time.Millisecond)
+				// a trick to retry, all failed status update are still in map, send a fake update to retry,
+				// it's bit risky, if some guy put a lot of event into channel before we can put a retry signal, it will stuck
+				// checking channel current length must be zero could mitigate a bit
+				if hasError {
+					if len(sm.statusUpdateCh) == 0 {
+						sm.statusUpdateCh <- &sessionStatus{
+							sessionName: FornaxCore_SessionStatusManager_Retry,
+							status:      &fornaxv1.ApplicationSessionStatus{},
+						}
+					}
+				}
+			}
+		}
+	}()
 }
 
 func (sm *sessionManager) Watch(receiver chan<- interface{}) {
@@ -54,7 +122,7 @@ func (sm *sessionManager) Watch(receiver chan<- interface{}) {
 }
 
 // forward to who are interested in session event
-func (sm *sessionManager) UpdateSessionStatusFromNode(nodeId string, pod *v1.Pod, sessions []*fornaxv1.ApplicationSession) {
+func (sm *sessionManager) ReceiveSessionStatusFromNode(nodeId string, pod *v1.Pod, sessions []*fornaxv1.ApplicationSession) {
 	for _, session := range sessions {
 		for _, v := range sm.watchers {
 			v <- &ie.SessionEvent{
@@ -83,29 +151,46 @@ func (sm *sessionManager) OpenSession(pod *v1.Pod, session *fornaxv1.Application
 	}
 }
 
-// updateApplicationSessionStatus attempts to update the Status of the given Application Session
+// UpdateApplicationSessionStatus send status update into a channel to asynchronously update session status
 func (sm *sessionManager) UpdateSessionStatus(session *fornaxv1.ApplicationSession, newStatus *fornaxv1.ApplicationSessionStatus) error {
+	sm.statusUpdateCh <- &sessionStatus{
+		sessionName: util.Name(session),
+		status:      newStatus,
+	}
+	return nil
+}
+
+// updateApplicationSessionStatus attempts to update the Status of the given Application Session
+func (sm *sessionManager) updateSessionStatus(sessionName string, newStatus *fornaxv1.ApplicationSessionStatus) error {
+	apiServerClient := util.GetFornaxCoreApiClient()
+	namespace, name, _ := cache.SplitMetaNamespaceKey(sessionName)
+	session, err := apiServerClient.CoreV1().ApplicationSessions(namespace).Get(context.Background(), name, metav1.GetOptions{})
+	if err != nil {
+		if apierrors.IsNotFound(err) {
+			return nil
+		}
+		return err
+	}
+
 	if reflect.DeepEqual(session.Status, *newStatus) {
 		return nil
 	}
 
-	apiServerClient := util.GetFornaxCoreApiClient()
-	var updateErr error
 	updatedSession := session.DeepCopy()
 	updatedSession.Status = *newStatus
 	client := apiServerClient.CoreV1().ApplicationSessions(session.Namespace)
 	for i := 0; i <= 3; i++ {
-		updatedSession, updateErr = client.UpdateStatus(context.TODO(), updatedSession, metav1.UpdateOptions{})
-		if updateErr == nil {
+		updatedSession, err = client.UpdateStatus(context.TODO(), updatedSession, metav1.UpdateOptions{})
+		if err == nil {
 			break
 		} else {
 			updatedSession = session.DeepCopy()
 			updatedSession.Status = *newStatus
 		}
 	}
-	if updateErr != nil {
-		klog.ErrorS(updateErr, "Failed to update session status", "sess", session)
-		return updateErr
+	if err != nil {
+		klog.ErrorS(err, "Failed to update session status", "sess", session)
+		return err
 	}
 
 	return nil

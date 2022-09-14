@@ -142,9 +142,17 @@ func (n *SimulationNodeActor) processFornaxCoreMessage(msg *fornaxgrpc.FornaxCor
 	case fornaxgrpc.MessageType_POD_ACTIVE:
 		err = n.onPodActiveCommand(msg.GetPodActive())
 	case fornaxgrpc.MessageType_SESSION_OPEN:
-		err = n.onSessionOpenCommand(msg.GetSessionOpen())
+		go func() {
+			n.podsConcurrency.Acquire(context.Background(), 1)
+			defer n.podsConcurrency.Release(1)
+			n.onSessionOpenCommand(msg.GetSessionOpen())
+		}()
 	case fornaxgrpc.MessageType_SESSION_CLOSE:
-		err = n.onSessionCloseCommand(msg.GetSessionClose())
+		go func() {
+			n.podsConcurrency.Acquire(context.Background(), 1)
+			defer n.podsConcurrency.Release(1)
+			n.onSessionCloseCommand(msg.GetSessionClose())
+		}()
 	case fornaxgrpc.MessageType_SESSION_STATE, fornaxgrpc.MessageType_POD_STATE, fornaxgrpc.MessageType_NODE_STATE:
 		// messages are sent to fornaxcore, should just forward
 		n.notify(n.fornoxCoreRef, msg)
@@ -397,9 +405,9 @@ func (n *SimulationNodeActor) onSessionOpenCommand(msg *fornaxgrpc.SessionOpen) 
 			ClientSessions: map[string]*fornaxtypes.ClientSession{},
 		}
 		func() {
+			time.Sleep(30 * time.Millisecond)
 			n.nodeMutex.Lock()
 			defer n.nodeMutex.Unlock()
-			time.Sleep(30 * time.Millisecond)
 			revision := n.incrementNodeRevision()
 			sess.ResourceVersion = fmt.Sprint(revision)
 			fpod.Sessions[sessId] = fsess
@@ -422,9 +430,9 @@ func (n *SimulationNodeActor) onSessionCloseCommand(msg *fornaxgrpc.SessionClose
 	} else {
 		if fsess, found := fpod.Sessions[sessId]; found {
 			func() {
+				time.Sleep(30 * time.Millisecond)
 				n.nodeMutex.Lock()
 				defer n.nodeMutex.Unlock()
-				time.Sleep(30 * time.Millisecond)
 				revision := n.incrementNodeRevision()
 				fsess.Session.ResourceVersion = fmt.Sprint(revision)
 				fsess.Session.Status.SessionStatus = fornaxv1.SessionStatusClosed

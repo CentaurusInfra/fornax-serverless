@@ -68,10 +68,11 @@ func main() {
 	// start node and pod manager
 	podManager := pod.NewPodManager(context.Background(), grpcServer)
 	sessionManager := session.NewSessionManager(context.Background(), grpcServer, podManager)
+	sessionManager.Run(context.Background())
 	nodeManager := node.NewNodeManager(context.Background(), node.DefaultStaleNodeTimeout, grpcServer, podManager, sessionManager)
 	podScheduler := podscheduler.NewPodScheduler(context.Background(), grpcServer, nodeManager, podManager,
 		&podscheduler.SchedulePolicy{
-			NumOfEvaluatedNodes: 200,
+			NumOfEvaluatedNodes: 1000,
 			BackoffDuration:     10 * time.Second,
 			NodeSortingMethod:   podscheduler.NodeSortingMethodMoreMemory,
 		})

@@ -58,7 +58,7 @@ func (nm *nodeManager) UpdateSessionState(nodeIdentifier string, session *fornax
 	podName := session.Status.PodReference.Name
 	pod := nm.podManager.FindPod(podName)
 	if pod != nil {
-		nm.sessionManager.UpdateSessionStatusFromNode(nodeIdentifier, pod, []*fornaxv1.ApplicationSession{session})
+		nm.sessionManager.ReceiveSessionStatusFromNode(nodeIdentifier, pod, []*fornaxv1.ApplicationSession{session})
 	} else {
 		klog.InfoS("Pod does not exist in pod manager, can not update session info", "session", util.Name(session), "pod", podName)
 	}
@@ -89,7 +89,7 @@ func (nm *nodeManager) UpdatePodState(nodeId string, pod *v1.Pod, sessions []*fo
 	if nodeWS := nm.nodes.get(nodeId); nodeWS != nil {
 		nodeWS.LastSeen = time.Now()
 		nm.handleAPodState(nodeId, nodeWS, pod.DeepCopy())
-		nm.sessionManager.UpdateSessionStatusFromNode(nodeId, pod, sessions)
+		nm.sessionManager.ReceiveSessionStatusFromNode(nodeId, pod, sessions)
 	} else {
 		// TODO, node supposed to exist
 		klog.InfoS("Node does not exist, ask node full sync", "node", nodeId)

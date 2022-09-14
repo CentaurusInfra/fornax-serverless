@@ -68,7 +68,7 @@ type NodeManagerInterface interface {
 type SessionManagerInterface interface {
 	UpdateSessionStatus(session *fornaxv1.ApplicationSession, newStatus *fornaxv1.ApplicationSessionStatus) error
 	UpdateSessionFinalizer(session *fornaxv1.ApplicationSession) error
-	UpdateSessionStatusFromNode(nodeId string, pod *v1.Pod, sessions []*fornaxv1.ApplicationSession)
+	ReceiveSessionStatusFromNode(nodeId string, pod *v1.Pod, sessions []*fornaxv1.ApplicationSession)
 	OpenSession(pod *v1.Pod, session *fornaxv1.ApplicationSession) error
 	CloseSession(pod *v1.Pod, session *fornaxv1.ApplicationSession) error
 	Watch(watcher chan<- interface{})

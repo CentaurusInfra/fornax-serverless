@@ -201,7 +201,7 @@ func waitForAppSetup(namespace, appName string, numOfInstance int) {
 func waitForSessionTearDown(namespace, appName string, sessions []*TestSession) {
 	klog.Infof("waiting for %d sessions of app %s teardown", len(sessions), appName)
 	for {
-		time.Sleep(100 * time.Millisecond)
+		time.Sleep(500 * time.Millisecond)
 		app, err := describeApplication(getApiServerClient(), namespace, appName)
 		if err != nil {
 			continue
@@ -238,7 +238,7 @@ func waitForSessionTearDown(namespace, appName string, sessions []*TestSession) 
 func waitForSessionSetup(namespace, appName string, sessions TestSessionArray) {
 	klog.Infof("waiting for %d sessions of app %s setup", len(sessions), appName)
 	for {
-		time.Sleep(10 * time.Millisecond)
+		time.Sleep(100 * time.Millisecond)
 		allSetup := true
 		for _, ts := range sessions {
 			if ts.status != fornaxv1.SessionStatusPending {
@@ -434,6 +434,9 @@ func summarySessionTestResult(sessions TestSessionArray) {
 		}
 	}
 	klog.Infof("%d success, %d failed, %d timeout", successSession, failedSession, timeoutSession)
+	if len(sessions) == 0 {
+		return
+	}
 	sort.Sort(sessions)
 	p99 := sessions[len(sessions)*99/100]
 	p90 := sessions[len(sessions)*90/100]

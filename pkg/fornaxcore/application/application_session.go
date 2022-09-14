@@ -268,11 +268,19 @@ func (am *ApplicationManager) onApplicationSessionUpdateEvent(old, cur interface
 	applicationKey := am.getSessionApplicationKey(newCopy)
 	pool := am.getOrCreateApplicationPool(applicationKey)
 	if v := pool.getSession(string(newCopy.GetUID())); v != nil {
-		// use cached old copy in memory, we update memory first when received a session status change from node
+		// use cached memory copy if there is,
+		// fornaxcore update memory cache firstly then asynchronously update etcd when received session status on node.
+		// if cached copy is already closed, do not use new status, data could be old since etcd is asynchronously updated.
 		oldCopy = v.DeepCopy()
+		if !util.SessionInTerminalState(oldCopy) {
+			am.updateSessionPool(applicationKey, newCopy, false)
+		} else {
+			am.updateSessionPool(applicationKey, oldCopy, false)
+		}
+	} else {
+		am.updateSessionPool(applicationKey, newCopy, false)
 	}
 
-	am.updateSessionPool(applicationKey, newCopy, false)
 	if (newCopy.DeletionTimestamp != nil && oldCopy.DeletionTimestamp == nil) || !reflect.DeepEqual(oldCopy.Status, newCopy.Status) {
 		klog.InfoS("Application session updated", "session", sessionKey, "status", newCopy.Status, "deleting", newCopy.DeletionTimestamp != nil)
 		am.enqueueApplication(applicationKey)

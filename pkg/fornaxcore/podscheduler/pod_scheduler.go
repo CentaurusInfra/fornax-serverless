@@ -43,7 +43,7 @@ var _ PodScheduler = &podScheduler{}
 type NodeSortingMethod string
 
 const (
-	DefaultBackoffRetryDuration                    = 10 * time.Second
+	DefaultBackoffRetryDuration                    = 5 * time.Second
 	NodeSortingMethodMoreMemory  NodeSortingMethod = "more_memory"   // chose node with more memory
 	NodeSortingMethodLessLastUse NodeSortingMethod = "less_last_use" // choose oldest node
 	NodeSortingMethodLessUse     NodeSortingMethod = "less_use"      // choose node with less pods

@@ -143,14 +143,10 @@ func (n *SimulationNodeActor) processFornaxCoreMessage(msg *fornaxgrpc.FornaxCor
 		err = n.onPodActiveCommand(msg.GetPodActive())
 	case fornaxgrpc.MessageType_SESSION_OPEN:
 		go func() {
-			n.podsConcurrency.Acquire(context.Background(), 1)
-			defer n.podsConcurrency.Release(1)
 			n.onSessionOpenCommand(msg.GetSessionOpen())
 		}()
 	case fornaxgrpc.MessageType_SESSION_CLOSE:
 		go func() {
-			n.podsConcurrency.Acquire(context.Background(), 1)
-			defer n.podsConcurrency.Release(1)
 			n.onSessionCloseCommand(msg.GetSessionClose())
 		}()
 	case fornaxgrpc.MessageType_SESSION_STATE, fornaxgrpc.MessageType_POD_STATE, fornaxgrpc.MessageType_NODE_STATE:

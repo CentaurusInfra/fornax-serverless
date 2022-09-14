@@ -118,14 +118,15 @@ func Run(ctx context.Context, testConfig config.TestConfiguration) {
 
 	logs.InitLogs()
 
+	startTime := time.Now().UnixMilli()
 	for i := 0; i < testConfig.NumOfTestCycle; i++ {
 		klog.Infof("--------Test %d begin--------\n", i+1)
 		RunTest()
-		time.Sleep(300 * time.Millisecond)
 		klog.Infof("--------Test %d end----------\n\n", i+1)
 	}
+	endTime := time.Now().UnixMilli()
 
 	klog.Infof("--------Test summary ----------\n")
-	summarySessionTestResult(allTestSessions)
+	summarySessionTestResult(allTestSessions, startTime, endTime)
 	os.Exit(0)
 }

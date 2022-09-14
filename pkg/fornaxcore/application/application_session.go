@@ -19,6 +19,7 @@ package application
 import (
 	"fmt"
 	"reflect"
+	"sort"
 	"time"
 
 	fornaxv1 "centaurusinfra.io/fornax-serverless/pkg/apis/core/v1"
@@ -313,6 +314,21 @@ func (am *ApplicationManager) getTotalAndPendingSessionNum(applicationKey string
 	return 0, 0
 }
 
+type PendingSessions []*fornaxv1.ApplicationSession
+
+func (ps PendingSessions) Len() int {
+	return len(ps)
+}
+
+//so, sort latency from smaller to lager value
+func (ps PendingSessions) Less(i, j int) bool {
+	return ps[i].CreationTimestamp.Before(&ps[j].CreationTimestamp)
+}
+
+func (ps PendingSessions) Swap(i, j int) {
+	ps[i], ps[j] = ps[j], ps[i]
+}
+
 // syncApplicationSessions grab a list of pending session and try to allocate them to pods and call OpenSession on choosen pod.
 // session status change in memory to SessionStatusStarting, but do not update etcd to avoid unnecessary resync.
 // session status will be changed in etcd until pod report back, if fornax core restart and lost these memory state, it rely on pod to report back.
@@ -330,6 +346,7 @@ func (am *ApplicationManager) syncApplicationSessions(applicationKey string, app
 	pendingSessions, deletingSessions, _, timeoutSessions, runningSessions := pool.groupSessionsByState()
 	klog.InfoS("Syncing application pending session", "application", applicationKey, "#running", len(runningSessions), "#pending", len(pendingSessions), "#deleting", len(deletingSessions), "#timeout", len(timeoutSessions), "#idleRunningPods", len(idlePods))
 
+	sort.Sort(PendingSessions(pendingSessions))
 	sessionErrors := []error{}
 	// 1/ assign pending sessions to idle pod
 	si := 0

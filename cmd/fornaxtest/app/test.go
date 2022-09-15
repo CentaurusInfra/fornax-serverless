@@ -269,9 +269,12 @@ func waitForSessionSetup(namespace, appName string, sessions TestSessionArray) {
 			}
 
 			if allSetup {
-				// for _, v := range sessions {
-				//  klog.Infof("Session: %s took %d micro second to setup, status %s\n", v.session.Name, v.availableTimeMicro-v.creationTimeMicro, v.status)
-				// }
+				var ct int64 = 0
+				for _, v := range sessions {
+					klog.Infof("Session: %s took %d micro second to setup, status %s\n", v.session.Name, v.availableTimeMicro-v.creationTimeMicro, v.status)
+					ct += int64(v.availableTimeMicro - v.creationTimeMicro)
+				}
+				klog.Infof("Application: %s took %d micro second to setup %d sessions\n", appName, ct, len(sessions))
 				break
 			}
 		}

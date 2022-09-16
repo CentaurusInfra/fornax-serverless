@@ -401,14 +401,13 @@ func (n *SimulationNodeActor) onSessionOpenCommand(msg *fornaxgrpc.SessionOpen) 
 			ClientSessions: map[string]*fornaxtypes.ClientSession{},
 		}
 		func() {
-			time.Sleep(30 * time.Millisecond)
+			time.Sleep(3 * time.Millisecond)
 			n.nodeMutex.Lock()
 			defer n.nodeMutex.Unlock()
 			revision := n.incrementNodeRevision()
 			sess.ResourceVersion = fmt.Sprint(revision)
 			fpod.Sessions[sessId] = fsess
 			fsess.Session.Status.SessionStatus = fornaxv1.SessionStatusAvailable
-			fsess.Session.Status.AvailableTime = util.NewCurrentMetaTime()
 			n.notify(n.fornoxCoreRef, session.BuildFornaxcoreGrpcSessionState(revision, fsess))
 		}()
 	}
@@ -426,7 +425,7 @@ func (n *SimulationNodeActor) onSessionCloseCommand(msg *fornaxgrpc.SessionClose
 	} else {
 		if fsess, found := fpod.Sessions[sessId]; found {
 			func() {
-				time.Sleep(30 * time.Millisecond)
+				time.Sleep(3 * time.Millisecond)
 				n.nodeMutex.Lock()
 				defer n.nodeMutex.Unlock()
 				revision := n.incrementNodeRevision()

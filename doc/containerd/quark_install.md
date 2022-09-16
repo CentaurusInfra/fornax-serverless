@@ -97,7 +97,7 @@ make install
 
 
 
-## 6. Integeration with Fornax Server-less
+## 6. Integeration with Fornax Serverless
 
 1. Build Quark Runtime with shim mode, To build Quark with shim mode, change the following configuration in <b>config.json</b>
 

@@ -164,7 +164,7 @@ If you have not installed CNI,  please reference 2.1.2 Install CNI in [Fornax  S
 )
 ```
 
-2. To install gVisor as a Docker runtime, run the following commands:
+2. To install gVisor as a Containerd runtime, run the following commands:
 ```sh
 /usr/local/bin/runsc install
 sudo systemctl restart containerd

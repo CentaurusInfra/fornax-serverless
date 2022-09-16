@@ -94,12 +94,12 @@ func NewCommand() *cobra.Command {
 
 func Run(ctx context.Context, testConfig config.TestConfiguration) {
 
-	RunTest := func() {
+	RunTest := func(cycle int) {
 		wg := sync.WaitGroup{}
 		for i := 0; i < testConfig.NumOfApps; i++ {
-			wg.Add(1)
 			namespace := "fornaxtest"
-			appName := fmt.Sprintf("echoserver%d", i)
+			appName := fmt.Sprintf("echoserver%d", cycle*testConfig.NumOfApps+i)
+			wg.Add(1)
 			go func() {
 				switch testConfig.TestCase {
 				case config.AppFullCycleTest:
@@ -112,21 +112,32 @@ func Run(ctx context.Context, testConfig config.TestConfiguration) {
 				}
 				wg.Done()
 			}()
+
+			if i > 0 && i%testConfig.NumOfAppPerSec == 0 {
+				klog.Infof("created %d app", i)
+				time.Sleep(1000 * time.Millisecond)
+			}
 		}
+		klog.Infof("created %d app", testConfig.NumOfApps)
 		wg.Wait()
 	}
-
 	logs.InitLogs()
 
 	startTime := time.Now().UnixMilli()
 	for i := 0; i < testConfig.NumOfTestCycle; i++ {
+		st := time.Now().UnixMilli()
 		klog.Infof("--------Test %d begin--------\n", i+1)
-		RunTest()
+		oneTestCycleSessions = TestSessionArray{}
+		RunTest(i)
+		et := time.Now().UnixMilli()
+		summarySessionTestResult(oneTestCycleSessions, st, et)
+		allTestSessions = append(allTestSessions, oneTestCycleSessions...)
 		klog.Infof("--------Test %d end----------\n\n", i+1)
 	}
 	endTime := time.Now().UnixMilli()
 
 	klog.Infof("--------Test summary ----------\n")
+	summaryAppTestResult(allTestApps, startTime, endTime)
 	summarySessionTestResult(allTestSessions, startTime, endTime)
 	os.Exit(0)
 }

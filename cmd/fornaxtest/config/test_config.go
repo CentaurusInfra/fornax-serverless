@@ -24,7 +24,8 @@ type TestConfiguration struct {
 	NumOfTestCycle      int
 	NumOfApps           int
 	NumOfInitPodsPerApp int
-	BurstOfPodPerApp    int
+	NumOfAppPerSec      int
+	NumOfSessionPerSec  int
 	NumOfSessionPerApp  int
 }
 
@@ -41,7 +42,8 @@ func AddConfigFlags(flagSet *pflag.FlagSet, simuConfig *TestConfiguration) {
 	flagSet.StringVar(&simuConfig.TestCase, "test-case", simuConfig.TestCase, "which test is running, app_full_cycle,session_full_cycle,session_create")
 	flagSet.IntVar(&simuConfig.NumOfApps, "num-of-app", simuConfig.NumOfApps, "how many applications are simulated")
 	flagSet.IntVar(&simuConfig.NumOfInitPodsPerApp, "num-of-init-pod-per-app", simuConfig.NumOfInitPodsPerApp, "how many applications pods are precreated when create app")
-	flagSet.IntVar(&simuConfig.BurstOfPodPerApp, "burst-of-pod-per-app", simuConfig.BurstOfPodPerApp, "maximum pods are allowed in one batch for a application")
+	flagSet.IntVar(&simuConfig.NumOfSessionPerSec, "num-of-session-per-sec", simuConfig.NumOfSessionPerSec, "maximum session to created in one second for a application")
+	flagSet.IntVar(&simuConfig.NumOfAppPerSec, "num-of-app-per-sec", simuConfig.NumOfAppPerSec, "maximum app to created in one second")
 	flagSet.IntVar(&simuConfig.NumOfSessionPerApp, "num-of-session-per-app", simuConfig.NumOfSessionPerApp, "how many application sessions are created for a application")
 	flagSet.IntVar(&simuConfig.NumOfTestCycle, "num-of-test-cycle", simuConfig.NumOfSessionPerApp, "how many test run before exit")
 }
@@ -51,7 +53,8 @@ func DefaultConfiguration() *TestConfiguration {
 		TestCase:            AppFullCycleTest,
 		NumOfApps:           1,
 		NumOfInitPodsPerApp: 0,
-		BurstOfPodPerApp:    10,
+		NumOfAppPerSec:      50,
+		NumOfSessionPerSec:  50,
 		NumOfSessionPerApp:  1,
 		NumOfTestCycle:      1,
 	}

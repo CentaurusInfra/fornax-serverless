@@ -224,6 +224,8 @@ func (am *ApplicationManager) updateSessionPool(applicationKey string, session *
 			pod := pool.addOrUpdatePod(podName, PodStateRunning)
 			pod.sessions.Add(sessionId)
 		}
+		// a trick to make sure pending session are sorted according micro second, api server normallize cretion timestamp to second
+		session.CreationTimestamp = *util.NewCurrentMetaTime()
 		pool.addSession(sessionId, session)
 	} else {
 		// update delete timestamp, sync application will close session when node report

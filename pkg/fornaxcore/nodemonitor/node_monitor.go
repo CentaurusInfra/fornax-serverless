@@ -27,7 +27,6 @@ import (
 	"centaurusinfra.io/fornax-serverless/pkg/fornaxcore/grpc/nodeagent"
 	ie "centaurusinfra.io/fornax-serverless/pkg/fornaxcore/internal"
 	"centaurusinfra.io/fornax-serverless/pkg/util"
-	podutil "centaurusinfra.io/fornax-serverless/pkg/util"
 	k8spodutil "k8s.io/kubernetes/pkg/api/v1/pod"
 
 	v1 "k8s.io/api/core/v1"
@@ -221,12 +220,7 @@ func (nm *nodeMonitor) OnNodeStateUpdate(ctx context.Context, message *grpc.Forn
 func (nm *nodeMonitor) OnPodStateUpdate(ctx context.Context, message *grpc.FornaxCoreMessage) (*grpc.FornaxCoreMessage, error) {
 	podState := message.GetPodState()
 	revision := podState.GetNodeRevision()
-	klog.InfoS("Received a pod state",
-		"pod", podutil.Name(podState.GetPod()),
-		"fornax state", podState.GetState(),
-		"pod phase", podState.GetPod().Status.Phase,
-		"condition", k8spodutil.IsPodReady(podState.GetPod()),
-		"node revision", revision)
+	klog.InfoS("Received a pod state", "pod", util.Name(podState.GetPod()), "fornax state", podState.GetState(), "pod phase", podState.GetPod().Status.Phase, "condition", k8spodutil.IsPodReady(podState.GetPod()), "node revision", revision)
 
 	_, found := podState.GetPod().Labels[fornaxv1.LabelFornaxCoreNode]
 	if !found {

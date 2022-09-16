@@ -239,7 +239,6 @@ func (am *ApplicationManager) Run(ctx context.Context) {
 		defer utilruntime.HandleCrash()
 		defer am.applicationQueue.ShutDown()
 		defer klog.Info("Shutting down fornaxv1 application manager")
-		ticker := time.NewTicker(HouseKeepingDuration)
 
 		for {
 			select {
@@ -252,6 +251,16 @@ func (am *ApplicationManager) Run(ctx context.Context) {
 				if se, ok := update.(*ie.SessionEvent); ok {
 					am.onSessionEventFromNode(se)
 				}
+			}
+		}
+	}()
+
+	go func() {
+		ticker := time.NewTicker(HouseKeepingDuration)
+		for {
+			select {
+			case <-ctx.Done():
+				break
 			case <-ticker.C:
 				am.HouseKeeping()
 			}
@@ -333,7 +342,6 @@ func (am *ApplicationManager) processNextWorkItem(ctx context.Context) bool {
 	}
 	defer am.applicationQueue.Done(key)
 
-	klog.InfoS("Application queue lengh", "length", am.applicationQueue.Len())
 	err := am.syncHandler(ctx, key.(string))
 	if err == nil {
 		am.applicationQueue.Forget(key)

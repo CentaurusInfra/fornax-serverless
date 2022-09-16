@@ -144,3 +144,48 @@ sudo systemctl restart containerd
 
 ## 7. Install CNI (if you have not install CNI)
 If you have not installed CNI,  please reference 2.1.2 Install CNI in [Fornax  Setup Detail](https://github.com/CentaurusInfra/fornax-serverless/blob/main/doc/fornax_setup.md).
+
+
+## Reference
+### 1. If you want to run "runsc" (gVisor), you need install runsc component
+1. Install latest relase version. To download and install the latest release manually follow these steps:
+```sh
+(
+  set -e
+  ARCH=$(uname -m)
+  URL=https://storage.googleapis.com/gvisor/releases/release/latest/${ARCH}
+  wget ${URL}/runsc ${URL}/runsc.sha512 \
+    ${URL}/containerd-shim-runsc-v1 ${URL}/containerd-shim-runsc-v1.sha512
+  sha512sum -c runsc.sha512 \
+    -c containerd-shim-runsc-v1.sha512
+  rm -f *.sha512
+  chmod a+rx runsc containerd-shim-runsc-v1
+  sudo mv runsc containerd-shim-runsc-v1 /usr/local/bin
+)
+```
+
+2. To install gVisor as a Docker runtime, run the following commands:
+```sh
+/usr/local/bin/runsc install
+sudo systemctl restart containerd
+```
+
+### 2. If you want to run Kata, you need install Kata component
+
+1. Install Kata
+```sh
+ARCH=$(arch)
+BRANCH="${BRANCH:-master}"
+sudo sh -c "echo 'deb http://download.opensuse.org/repositories/home:/katacontainers:/releases:/${ARCH}:/${BRANCH}/xUbuntu_$(lsb_release -rs)/ /' > /etc/apt/sources.list.d/kata-containers.list"
+curl -sL  http://download.opensuse.org/repositories/home:/katacontainers:/releases:/${ARCH}:/${BRANCH}/xUbuntu_$(lsb_release -rs)/Release.key | sudo apt-key add -
+sudo -E apt-get update
+sudo -E apt-get -y install kata-runtime kata-proxy kata-shim
+```
+
+2. Verify Kata runtime version
+```sh
+kata-runtime --kata-show-default-config-paths   
+kata-runtime --kata-config=/some/where/configuration.toml
+
+kata-runtime -version
+```

@@ -21,6 +21,8 @@ import (
 	"reflect"
 	"time"
 
+	fornaxv1 "centaurusinfra.io/fornax-serverless/pkg/apis/core/v1"
+
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/tools/cache"
@@ -217,4 +219,12 @@ func PodInGracePeriod(pod *v1.Pod) bool {
 	graceSeconds := pod.GetDeletionGracePeriodSeconds()
 	deleteTimeStamp := pod.GetDeletionTimestamp()
 	return graceSeconds != nil && deleteTimeStamp != nil && deleteTimeStamp.Add((time.Duration(*graceSeconds) * time.Second)).After(time.Now())
+}
+
+func PodHasSession(pod *v1.Pod) (string, bool) {
+	if sess, found := pod.GetLabels()[fornaxv1.LabelFornaxCoreApplicationSession]; found {
+		return sess, true
+	}
+
+	return "", false
 }

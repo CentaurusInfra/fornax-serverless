@@ -221,7 +221,7 @@ func (am *ApplicationManager) updateSessionPool(applicationKey string, session *
 	} else if deleted == false {
 		if session.Status.PodReference != nil {
 			podName := session.Status.PodReference.Name
-			pod := pool.addOrUpdatePod(podName, PodStateRunning)
+			pod := pool.addOrUpdatePod(podName, PodStateAllocated)
 			pod.sessions.Add(sessionId)
 		}
 		// a trick to make sure pending session are sorted according micro second, api server normallize cretion timestamp to second
@@ -344,19 +344,19 @@ func (am *ApplicationManager) syncApplicationSessions(applicationKey string, app
 	if pool == nil {
 		return nil
 	}
-	_, _, idlePods := am.getActiveApplicationPods(applicationKey)
 	pendingSessions, deletingSessions, _, timeoutSessions, runningSessions := pool.groupSessionsByState()
+	idlePods := pool.getSomeIdlePods(len(pendingSessions))
 	klog.InfoS("Syncing application pending session", "application", applicationKey, "#running", len(runningSessions), "#pending", len(pendingSessions), "#deleting", len(deletingSessions), "#timeout", len(timeoutSessions), "#idleRunningPods", len(idlePods))
 
 	sort.Sort(PendingSessions(pendingSessions))
 	sessionErrors := []error{}
 	// 1/ assign pending sessions to idle pod
 	si := 0
-	for _, rp := range idlePods {
-		pod := am.podManager.FindPod(rp.podName)
+	for _, ap := range idlePods {
+		pod := am.podManager.FindPod(ap.podName)
 		if pod != nil {
 			// allow only one sssion for one pod for now
-			if rp.sessions.Len() == 0 {
+			if ap.sessions.Len() == 0 {
 				// have assigned all pending sessions, return
 				if si == len(pendingSessions) {
 					break
@@ -371,7 +371,8 @@ func (am *ApplicationManager) syncApplicationSessions(applicationKey string, app
 					sessionErrors = append(sessionErrors, err)
 					continue
 				} else {
-					rp.sessions.Add(string(session.GetUID()))
+					ap.sessions.Add(string(session.GetUID()))
+					pool.addOrUpdatePod(ap.podName, PodStateAllocated)
 					si += 1
 				}
 			}

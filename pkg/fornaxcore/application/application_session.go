@@ -27,6 +27,7 @@ import (
 	"centaurusinfra.io/fornax-serverless/pkg/util"
 
 	v1 "k8s.io/api/core/v1"
+	"k8s.io/client-go/tools/cache"
 	"k8s.io/klog/v2"
 )
 
@@ -292,7 +293,19 @@ func (am *ApplicationManager) onApplicationSessionUpdateEvent(old, cur interface
 
 // callback from Application informer when ApplicationSession is physically deleted
 func (am *ApplicationManager) onApplicationSessionDeleteEvent(obj interface{}) {
-	session := obj.(*fornaxv1.ApplicationSession)
+	session, ok := obj.(*fornaxv1.ApplicationSession)
+	if !ok {
+		tombstone, ok := obj.(cache.DeletedFinalStateUnknown)
+		if !ok {
+			klog.Errorf("couldn't get object from tombstone %#v", obj)
+			return
+		}
+		session, ok = tombstone.Obj.(*fornaxv1.ApplicationSession)
+		if !ok {
+			klog.Errorf("tombstone contained object that is not a Application session %#v", obj)
+			return
+		}
+	}
 	sessionKey := util.Name(session)
 	if session.DeletionTimestamp == nil {
 		session.DeletionTimestamp = util.NewCurrentMetaTime()

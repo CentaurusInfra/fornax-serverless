@@ -175,7 +175,7 @@ type ApplicationStatus struct {
 
 	// Total number of instances which have been started by node
 	// +optional
-	RunningInstances int32 `json:"runningInstances,omitempty"`
+	AllocatedInstances int32 `json:"allocatedInstances,omitempty"`
 
 	// Total number of pods which do not have session on it
 	// +optional

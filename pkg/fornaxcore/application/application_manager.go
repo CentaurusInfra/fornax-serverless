@@ -50,16 +50,19 @@ const (
 )
 
 type ApplicationPool struct {
+	appName  string
 	mu       sync.RWMutex
 	pods     map[ApplicationPodState]map[string]*ApplicationPod
 	sessions map[string]*fornaxv1.ApplicationSession
 }
 
-func NewApplicationPool() *ApplicationPool {
+func NewApplicationPool(appName string) *ApplicationPool {
 	return &ApplicationPool{
-		mu: sync.RWMutex{},
+		appName: appName,
+		mu:      sync.RWMutex{},
 		pods: map[ApplicationPodState]map[string]*ApplicationPod{
 			PodStatePending:   {},
+			PodStateIdle:      {},
 			PodStateAllocated: {},
 			PodStateDeleting:  {},
 		},
@@ -162,7 +165,7 @@ func (am *ApplicationManager) getOrCreateApplicationPool(applicationKey string) 
 	if pool == nil {
 		am.appmu.Lock()
 		defer am.appmu.Unlock()
-		pool = NewApplicationPool()
+		pool = NewApplicationPool(applicationKey)
 		am.applicationPools[applicationKey] = pool
 		return pool
 	} else {
@@ -363,12 +366,14 @@ func (am *ApplicationManager) cleanupDeletedApplication(applicationKey string) e
 	pool := am.getApplicationPool(applicationKey)
 	if pool != nil {
 		if pool.sessionLength() > 0 {
-			err := am.cleanupSessionOfApplication(applicationKey)
+			klog.Infof("Delete all sessions of application %s", applicationKey)
+			err := am.cleanupSessionOfApplication(pool)
 			if err != nil {
 				return err
 			}
 		} else {
-			err := am.cleanupPodOfApplication(applicationKey)
+			klog.Infof("Cleanup all pods of application %s", applicationKey)
+			err := am.cleanupPodOfApplication(pool)
 			if err != nil {
 				return err
 			}
@@ -516,7 +521,7 @@ func (am *ApplicationManager) calculateStatus(application *fornaxv1.Application,
 		application.Status.IdleInstances == poolSummary.idleCount &&
 		application.Status.DeletingInstances == poolSummary.deletingCount &&
 		application.Status.PendingInstances == poolSummary.pendingCount &&
-		application.Status.RunningInstances == poolSummary.runningCount {
+		application.Status.AllocatedInstances == poolSummary.occupiedCount {
 		return newStatus
 	}
 
@@ -525,7 +530,7 @@ func (am *ApplicationManager) calculateStatus(application *fornaxv1.Application,
 	newStatus.PendingInstances = poolSummary.pendingCount
 	newStatus.DeletingInstances = poolSummary.deletingCount
 	newStatus.IdleInstances = poolSummary.idleCount
-	newStatus.RunningInstances = poolSummary.runningCount
+	newStatus.AllocatedInstances = poolSummary.occupiedCount
 
 	// this will make status huge, and finally fail a etcd request, need to find another way to save these history
 	// if action == fornaxv1.DeploymentActionCreateInstance || action == fornaxv1.DeploymentActionDeleteInstance {
@@ -594,7 +599,7 @@ func (am *ApplicationManager) HouseKeeping() error {
 					// only delete pending pods which scheduled to a node but did not report back by node,
 					// delete a pod not scheduled to a node, will trigger creating another unnecessary pending pod
 					if pod.CreationTimestamp.Time.Before(pendingTimeoutCutoff) && len(pod.Status.HostIP) > 0 {
-						am.deleteApplicationPod(appKey, pod, false)
+						am.deleteApplicationPod(pool, pod, false)
 					}
 				} else {
 					pool.deletePod(ap.podName)
@@ -605,7 +610,7 @@ func (am *ApplicationManager) HouseKeeping() error {
 				pod := am.podManager.FindPod(ap.podName)
 				if pod != nil {
 					if pod.DeletionTimestamp.Time.Before(time.Now().Add(-1 * time.Duration(*pod.DeletionGracePeriodSeconds) * time.Second)) {
-						am.deleteApplicationPod(appKey, pod, true)
+						am.deleteApplicationPod(pool, pod, true)
 					}
 				} else {
 					pool.deletePod(ap.podName)

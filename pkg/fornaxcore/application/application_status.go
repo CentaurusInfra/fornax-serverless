@@ -147,7 +147,7 @@ func (asm *ApplicationStatusManager) updateApplicationStatus(applicationKey stri
 			fmt.Sprintf("desiredInstances %d->%d, ", application.Status.DesiredInstances, newStatus.DesiredInstances) +
 			fmt.Sprintf("pendingInstances %d->%d, ", application.Status.PendingInstances, newStatus.PendingInstances) +
 			fmt.Sprintf("deletingInstances %d->%d, ", application.Status.DeletingInstances, newStatus.DeletingInstances) +
-			fmt.Sprintf("runningInstances %d->%d, ", application.Status.RunningInstances, newStatus.RunningInstances) +
+			fmt.Sprintf("allocatedInstances %d->%d, ", application.Status.AllocatedInstances, newStatus.AllocatedInstances) +
 			fmt.Sprintf("idleInstances %d->%d, ", application.Status.IdleInstances, newStatus.IdleInstances))
 
 		updatedApplication = application.DeepCopy()

@@ -19,6 +19,7 @@ package util
 import (
 	"fmt"
 	"reflect"
+	"strings"
 	"time"
 
 	fornaxv1 "centaurusinfra.io/fornax-serverless/pkg/apis/core/v1"
@@ -222,9 +223,17 @@ func PodInGracePeriod(pod *v1.Pod) bool {
 }
 
 func PodHasSession(pod *v1.Pod) (string, bool) {
-	if sess, found := pod.GetLabels()[fornaxv1.LabelFornaxCoreApplicationSession]; found {
-		return sess, true
+	if label, found := pod.GetLabels()[fornaxv1.LabelFornaxCoreApplicationSession]; found {
+		return label, true
 	}
 
 	return "", false
+}
+
+func GetPodSessionNames(pod *v1.Pod) []string {
+	if label, found := pod.GetLabels()[fornaxv1.LabelFornaxCoreApplicationSession]; found {
+		return strings.Split(label, ",")
+	}
+
+	return []string{}
 }

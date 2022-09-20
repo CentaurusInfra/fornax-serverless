@@ -81,7 +81,6 @@ func (sm *sessionManager) Run(ctx context.Context) {
 					sm.sessionStatus[update.sessionName] = update
 				}
 
-				klog.InfoS("Session status size", "len", len(sm.sessionStatus))
 				hasError := false
 				updatedSessions := []string{}
 				for session, status := range sm.sessionStatus {
@@ -100,11 +99,11 @@ func (sm *sessionManager) Run(ctx context.Context) {
 					delete(sm.sessionStatus, v)
 				}
 
-				time.Sleep(50 * time.Millisecond)
 				// a trick to retry, all failed status update are still in map, send a fake update to retry,
 				// it's bit risky, if some guy put a lot of event into channel before we can put a retry signal, it will stuck
 				// checking channel current length must be zero could mitigate a bit
 				if hasError {
+					time.Sleep(50 * time.Millisecond)
 					if len(sm.statusUpdateCh) == 0 {
 						sm.statusUpdateCh <- &sessionStatus{
 							sessionName: FornaxCore_SessionStatusManager_Retry,

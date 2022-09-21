@@ -333,3 +333,8 @@ version = 2
 ```sh
 ./bin/fornaxtest --test-case app_full_cycle --num-of-session-per-app 0 --num-of-init-pod-per-app 10 --burst-of-app-pods 100 --num-of-app 1 --run-once
 ```
+
+5. Tmux
+```sh
+sudo apt  install tmux
+```

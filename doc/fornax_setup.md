@@ -191,7 +191,7 @@ debug: true
 pull-image-on-create: false
 ```
 
-notes: Note: The default endpoints are now deprecated and the runtime endpoint should always be set instead.
+Notes: The default endpoints are now deprecated and the runtime endpoint should always be set instead.
 
 #### 2.5.2 Check Containerd State
 ```script
@@ -208,7 +208,7 @@ sudo journalctl -fu containerd
 
 #### 2.6.1 Install Golang (See 1.2.1)
 #### 2.6.2 Compile Source Code (See 1.2.2)
-#### 2.6.2 Start Node Agent (See [get_start.md](https://github.com/CentaurusInfra/fornax-serverless/edit/main/doc/get_start.md)
+#### 2.6.2 Start Node Agent. See [get_start.md](https://github.com/CentaurusInfra/fornax-serverless/edit/main/doc/get_start.md)
 
 
 ## 3. Play Fornax Serverless

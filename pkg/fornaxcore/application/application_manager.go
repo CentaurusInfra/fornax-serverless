@@ -46,7 +46,7 @@ const (
 	DefaultApplicationSyncErrorRecycleDuration = 10 * time.Second
 
 	// The number of workers sync application
-	DefaultNumOfApplicationWorkers = 4
+	DefaultNumOfApplicationWorkers = 8
 )
 
 type ApplicationPool struct {
@@ -420,18 +420,18 @@ func (am *ApplicationManager) syncApplication(ctx context.Context, applicationKe
 		}
 	} else if application != nil {
 		if application.DeletionTimestamp == nil {
-			// 1, sync session assign pending session to exist running pods firstly and cleanup timedout sessions,
-			syncErr = am.syncApplicationSessions(applicationKey, application)
+			// 1, assign pending session to idle  pods firstly and cleanup timedout sessions,
+			syncErr = am.syncApplicationSessions(pool, application)
 
-			// 2, determine how many pods required for remaining pending sessions
+			// 2, determine how many more pods required for remaining pending sessions
 			if syncErr == nil {
 				// get length in one method to make sure it has snapshot image at a moment, method is locking write operation
 				numOfOccupiedPod, pendingPodLengh, idlePodLengh := pool.activeApplicationPodLength()
 				numOfUnoccupiedPod := pendingPodLengh + idlePodLengh
-				_, numOfPendingSession := am.getTotalAndPendingSessionNum(applicationKey)
+				_, numOfPendingSession := am.getTotalAndPendingSessionNum(pool)
 				numOfDesiredUnoccupiedPod := am.calculateDesiredIdlePods(application, numOfOccupiedPod, numOfUnoccupiedPod, numOfPendingSession)
 				numOfDesiredPod = numOfOccupiedPod + numOfDesiredUnoccupiedPod
-				klog.InfoS("Syncing application pod", "pending sessions", numOfPendingSession, "#curr-pods", numOfOccupiedPod+numOfUnoccupiedPod, "pending-pods", pendingPodLengh, "idle-pods", idlePodLengh, "desired-pending+idle-pods", numOfDesiredUnoccupiedPod)
+				klog.InfoS("Syncing application pod", "application", applicationKey, "pending sessions", numOfPendingSession, "#curr-pods", numOfOccupiedPod+numOfUnoccupiedPod, "pending-pods", pendingPodLengh, "idle-pods", idlePodLengh, "desired-pending+idle-pods", numOfDesiredUnoccupiedPod)
 				if numOfDesiredUnoccupiedPod > numOfUnoccupiedPod {
 					action = fornaxv1.DeploymentActionCreateInstance
 				} else if numOfDesiredUnoccupiedPod < numOfUnoccupiedPod {
@@ -587,7 +587,7 @@ func (am *ApplicationManager) HouseKeeping() error {
 
 		if podSummary.pendingCount > 0 || podSummary.deletingCount > 0 {
 			pendingPods := pool.podsOfState(PodStatePending)
-			deletingPods := pool.podsOfState(PodStateIdle)
+			deletingPods := pool.podsOfState(PodStateDeleting)
 			pendingTimeoutCutoff := time.Now().Add(-1 * DefaultPodPendingTimeoutDuration)
 			for _, ap := range pendingPods {
 				// double check with podManager to avoid race condition when pod is reported back just this moment
@@ -608,7 +608,7 @@ func (am *ApplicationManager) HouseKeeping() error {
 
 			for _, ap := range deletingPods {
 				pod := am.podManager.FindPod(ap.podName)
-				if pod != nil {
+				if pod != nil && pod.DeletionTimestamp != nil {
 					if pod.DeletionTimestamp.Time.Before(time.Now().Add(-1 * time.Duration(*pod.DeletionGracePeriodSeconds) * time.Second)) {
 						am.deleteApplicationPod(pool, pod, true)
 					}

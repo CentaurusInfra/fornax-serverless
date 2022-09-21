@@ -20,6 +20,7 @@ import (
 	"context"
 	"fmt"
 	"reflect"
+	"sync"
 	"time"
 
 	fornaxv1 "centaurusinfra.io/fornax-serverless/pkg/apis/core/v1"
@@ -36,22 +37,55 @@ const (
 	UPDATE_RETRIES = 2
 )
 
-type ApplicationStatusUpdate struct {
-	name   string
-	status *fornaxv1.ApplicationStatus
+type ApplicationStatusChangeMap struct {
+	changes map[string]*fornaxv1.ApplicationStatus
+	mu      sync.Mutex
+}
+
+// it assume application status is calcualted by application sync is always sequencially
+// when there are multiple status of same application,
+// the later one is supposed to be newer status, so, we only keep newer status,
+// update applciation with latest status of application
+func (ascm *ApplicationStatusChangeMap) addStatusChange(name string, status *fornaxv1.ApplicationStatus, replace bool) {
+	ascm.mu.Lock()
+	defer ascm.mu.Unlock()
+	if _, found := ascm.changes[name]; found {
+		if replace {
+			ascm.changes[name] = status
+		}
+	} else {
+		ascm.changes[name] = status
+	}
+}
+
+func (ascm *ApplicationStatusChangeMap) getAndRemoveStatusChangeSnapshot() map[string]*fornaxv1.ApplicationStatus {
+	ascm.mu.Lock()
+	defer ascm.mu.Unlock()
+	updatedStatus := map[string]*fornaxv1.ApplicationStatus{}
+	for name, v := range ascm.changes {
+		updatedStatus[name] = v
+	}
+
+	for name := range updatedStatus {
+		delete(ascm.changes, name)
+	}
+	return updatedStatus
 }
 
 type ApplicationStatusManager struct {
 	applicationLister listerv1.ApplicationLister
-	statusUpdate      chan ApplicationStatusUpdate
-	appStatus         map[string]*fornaxv1.ApplicationStatus
+	statusUpdateCh    chan string
+	statusChanges     *ApplicationStatusChangeMap
 }
 
 func NewApplicationStatusManager(appLister listerv1.ApplicationLister) *ApplicationStatusManager {
 	return &ApplicationStatusManager{
 		applicationLister: appLister,
-		statusUpdate:      make(chan ApplicationStatusUpdate, 500),
-		appStatus:         map[string]*fornaxv1.ApplicationStatus{},
+		statusUpdateCh:    make(chan string, 500),
+		statusChanges: &ApplicationStatusChangeMap{
+			changes: map[string]*fornaxv1.ApplicationStatus{},
+			mu:      sync.Mutex{},
+		},
 	}
 }
 
@@ -67,48 +101,34 @@ func (asm *ApplicationStatusManager) Run(ctx context.Context) {
 			select {
 			case <-ctx.Done():
 				break
-			case update := <-asm.statusUpdate:
-				// it assume application status is calcualted by application sync is always sequencially
-				// when there are multiple status of same application in channel ,
-				// the later one is supposed to be newer status, so, we only keep newer status,
-				// after received all updates in channel, update latest status of application
-				asm.appStatus[update.name] = update.status
-				remainingLen := len(asm.statusUpdate)
+			case <-asm.statusUpdateCh:
+				// consume all signal in channel
+				remainingLen := len(asm.statusUpdateCh)
 				for i := 0; i < remainingLen; i++ {
-					update := <-asm.statusUpdate
-					asm.appStatus[update.name] = update.status
+					<-asm.statusUpdateCh
 				}
-
-				hasError := false
-				updatedApps := []string{}
-				for app, status := range asm.appStatus {
-					if app == FornaxCore_ApplicationStatusManager_Retry {
-						// FornaxCore_ApplicationStatusManager_Retry app is fake application sinal used to trigger retry
-						continue
-					}
+				sessionStatuses := asm.statusChanges.getAndRemoveStatusChangeSnapshot()
+				failedApps := map[string]*fornaxv1.ApplicationStatus{}
+				for app, status := range sessionStatuses {
 					err := asm.updateApplicationStatus(app, status)
-					if err == nil {
-						updatedApps = append(updatedApps, app)
-					} else {
-						hasError = true
+					if err != nil {
+						failedApps[app] = status
 						klog.ErrorS(err, "Failed to update application status", "application", app)
 					}
 				}
-				for _, v := range updatedApps {
-					delete(asm.appStatus, v)
-				}
 
-				time.Sleep(50 * time.Millisecond)
 				// a trick to retry, all failed status update are still in map, send a fake update to retry,
 				// it's bit risky, if some guy put a lot of event into channel before we can put a retry signal, it will stuck
 				// checking channel current length must be zero could mitigate a bit
-				if hasError {
-					if len(asm.statusUpdate) == 0 {
-						asm.statusUpdate <- ApplicationStatusUpdate{
-							name:   FornaxCore_ApplicationStatusManager_Retry,
-							status: &fornaxv1.ApplicationStatus{},
-						}
+				for name, status := range failedApps {
+					// use false replace flag, when there is new status in map, do not replace it
+					asm.statusChanges.addStatusChange(name, status, false)
+					if len(asm.statusUpdateCh) == 0 {
+						asm.statusUpdateCh <- FornaxCore_ApplicationStatusManager_Retry
 					}
+				}
+				if len(failedApps) > 0 {
+					time.Sleep(10 * time.Millisecond)
 				}
 			}
 		}
@@ -116,10 +136,11 @@ func (asm *ApplicationStatusManager) Run(ctx context.Context) {
 }
 
 func (asm *ApplicationStatusManager) UpdateApplicationStatus(application *fornaxv1.Application, newStatus *fornaxv1.ApplicationStatus) {
-	asm.statusUpdate <- ApplicationStatusUpdate{
-		name:   util.Name(application),
-		status: newStatus.DeepCopy(),
+	asm.statusChanges.addStatusChange(util.Name(application), newStatus, true)
+	if len(asm.statusUpdateCh) == 0 {
+		asm.statusUpdateCh <- util.Name(application)
 	}
+	return
 }
 
 // updateApplicationStatus attempts to update the Status of the given Application and return updated Application

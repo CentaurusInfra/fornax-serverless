@@ -20,6 +20,7 @@ import (
 	"context"
 	"fmt"
 	"reflect"
+	"sync"
 	"time"
 
 	fornaxv1 "centaurusinfra.io/fornax-serverless/pkg/apis/core/v1"
@@ -36,9 +37,9 @@ import (
 
 var _ ie.SessionManagerInterface = &sessionManager{}
 
-type sessionStatus struct {
-	sessionName string
-	status      *fornaxv1.ApplicationSessionStatus
+type SessionStatusChangeMap struct {
+	changes map[string]*fornaxv1.ApplicationSessionStatus
+	mu      sync.Mutex
 }
 
 type sessionManager struct {
@@ -46,8 +47,34 @@ type sessionManager struct {
 	nodeAgentClient nodeagent.NodeAgentClient
 	podManager      ie.PodManagerInterface
 	watchers        []chan<- interface{}
-	statusUpdateCh  chan *sessionStatus
-	sessionStatus   map[string]*sessionStatus
+	statusUpdateCh  chan string
+	statusChanges   *SessionStatusChangeMap
+}
+
+func (sscm *SessionStatusChangeMap) addSessionStatusChange(name string, status *fornaxv1.ApplicationSessionStatus, replace bool) {
+	sscm.mu.Lock()
+	defer sscm.mu.Unlock()
+	if _, found := sscm.changes[name]; found {
+		if replace {
+			sscm.changes[name] = status
+		}
+	} else {
+		sscm.changes[name] = status
+	}
+}
+
+func (sscm *SessionStatusChangeMap) getAndRemoveStatusChangeSnapshot() map[string]*fornaxv1.ApplicationSessionStatus {
+	sscm.mu.Lock()
+	defer sscm.mu.Unlock()
+	updatedSessions := map[string]*fornaxv1.ApplicationSessionStatus{}
+	for name, v := range sscm.changes {
+		updatedSessions[name] = v
+	}
+
+	for name := range updatedSessions {
+		delete(sscm.changes, name)
+	}
+	return updatedSessions
 }
 
 func NewSessionManager(ctx context.Context, nodeAgentProxy nodeagent.NodeAgentClient, podManager ie.PodManagerInterface) *sessionManager {
@@ -55,13 +82,17 @@ func NewSessionManager(ctx context.Context, nodeAgentProxy nodeagent.NodeAgentCl
 		ctx:             ctx,
 		nodeAgentClient: nodeAgentProxy,
 		podManager:      podManager,
-		statusUpdateCh:  make(chan *sessionStatus, 500),
-		sessionStatus:   map[string]*sessionStatus{},
+		statusUpdateCh:  make(chan string, 500),
+		statusChanges: &SessionStatusChangeMap{
+			changes: map[string]*fornaxv1.ApplicationSessionStatus{},
+			mu:      sync.Mutex{},
+		},
 	}
 	return mgr
 }
 
-// Run receive session status from channel and update session status use api service client
+// Run receive session status signal from channel and grab a snapshot of session status change from session statua map, and update api server,
+// snap shot is removed from session status change map, if any session status update failed, put it back if there is no new status
 func (sm *sessionManager) Run(ctx context.Context) {
 	klog.Info("Starting fornaxv1 session status manager")
 
@@ -73,43 +104,35 @@ func (sm *sessionManager) Run(ctx context.Context) {
 			select {
 			case <-ctx.Done():
 				break
-			case update := <-sm.statusUpdateCh:
-				sm.sessionStatus[update.sessionName] = update
+			case <-sm.statusUpdateCh:
+				// consume all signal in current channel
 				remainingLen := len(sm.statusUpdateCh)
 				for i := 0; i < remainingLen; i++ {
-					update := <-sm.statusUpdateCh
-					sm.sessionStatus[update.sessionName] = update
+					<-sm.statusUpdateCh
 				}
-
-				hasError := false
-				updatedSessions := []string{}
-				for session, status := range sm.sessionStatus {
-					if session == FornaxCore_SessionStatusManager_Retry {
-						continue
+				sessionStatuses := sm.statusChanges.getAndRemoveStatusChangeSnapshot()
+				klog.InfoS("GWJ Update session status", "len", len(sessionStatuses))
+				failedSessions := map[string]*fornaxv1.ApplicationSessionStatus{}
+				for name, status := range sessionStatuses {
+					err := sm.updateSessionStatus(name, status)
+					if err != nil {
+						failedSessions[name] = status
+						klog.ErrorS(err, "Failed to update session status", "session", name)
 					}
-					err := sm.updateSessionStatus(status.sessionName, status.status)
-					if err == nil {
-						updatedSessions = append(updatedSessions, session)
-					} else {
-						hasError = true
-						klog.ErrorS(err, "Failed to update session status", "session", session)
-					}
-				}
-				for _, v := range updatedSessions {
-					delete(sm.sessionStatus, v)
 				}
 
 				// a trick to retry, all failed status update are still in map, send a fake update to retry,
-				// it's bit risky, if some guy put a lot of event into channel before we can put a retry signal, it will stuck
-				// checking channel current length must be zero could mitigate a bit
-				if hasError {
-					time.Sleep(50 * time.Millisecond)
+				// it's bit risky, if some guy put a lot of event into channel before we can put a retry signal,
+				// it will stuck checking channel current length must be zero could mitigate a bit
+				for name, status := range failedSessions {
+					// use false replace flag, when there is new status in map, do not replace it
+					sm.statusChanges.addSessionStatusChange(name, status, false)
 					if len(sm.statusUpdateCh) == 0 {
-						sm.statusUpdateCh <- &sessionStatus{
-							sessionName: FornaxCore_SessionStatusManager_Retry,
-							status:      &fornaxv1.ApplicationSessionStatus{},
-						}
+						sm.statusUpdateCh <- FornaxCore_SessionStatusManager_Retry
 					}
+				}
+				if len(failedSessions) > 0 {
+					time.Sleep(10 * time.Millisecond)
 				}
 			}
 		}
@@ -150,11 +173,11 @@ func (sm *sessionManager) OpenSession(pod *v1.Pod, session *fornaxv1.Application
 	}
 }
 
-// UpdateApplicationSessionStatus send status update into a channel to asynchronously update session status
+// UpdateApplicationSessionStatus put updated status into a map send singal into a channel to asynchronously update session status
 func (sm *sessionManager) UpdateSessionStatus(session *fornaxv1.ApplicationSession, newStatus *fornaxv1.ApplicationSessionStatus) error {
-	sm.statusUpdateCh <- &sessionStatus{
-		sessionName: util.Name(session),
-		status:      newStatus,
+	sm.statusChanges.addSessionStatusChange(util.Name(session), newStatus, true)
+	if len(sm.statusUpdateCh) == 0 {
+		sm.statusUpdateCh <- util.Name(session)
 	}
 	return nil
 }

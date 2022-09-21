@@ -327,7 +327,7 @@ func waitForSessionTearDown(namespace, appName string, sessions []*TestSession) 
 	if len(sessions) > 0 {
 		klog.Infof("waiting for %d sessions of app %s teardown", len(sessions), appName)
 		for {
-			time.Sleep(500 * time.Millisecond)
+			time.Sleep(1000 * time.Millisecond)
 			app, err := describeApplication(namespace, appName)
 			if err != nil {
 				continue
@@ -365,7 +365,7 @@ func waitForSessionSetup(namespace, appName string, sessions TestSessionArray) {
 	if len(sessions) > 0 {
 		klog.Infof("waiting for %d sessions of app %s setup", len(sessions), appName)
 		for {
-			time.Sleep(500 * time.Millisecond)
+			time.Sleep(1000 * time.Millisecond)
 			allSetup := true
 			for _, ts := range sessions {
 				if ts.status != fornaxv1.SessionStatusPending {
@@ -399,10 +399,6 @@ func waitForSessionSetup(namespace, appName string, sessions TestSessionArray) {
 				break
 			}
 		}
-
-		oneTestCycleSessionsLock.Lock()
-		oneTestCycleSessions = append(oneTestCycleSessions, sessions...)
-		defer oneTestCycleSessionsLock.Unlock()
 	}
 }
 
@@ -556,7 +552,7 @@ func summaryAppTestResult(apps TestApplicationArray, st, et int64) {
 	p99 := apps[len(apps)*99/100]
 	p90 := apps[len(apps)*90/100]
 	p50 := apps[len(apps)*50/100]
-	klog.Infof("Every App setup %d instances, total instances %d setup in %d milli seconds", apps[0].warmUpInstances, len(apps)*apps[0].warmUpInstances, et-st)
+	klog.Infof("%d App created, Every App setup %d instances, total instances %d setup in %d milli seconds", len(apps), apps[0].warmUpInstances, len(apps)*apps[0].warmUpInstances, et-st)
 	klog.Infof("App setup time: p99 %d milli seconds", p99.availableTimeMilli-p99.creationTimeMilli)
 	klog.Infof("App setup time: p90 %d milli seconds", p90.availableTimeMilli-p90.creationTimeMilli)
 	klog.Infof("App setup time: p50 %d milli seconds", p50.availableTimeMilli-p50.creationTimeMilli)

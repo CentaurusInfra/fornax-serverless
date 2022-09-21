@@ -37,143 +37,6 @@ const (
 	HouseKeepingDuration                 = 1 * time.Minute
 )
 
-type ApplicationSessionSummary struct {
-	pendingCount  int32
-	startingCount int32
-	idleCount     int32
-	inUseCount    int32
-	timeoutCount  int32
-	closedCount   int32
-	deletingCount int32
-}
-
-func (pool *ApplicationPool) sessionLength() int {
-	pool.mu.RLock()
-	defer pool.mu.RUnlock()
-	return len(pool.sessions)
-}
-
-func (pool *ApplicationPool) sessionList() []*fornaxv1.ApplicationSession {
-	pool.mu.RLock()
-	defer pool.mu.RUnlock()
-	keys := []*fornaxv1.ApplicationSession{}
-	for _, v := range pool.sessions {
-		keys = append(keys, v)
-	}
-	return keys
-}
-
-func (pool *ApplicationPool) summarySession() ApplicationSessionSummary {
-	summary := ApplicationSessionSummary{}
-	sessions := pool.sessionList()
-	for _, v := range sessions {
-		if v.DeletionTimestamp == nil {
-			if v.Status.SessionStatus == fornaxv1.SessionStatusUnspecified || v.Status.SessionStatus == fornaxv1.SessionStatusPending {
-				summary.pendingCount += 1
-			} else if v.Status.SessionStatus == fornaxv1.SessionStatusAvailable {
-				summary.idleCount += 1
-			} else if v.Status.SessionStatus == fornaxv1.SessionStatusStarting {
-				summary.startingCount += 1
-			} else if v.Status.SessionStatus == fornaxv1.SessionStatusOccupied {
-				summary.inUseCount += 1
-			} else if v.Status.SessionStatus == fornaxv1.SessionStatusClosed {
-				summary.closedCount += 1
-			} else if v.Status.SessionStatus == fornaxv1.SessionStatusTimeout {
-				summary.timeoutCount += 1
-			} else {
-				summary.pendingCount += 1
-			}
-		} else {
-			summary.deletingCount += 1
-		}
-	}
-	return summary
-}
-
-func (pool *ApplicationPool) getSession(key string) *fornaxv1.ApplicationSession {
-	pool.mu.RLock()
-	defer pool.mu.RUnlock()
-	return pool._getSessionNoLock(key)
-}
-
-func (pool *ApplicationPool) _getSessionNoLock(key string) *fornaxv1.ApplicationSession {
-	if v, found := pool.sessions[key]; found {
-		return v
-	}
-
-	return nil
-}
-
-func (pool *ApplicationPool) addSession(key string, session *fornaxv1.ApplicationSession) {
-	pool.mu.Lock()
-	defer pool.mu.Unlock()
-	if session.Status.PodReference != nil {
-		podName := session.Status.PodReference.Name
-		pool._addOrUpdatePodNoLock(podName, PodStateAllocated, []string{string(session.GetUID())})
-	}
-	pool.sessions[key] = session
-}
-
-func (pool *ApplicationPool) deleteSession(session *fornaxv1.ApplicationSession) {
-	pool.mu.Lock()
-	defer pool.mu.Unlock()
-	sessionId := string(session.GetUID())
-	if session.Status.PodReference != nil {
-		podName := session.Status.PodReference.Name
-		for _, v := range pool.pods {
-			if pod, found := v[podName]; found {
-				delete(pod.sessions, sessionId)
-				if len(pod.sessions) == 0 && pod.state == PodStateAllocated {
-					// only allow from allocated => idle when delete a session from this pod
-					delete(v, podName)
-					pod.state = PodStateIdle
-					pool.pods[PodStateIdle][podName] = pod
-				}
-				break
-			}
-		}
-	}
-	delete(pool.sessions, sessionId)
-}
-
-// groupSessionsByState return a list of session of different states,
-// pending, not assigned to pod yet
-// deleting, delete requested
-// timeout, session timedout to get a pod, or session assigned to node, but timeout to get session state from node
-// active, session assigned to pod, waiting for started by pod or being used or waiting for connection
-func (pool *ApplicationPool) groupSessionsByState() (pendingSessions, deletingSessions, closingSessions, timeoutSessions, activeSessions []*fornaxv1.ApplicationSession) {
-	sessions := pool.sessionList()
-	for _, v := range sessions {
-		timeoutDuration := DefaultSessionOpenTimeoutDuration
-		if v.Spec.OpenTimeoutSeconds > 0 {
-			timeoutDuration = time.Duration(v.Spec.OpenTimeoutSeconds) * time.Second
-		}
-		pendingTimeoutTimeStamp := time.Now().Add(-1 * timeoutDuration)
-		if util.SessionIsClosing(v) {
-			closingSessions = append(closingSessions, v)
-		} else if v.DeletionTimestamp != nil {
-			deletingSessions = append(deletingSessions, v)
-		} else {
-			if util.SessionIsPending(v) {
-				if v.CreationTimestamp.Time.Before(pendingTimeoutTimeStamp) {
-					timeoutSessions = append(timeoutSessions, v)
-				} else {
-					pendingSessions = append(pendingSessions, v)
-				}
-			} else if v.Status.SessionStatus == fornaxv1.SessionStatusStarting {
-				if v.CreationTimestamp.Time.Before(pendingTimeoutTimeStamp) {
-					timeoutSessions = append(timeoutSessions, v)
-				} else {
-					activeSessions = append(activeSessions, v)
-				}
-			} else if util.SessionIsOpen(v) {
-				activeSessions = append(activeSessions, v)
-			}
-		}
-	}
-	return pendingSessions, deletingSessions, closingSessions, timeoutSessions, activeSessions
-}
-
 // treat node as authority for session status, session status from node could be Starting, Available, Closed,
 // use status from node always, then session will be closed if session is already deleted
 func (am *ApplicationManager) onSessionEventFromNode(se *ie.SessionEvent) error {
@@ -199,11 +62,20 @@ func (am *ApplicationManager) onSessionEventFromNode(se *ie.SessionEvent) error 
 		}
 	} else {
 		if util.SessionIsOpen(session) && oldCopy.DeletionTimestamp != nil {
-			// session was requested to delete, save old copy's deletiontimestamp and close session
+			// session was requested to delete by application, save old copy's deletiontimestamp and close session
 			session.DeletionTimestamp = oldCopy.DeletionTimestamp
 			am.sessionManager.CloseSession(pod, session)
 		}
-		// set status to avoid double trigger onApplicationSessionUpdateEvent when etcd updated
+		// set available and close time when received in fornax core, for perf benchmark
+		if session.Status.SessionStatus == fornaxv1.SessionStatusAvailable {
+			session.Status.AvailableTime = util.NewCurrentMetaTimeNormallized()
+			session.Status.AvailableTimeMicro = time.Now().UnixMicro()
+		}
+
+		if session.Status.SessionStatus == fornaxv1.SessionStatusClosed {
+			session.Status.CloseTime = util.NewCurrentMetaTimeNormallized()
+		}
+
 		am.onApplicationSessionUpdateEvent(oldCopy, session)
 		// update session in go routine, this is persist status change to return by api server
 		am.sessionManager.UpdateSessionStatus(oldCopy.DeepCopy(), session.Status.DeepCopy())
@@ -231,9 +103,8 @@ func (am *ApplicationManager) getSessionApplicationKey(session *fornaxv1.Applica
 
 // add active session into application's session pool and delete terminal session from pool
 // add session/delete session will update pod state according pod's session usage
-func (am *ApplicationManager) updateSessionPool(applicationKey string, session *fornaxv1.ApplicationSession) {
+func (am *ApplicationManager) updateSessionPool(pool *ApplicationPool, session *fornaxv1.ApplicationSession) {
 	sessionId := string(session.GetUID())
-	pool := am.getOrCreateApplicationPool(applicationKey)
 	if util.SessionInTerminalState(session) {
 		pool.deleteSession(session)
 	} else {
@@ -254,10 +125,11 @@ func (am *ApplicationManager) onApplicationSessionAddEvent(obj interface{}) {
 	}
 	sessionKey := util.Name(session)
 	applicationKey := am.getSessionApplicationKey(session)
+	pool := am.getOrCreateApplicationPool(applicationKey)
 
 	if !util.SessionInTerminalState(session) {
 		klog.InfoS("Application session created", "session", sessionKey)
-		am.updateSessionPool(applicationKey, session)
+		am.updateSessionPool(pool, session)
 		am.enqueueApplication(applicationKey)
 	}
 }
@@ -283,16 +155,16 @@ func (am *ApplicationManager) onApplicationSessionUpdateEvent(old, cur interface
 		// if cached copy is already closed, do not use new status, data could be old since etcd is asynchronously updated.
 		oldCopy = v.DeepCopy()
 		if util.SessionInTerminalState(oldCopy) {
-			am.updateSessionPool(applicationKey, oldCopy)
+			am.updateSessionPool(pool, oldCopy)
 		} else {
-			am.updateSessionPool(applicationKey, newCopy)
+			am.updateSessionPool(pool, newCopy)
 		}
 	} else {
 		// do not need to add a new session if it's terminated
 		if util.SessionInTerminalState(newCopy) {
 			return
 		}
-		am.updateSessionPool(applicationKey, newCopy)
+		am.updateSessionPool(pool, newCopy)
 	}
 
 	if (newCopy.DeletionTimestamp != nil && oldCopy.DeletionTimestamp == nil) || !reflect.DeepEqual(oldCopy.Status, newCopy.Status) {
@@ -322,7 +194,8 @@ func (am *ApplicationManager) onApplicationSessionDeleteEvent(obj interface{}) {
 	}
 
 	applicationKey := am.getSessionApplicationKey(session)
-	am.updateSessionPool(applicationKey, session)
+	pool := am.getOrCreateApplicationPool(applicationKey)
+	am.updateSessionPool(pool, session)
 	// delete a closed or timeout session does not impact application at all, no need to sync
 	if !util.SessionInTerminalState(session) {
 		klog.InfoS("Application session deleted", "session", sessionKey, "status", session.Status, "finalizer", session.Finalizers)
@@ -331,12 +204,9 @@ func (am *ApplicationManager) onApplicationSessionDeleteEvent(obj interface{}) {
 }
 
 // return sum of of all in use, idle, pending session, and all pending sessions
-func (am *ApplicationManager) getTotalAndPendingSessionNum(applicationKey string) (int, int) {
-	if pool := am.getApplicationPool(applicationKey); pool != nil {
-		summary := pool.summarySession()
-		return int(summary.idleCount + summary.inUseCount + summary.pendingCount + summary.startingCount + summary.deletingCount), int(summary.pendingCount)
-	}
-	return 0, 0
+func (am *ApplicationManager) getTotalAndPendingSessionNum(pool *ApplicationPool) (int, int) {
+	summary := pool.summarySession()
+	return int(summary.idleCount + summary.inUseCount + summary.pendingCount + summary.startingCount + summary.deletingCount), int(summary.pendingCount)
 }
 
 type PendingSessions []*fornaxv1.ApplicationSession
@@ -362,15 +232,11 @@ func (ps PendingSessions) Swap(i, j int) {
 // It also cleanup session in deletingSessions when a session is in Starting or Pending state for more than a timeout duration.
 // session is changed to SessionStatusClosed, session client need to create a new session.
 // session timedout and closed are removed from application pool's session list, so, syncApplicationPods do not need to consider these sessions anymore
-func (am *ApplicationManager) syncApplicationSessions(applicationKey string, application *fornaxv1.Application) error {
-	pool := am.getApplicationPool(applicationKey)
-	if pool == nil {
-		return nil
-	}
+func (am *ApplicationManager) syncApplicationSessions(pool *ApplicationPool, application *fornaxv1.Application) error {
 	pendingSessions, deletingSessions, _, timeoutSessions, runningSessions := pool.groupSessionsByState()
 	// get 5 more in case some pods assigment failed
 	idlePods := pool.getSomeIdlePods(len(pendingSessions))
-	klog.InfoS("Syncing application pending session", "application", applicationKey, "#running", len(runningSessions), "#pending", len(pendingSessions), "#deleting", len(deletingSessions), "#timeout", len(timeoutSessions))
+	klog.InfoS("Syncing application pending session", "application", pool.appName, "#running", len(runningSessions), "#pending", len(pendingSessions), "#deleting", len(deletingSessions), "#timeout", len(timeoutSessions))
 
 	sort.Sort(PendingSessions(pendingSessions))
 	sessionErrors := []error{}
@@ -385,10 +251,11 @@ func (am *ApplicationManager) syncApplicationSessions(applicationKey string, app
 		if pod != nil {
 			// update session status and set access point of session
 			session := pendingSessions[si]
-			err := am.bindSessionToPod(applicationKey, pod, session)
+			klog.InfoS("Assign session to pod", "application", pool.appName, "pod", util.Name(pod), "session", util.Name(session))
+			err := am.bindSessionToPod(pod, session)
 			if err != nil {
 				// move to next pod, it could fail to accept other session also
-				klog.ErrorS(err, "Failed to open session on pod", "app", applicationKey, "session", session.Name, "pod", util.Name(pod))
+				klog.ErrorS(err, "Failed to open session on pod", "app", pool.appName, "session", session.Name, "pod", util.Name(pod))
 				sessionErrors = append(sessionErrors, err)
 				continue
 			} else {
@@ -455,8 +322,7 @@ func (am *ApplicationManager) deleteApplicationSession(pool *ApplicationPool, se
 }
 
 // change sessions status to starting and set access point
-func (am *ApplicationManager) bindSessionToPod(applicationKey string, pod *v1.Pod, session *fornaxv1.ApplicationSession) error {
-	klog.InfoS("Assign session to pod", "application", applicationKey, "pod", util.Name(pod), "session", util.Name(session))
+func (am *ApplicationManager) bindSessionToPod(pod *v1.Pod, session *fornaxv1.ApplicationSession) error {
 	newStatus := session.Status.DeepCopy()
 	newStatus.SessionStatus = fornaxv1.SessionStatusStarting
 	for _, cont := range pod.Spec.Containers {

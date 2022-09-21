@@ -108,7 +108,7 @@ func (am *ApplicationManager) updateSessionPool(pool *ApplicationPool, session *
 	if util.SessionInTerminalState(session) {
 		pool.deleteSession(session)
 	} else {
-		// a trick to make sure pending session are sorted according micro second, api server normallize cretion timestamp to second
+		// a trick to make sure pending session are sorted using micro second, api server truncate creation timestamp to second
 		session.CreationTimestamp = *util.NewCurrentMetaTime()
 		pool.addSession(sessionId, session)
 	}
@@ -203,12 +203,6 @@ func (am *ApplicationManager) onApplicationSessionDeleteEvent(obj interface{}) {
 	}
 }
 
-// return sum of of all in use, idle, pending session, and all pending sessions
-func (am *ApplicationManager) getTotalAndPendingSessionNum(pool *ApplicationPool) (int, int) {
-	summary := pool.summarySession()
-	return int(summary.idleCount + summary.inUseCount + summary.pendingCount + summary.startingCount + summary.deletingCount), int(summary.pendingCount)
-}
-
 type PendingSessions []*fornaxv1.ApplicationSession
 
 func (ps PendingSessions) Len() int {
@@ -224,7 +218,7 @@ func (ps PendingSessions) Swap(i, j int) {
 	ps[i], ps[j] = ps[j], ps[i]
 }
 
-// syncApplicationSessions grab a list of pending session and try to allocate them to pods and call OpenSession on choosen pod.
+// deployApplicationSessions grab a list of pending session and try to allocate them to pods and call OpenSession on choosen pod.
 // session status change in memory to SessionStatusStarting, but do not update etcd to avoid unnecessary resync.
 // session status will be changed in etcd until pod report back, if fornax core restart and lost these memory state, it rely on pod to report back.
 // It also cleanup session when a session is in Starting or Pending state for more than a timeout duration.
@@ -232,7 +226,7 @@ func (ps PendingSessions) Swap(i, j int) {
 // It also cleanup session in deletingSessions when a session is in Starting or Pending state for more than a timeout duration.
 // session is changed to SessionStatusClosed, session client need to create a new session.
 // session timedout and closed are removed from application pool's session list, so, syncApplicationPods do not need to consider these sessions anymore
-func (am *ApplicationManager) syncApplicationSessions(pool *ApplicationPool, application *fornaxv1.Application) error {
+func (am *ApplicationManager) deployApplicationSessions(pool *ApplicationPool, application *fornaxv1.Application) error {
 	pendingSessions, deletingSessions, _, timeoutSessions, runningSessions := pool.groupSessionsByState()
 	// get 5 more in case some pods assigment failed
 	idlePods := pool.getSomeIdlePods(len(pendingSessions))
@@ -381,9 +375,9 @@ func (am *ApplicationManager) closeApplicationSession(session *fornaxv1.Applicat
 // and does not try to call node to close session, as session does not exist at all on node when pod deleted
 func (am *ApplicationManager) cleanupSessionOnDeletedPod(pool *ApplicationPool, podName string) {
 	podSessions := pool.getPodSessions(podName)
-	for _, v := range podSessions {
-		klog.Infof("Delete sessions %s on deleted pod %s", util.Name(v), podName)
-		pool.deleteSession(v)
+	for _, session := range podSessions {
+		klog.Infof("Delete session %s on deleted pod %s", util.Name(session), podName)
+		pool.deleteSession(session)
 	}
 	// use go routine to update session status, as session has been remove from pool,
 	// update dead session status later will not impact sync application result

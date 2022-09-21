@@ -111,7 +111,6 @@ func (sm *sessionManager) Run(ctx context.Context) {
 					<-sm.statusUpdateCh
 				}
 				sessionStatuses := sm.statusChanges.getAndRemoveStatusChangeSnapshot()
-				klog.InfoS("GWJ Update session status", "len", len(sessionStatuses))
 				failedSessions := map[string]*fornaxv1.ApplicationSessionStatus{}
 				for name, status := range sessionStatuses {
 					err := sm.updateSessionStatus(name, status)

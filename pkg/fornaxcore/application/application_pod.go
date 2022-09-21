@@ -320,7 +320,7 @@ func (am *ApplicationManager) getPodsToBeDelete(pool *ApplicationPool, numOfDesi
 	podsToDelete := []*v1.Pod{}
 	candidates := 0
 
-	pendingPods := pool.podsOfState(PodStatePending)
+	pendingPods := pool.podListOfState(PodStatePending)
 	// add pod not yet scheduled
 	for _, p := range pendingPods {
 		pod := am.podManager.FindPod(p.podName)
@@ -358,7 +358,7 @@ func (am *ApplicationManager) getPodsToBeDelete(pool *ApplicationPool, numOfDesi
 	}
 
 	// add pod status is unknown from running idle pods
-	idlePods := pool.podsOfState(PodStateIdle)
+	idlePods := pool.podListOfState(PodStateIdle)
 	for _, p := range idlePods {
 		pod := am.podManager.FindPod(p.podName)
 		if pod == nil || pod.Status.Phase == v1.PodUnknown {
@@ -384,36 +384,35 @@ func (am *ApplicationManager) getPodsToBeDelete(pool *ApplicationPool, numOfDesi
 	return podsToDelete
 }
 
-func (am *ApplicationManager) syncApplicationPods(applicationKey string, application *fornaxv1.Application, numOfDesiredPod, numOfIdlePod int) error {
+func (am *ApplicationManager) deployApplicationPods(pool *ApplicationPool, application *fornaxv1.Application, numOfDesiredPod, numOfIdleOrPendingPod int) error {
 	var err error
 
-	desiredAddition := numOfDesiredPod - numOfIdlePod
+	desiredAddition := numOfDesiredPod - numOfIdleOrPendingPod
 	applicationBurst := util.ApplicationScalingBurst(application)
 	if desiredAddition > 0 {
 		if desiredAddition > applicationBurst {
 			desiredAddition = applicationBurst
 		}
 
-		klog.InfoS("Creating pods", "application", applicationKey, "addition", desiredAddition)
-		appPool := am.getOrCreateApplicationPool(applicationKey)
+		klog.InfoS("Creating pods", "application", pool.appName, "addition", desiredAddition)
 		createdPods := []*v1.Pod{}
 		createErrors := []error{}
 		for i := 0; i < desiredAddition; i++ {
 			pod, err := am.createApplicationPod(application)
 			if err != nil {
-				klog.ErrorS(err, "Create pod failed", "application", applicationKey)
+				klog.ErrorS(err, "Create pod failed", "application", pool.appName)
 				if apierrors.HasStatusCause(err, v1.NamespaceTerminatingCause) {
 					return nil
 				}
 				createErrors = append(createErrors, err)
 				continue
 			}
-			appPool.addOrUpdatePod(util.Name(pod), PodStatePending, []string{})
+			pool.addOrUpdatePod(util.Name(pod), PodStatePending, []string{})
 			createdPods = append(createdPods, pod)
 		}
 
 		if desiredAddition != len(createdPods) {
-			klog.ErrorS(err, "Application failed to create all needed pods", "application", applicationKey, "want", desiredAddition, "got", len(createdPods))
+			klog.ErrorS(err, "Application failed to create all needed pods", "application", pool.appName, "want", desiredAddition, "got", len(createdPods))
 			return errors.NewAggregate(createErrors)
 		}
 	} else if desiredAddition < 0 {
@@ -421,20 +420,19 @@ func (am *ApplicationManager) syncApplicationPods(applicationKey string, applica
 		if desiredSubstraction > applicationBurst {
 			desiredSubstraction = applicationBurst
 		}
-		klog.InfoS("Deleting pods", "application", applicationKey, "substraction", desiredSubstraction)
+		klog.InfoS("Deleting pods", "application", pool.appName, "substraction", desiredSubstraction)
 
 		// Choose which Pods to delete, preferring those in earlier phases of startup.
 		deleteErrors := []error{}
-		appPool := am.getOrCreateApplicationPool(applicationKey)
-		podsToDelete := am.getPodsToBeDelete(appPool, desiredSubstraction)
+		podsToDelete := am.getPodsToBeDelete(pool, desiredSubstraction)
 		for _, pod := range podsToDelete {
-			err := am.deleteApplicationPod(appPool, pod, false)
+			err := am.deleteApplicationPod(pool, pod, false)
 			if err != nil {
 				deleteErrors = append(deleteErrors, err)
 			}
 
 			if len(deleteErrors) > 0 {
-				klog.ErrorS(err, "Application failed to delete all not needed pods", "application", applicationKey, "delete", desiredSubstraction, "failed", len(deleteErrors))
+				klog.ErrorS(err, "Application failed to delete all not needed pods", "application", pool.appName, "delete", desiredSubstraction, "failed", len(deleteErrors))
 				return errors.NewAggregate(deleteErrors)
 			}
 		}

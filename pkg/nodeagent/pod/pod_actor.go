@@ -484,7 +484,7 @@ func (a *PodActor) handleSessionState(s internal.SessionState) {
 	}
 	newStatus.ClientSessions = clientSessions
 	if len(newStatus.ClientSessions) > 0 {
-		newStatus.SessionStatus = fornaxv1.SessionStatusOccupied
+		newStatus.SessionStatus = fornaxv1.SessionStatusInUse
 	}
 
 	if !reflect.DeepEqual(session.Session.Status, *newStatus) {

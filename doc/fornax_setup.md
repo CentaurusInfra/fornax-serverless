@@ -9,7 +9,7 @@ If you have a brand new machine, you may need to install following component to 
 ```script
 sudo apt-get update
 sudo apt install build-essential
-sudo snap install curl  # version 7.81.0
+sudo apt install curl
 sudo apt-get install vim
 sudo apt install git
 ```

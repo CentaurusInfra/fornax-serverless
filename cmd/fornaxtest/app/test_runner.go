@@ -93,6 +93,7 @@ func NewCommand() *cobra.Command {
 }
 
 func Run(ctx context.Context, testConfig config.TestConfiguration) {
+	// initApplicationSessionInformer(ctx)
 
 	RunTest := func(cycle int) {
 		wg := sync.WaitGroup{}

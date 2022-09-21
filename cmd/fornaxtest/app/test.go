@@ -27,6 +27,7 @@ import (
 	"centaurusinfra.io/fornax-serverless/cmd/fornaxtest/config"
 	fornaxv1 "centaurusinfra.io/fornax-serverless/pkg/apis/core/v1"
 	fornaxclient "centaurusinfra.io/fornax-serverless/pkg/client/clientset/versioned"
+	"centaurusinfra.io/fornax-serverless/pkg/client/informers/externalversions"
 	"centaurusinfra.io/fornax-serverless/pkg/util"
 	"github.com/google/uuid"
 
@@ -34,6 +35,7 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/tools/clientcmd"
 	_ "k8s.io/component-base/logs/json/register"
 	"k8s.io/klog/v2"
@@ -89,6 +91,87 @@ var (
 		OpenTimeoutSeconds:            10,
 	}
 )
+
+func initApplicationSessionInformer(ctx context.Context) {
+	sessionInformerFactory := externalversions.NewSharedInformerFactory(util.GetFornaxCoreApiClient(), 10*time.Minute)
+	applicationSessionInformer := sessionInformerFactory.Core().V1().ApplicationSessions()
+	applicationSessionInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
+		AddFunc:    onApplicationSessionAddEvent,
+		UpdateFunc: onApplicationSessionUpdateEvent,
+		DeleteFunc: onApplicationSessionDeleteEvent,
+	})
+	sessionInformerFactory.Start(ctx.Done())
+	synced := applicationSessionInformer.Informer().HasSynced
+	cache.WaitForNamedCacheSync(fornaxv1.ApplicationSessionKind.Kind, ctx.Done(), synced)
+}
+
+func onApplicationSessionAddEvent(obj interface{}) {
+	newCopy := obj.(*fornaxv1.ApplicationSession)
+	for _, v := range oneTestCycleSessions {
+		if v.session.GetUID() == newCopy.GetUID() {
+			fmt.Println(v.session.Name, newCopy.Status.SessionStatus)
+			v.status = newCopy.Status.SessionStatus
+			switch newCopy.Status.SessionStatus {
+			case fornaxv1.SessionStatusAvailable:
+				v.availableTimeMilli = time.Now().UnixMilli()
+			case fornaxv1.SessionStatusClosed:
+				v.availableTimeMilli = time.Now().UnixMilli()
+			case fornaxv1.SessionStatusTimeout:
+				v.availableTimeMilli = time.Now().UnixMilli()
+			}
+		}
+	}
+}
+
+// callback from Application informer when ApplicationSession is updated
+// or session status is reported back from node
+// if session in terminal state, remove this session from pool,
+// else add new copy into pool
+// do not need to sync application unless session is deleting or status changed
+func onApplicationSessionUpdateEvent(old, cur interface{}) {
+	// oldCopy := old.(*fornaxv1.ApplicationSession)
+	newCopy := cur.(*fornaxv1.ApplicationSession)
+	for _, v := range oneTestCycleSessions {
+		if v.session.GetUID() == newCopy.GetUID() {
+			fmt.Println(v.session.Name, newCopy.Status.SessionStatus)
+			v.status = newCopy.Status.SessionStatus
+			switch newCopy.Status.SessionStatus {
+			case fornaxv1.SessionStatusAvailable:
+				v.availableTimeMilli = time.Now().UnixMilli()
+			case fornaxv1.SessionStatusClosed:
+				v.availableTimeMilli = time.Now().UnixMilli()
+			case fornaxv1.SessionStatusTimeout:
+				v.availableTimeMilli = time.Now().UnixMilli()
+			}
+		}
+	}
+}
+
+// callback from Application informer when ApplicationSession is physically deleted
+func onApplicationSessionDeleteEvent(obj interface{}) {
+	// no op
+}
+
+func waitForSessionSetupNew(namespace, appName string, sessions TestSessionArray) {
+	if len(sessions) > 0 {
+		klog.Infof("waiting for %d sessions of app %s setup", len(sessions), appName)
+		for {
+			time.Sleep(500 * time.Millisecond)
+			allSetup := true
+			for _, ts := range sessions {
+				fmt.Println(*ts)
+				if ts.status == fornaxv1.SessionStatusPending {
+					allSetup = false
+					break
+				}
+			}
+
+			if allSetup {
+				break
+			}
+		}
+	}
+}
 
 func runAppFullCycleTest(namespace, appName string, testConfig config.TestConfiguration) {
 	application, err := describeApplication(namespace, appName)
@@ -208,6 +291,9 @@ func createAndWaitForSessionSetup(application *fornaxv1.Application, namespace, 
 	et := time.Now().UnixMilli()
 	if len(sessions) > 0 {
 		klog.Infof("%d sessions created in %d ms, rate %d/s", len(sessions), et-st, int64(len(sessions))*1000/(et-st))
+		oneTestCycleSessionsLock.Lock()
+		oneTestCycleSessions = append(oneTestCycleSessions, sessions...)
+		oneTestCycleSessionsLock.Unlock()
 	}
 	waitForSessionSetup(namespace, appName, sessions)
 	return sessions
@@ -224,11 +310,11 @@ func waitForAppSetup(ta *TestApplication) {
 				continue
 			}
 
-			if int(application.Status.RunningInstances) >= ta.warmUpInstances {
+			if int(application.Status.IdleInstances) >= ta.warmUpInstances {
 				ct := ta.creationTimeMilli
 				at := time.Now().UnixMilli()
 				ta.availableTimeMilli = at
-				klog.Infof("Application: %s took %d milli second to setup %d instances\n", application.Name, at-ct, application.Status.RunningInstances)
+				klog.Infof("Application: %s took %d milli second to setup %d instances\n", application.Name, at-ct, ta.warmUpInstances)
 				ta.availableTimeMilli = at
 				break
 			}
@@ -241,13 +327,13 @@ func waitForSessionTearDown(namespace, appName string, sessions []*TestSession) 
 	if len(sessions) > 0 {
 		klog.Infof("waiting for %d sessions of app %s teardown", len(sessions), appName)
 		for {
-			time.Sleep(500 * time.Millisecond)
+			time.Sleep(1000 * time.Millisecond)
 			app, err := describeApplication(namespace, appName)
 			if err != nil {
 				continue
 			}
 
-			if app == nil || app.Status.RunningInstances-app.Status.IdleInstances == 0 {
+			if app == nil || app.Status.AllocatedInstances == 0 {
 				// all instance are release or recreated
 				break
 			}
@@ -279,7 +365,7 @@ func waitForSessionSetup(namespace, appName string, sessions TestSessionArray) {
 	if len(sessions) > 0 {
 		klog.Infof("waiting for %d sessions of app %s setup", len(sessions), appName)
 		for {
-			time.Sleep(500 * time.Millisecond)
+			time.Sleep(1000 * time.Millisecond)
 			allSetup := true
 			for _, ts := range sessions {
 				if ts.status != fornaxv1.SessionStatusPending {
@@ -313,10 +399,6 @@ func waitForSessionSetup(namespace, appName string, sessions TestSessionArray) {
 				break
 			}
 		}
-
-		oneTestCycleSessionsLock.Lock()
-		oneTestCycleSessions = append(oneTestCycleSessions, sessions...)
-		defer oneTestCycleSessionsLock.Unlock()
 	}
 }
 
@@ -470,7 +552,7 @@ func summaryAppTestResult(apps TestApplicationArray, st, et int64) {
 	p99 := apps[len(apps)*99/100]
 	p90 := apps[len(apps)*90/100]
 	p50 := apps[len(apps)*50/100]
-	klog.Infof("Every App setup %d instances, total instances %d setup in %d milli seconds", apps[0].warmUpInstances, len(apps)*apps[0].warmUpInstances, et-st)
+	klog.Infof("%d App created, Every App setup %d instances, total instances %d setup in %d milli seconds", len(apps), apps[0].warmUpInstances, len(apps)*apps[0].warmUpInstances, et-st)
 	klog.Infof("App setup time: p99 %d milli seconds", p99.availableTimeMilli-p99.creationTimeMilli)
 	klog.Infof("App setup time: p90 %d milli seconds", p90.availableTimeMilli-p90.creationTimeMilli)
 	klog.Infof("App setup time: p50 %d milli seconds", p50.availableTimeMilli-p50.creationTimeMilli)

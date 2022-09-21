@@ -148,6 +148,7 @@ func (ps *podScheduler) bindNode(snode *SchedulableNode, pod *v1.Pod) error {
 	snode.LastUsed = time.Now()
 
 	// set pod status
+	pod.Status.StartTime = util.NewCurrentMetaTime()
 	pod.Status.HostIP = snode.Node.Status.Addresses[0].Address
 	pod.Status.Message = "Scheduled"
 	pod.Status.Reason = "Scheduled"
@@ -157,8 +158,6 @@ func (ps *podScheduler) bindNode(snode *SchedulableNode, pod *v1.Pod) error {
 	if err != nil {
 		klog.ErrorS(err, "Failed to bind pod, reschedule", "node", nodeId, "pod", podName)
 		ps.unbindNode(snode, pod)
-		pod.Status.Message = "Schedule failed"
-		pod.Status.Reason = "Schedule failed"
 		return err
 	}
 
@@ -169,7 +168,10 @@ func (ps *podScheduler) bindNode(snode *SchedulableNode, pod *v1.Pod) error {
 func (ps *podScheduler) unbindNode(node *SchedulableNode, pod *v1.Pod) {
 	resourceList := util.GetPodResourceList(pod)
 	node.ReleasePodOccupiedResourceList(resourceList)
+	pod.Status.StartTime = nil
 	pod.Status.HostIP = ""
+	pod.Status.Message = "Schedule failed"
+	pod.Status.Reason = "Schedule failed"
 }
 
 func (ps *podScheduler) schedulePod(pod *v1.Pod) {

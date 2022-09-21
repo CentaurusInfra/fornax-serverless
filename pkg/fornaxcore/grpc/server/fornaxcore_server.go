@@ -243,7 +243,7 @@ func (g *grpcServer) CloseSession(nodeIdentifier string, pod *v1.Pod, session *f
 
 	err := g.DispatchNodeMessage(nodeIdentifier, m)
 	if err != nil {
-		klog.ErrorS(err, "Failed to dispatch pod create message to node", "node", nodeIdentifier, "session", sessionIdentifier)
+		klog.ErrorS(err, "Failed to dispatch message to node", "node", nodeIdentifier, "session", sessionIdentifier)
 		return err
 	}
 	return nil
@@ -274,7 +274,7 @@ func (g *grpcServer) OpenSession(nodeIdentifier string, pod *v1.Pod, session *fo
 
 	err = g.DispatchNodeMessage(nodeIdentifier, m)
 	if err != nil {
-		klog.ErrorS(err, "Failed to dispatch pod create message to node", "node", nodeIdentifier, "session", sessionIdentifier)
+		klog.ErrorS(err, "Failed to dispatch message to node", "node", nodeIdentifier, "session", sessionIdentifier)
 		return err
 	}
 	return nil

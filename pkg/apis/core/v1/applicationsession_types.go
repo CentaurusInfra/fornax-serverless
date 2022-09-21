@@ -88,7 +88,7 @@ const (
 	SessionStatusAvailable SessionStatus = "Available"
 
 	// session is started on instance, session is being used
-	SessionStatusOccupied SessionStatus = "Occupied"
+	SessionStatusInUse SessionStatus = "InUse"
 
 	// session is closing on instance, wait for session client exit
 	SessionStatusClosing SessionStatus = "Closing"

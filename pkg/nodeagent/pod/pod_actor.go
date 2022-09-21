@@ -466,6 +466,9 @@ func (a *PodActor) handleSessionState(s internal.SessionState) {
 		newStatus.SessionStatus = fornaxv1.SessionStatusStarting
 	case types.SessionStateReady:
 		newStatus.SessionStatus = fornaxv1.SessionStatusAvailable
+		// for perf test metrics
+		newStatus.AvailableTime = util.NewCurrentMetaTime()
+		newStatus.AvailableTimeMicro = time.Now().UnixMicro()
 	case types.SessionStateClosed:
 		newStatus.SessionStatus = fornaxv1.SessionStatusClosed
 		newStatus.CloseTime = util.NewCurrentMetaTime()
@@ -481,7 +484,7 @@ func (a *PodActor) handleSessionState(s internal.SessionState) {
 	}
 	newStatus.ClientSessions = clientSessions
 	if len(newStatus.ClientSessions) > 0 {
-		newStatus.SessionStatus = fornaxv1.SessionStatusOccupied
+		newStatus.SessionStatus = fornaxv1.SessionStatusInUse
 	}
 
 	if !reflect.DeepEqual(session.Session.Status, *newStatus) {

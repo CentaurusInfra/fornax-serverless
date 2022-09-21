@@ -17,10 +17,14 @@ limitations under the License.
 package pod
 
 import (
+	"strings"
+
+	fornaxv1 "centaurusinfra.io/fornax-serverless/pkg/apis/core/v1"
 	"centaurusinfra.io/fornax-serverless/pkg/fornaxcore/grpc"
 	"centaurusinfra.io/fornax-serverless/pkg/nodeagent/session"
 	"centaurusinfra.io/fornax-serverless/pkg/nodeagent/types"
 	fornaxtypes "centaurusinfra.io/fornax-serverless/pkg/nodeagent/types"
+	"centaurusinfra.io/fornax-serverless/pkg/util"
 	criv1 "k8s.io/cri-api/pkg/apis/runtime/v1"
 )
 
@@ -42,18 +46,32 @@ func BuildFornaxcoreGrpcPodStateForTerminatedPod(nodeRevision int64, pod *fornax
 }
 
 func BuildFornaxcoreGrpcPodState(nodeRevision int64, pod *fornaxtypes.FornaxPod) *grpc.FornaxCoreMessage {
+	sessionLables := []string{}
 	sessionStates := []*grpc.SessionState{}
-	for _, v := range pod.Sessions {
-		s := session.BuildFornaxcoreGrpcSessionState(nodeRevision, v)
-		sessionStates = append(sessionStates, s.GetSessionState())
+	// pod only report sessions currently bundle on it, session termninated state is supposed by reported already
+	// fornax core use session states in pod state to delete sessions which is not found
+	for _, sess := range pod.Sessions {
+		if !util.SessionInTerminalState(sess.Session) {
+			s := session.BuildFornaxcoreGrpcSessionState(nodeRevision, sess)
+			sessionStates = append(sessionStates, s.GetSessionState())
+			sessionLables = append(sessionLables, util.Name(sess.Session))
+		}
 	}
+
+	podWithSession := pod.Pod.DeepCopy()
+	if len(sessionLables) > 0 {
+		podWithSession.GetLabels()[fornaxv1.LabelFornaxCoreApplicationSession] = strings.Join(sessionLables, ",")
+	} else {
+		delete(podWithSession.GetLabels(), fornaxv1.LabelFornaxCoreApplicationSession)
+	}
+
 	s := grpc.PodState{
-		NodeRevision: nodeRevision,
-		State:        PodStateToFornaxState(pod),
-		Pod:          pod.Pod.DeepCopy(),
-		// TODO
-		Resource:      &grpc.PodResource{},
+		NodeRevision:  nodeRevision,
+		State:         PodStateToFornaxState(pod),
+		Pod:           podWithSession,
 		SessionStates: sessionStates,
+		// TODO
+		Resource: &grpc.PodResource{},
 	}
 	messageType := grpc.MessageType_POD_STATE
 	return &grpc.FornaxCoreMessage{

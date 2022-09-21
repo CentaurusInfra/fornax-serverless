@@ -409,6 +409,7 @@ func (n *SimulationNodeActor) onSessionOpenCommand(msg *fornaxgrpc.SessionOpen) 
 			fpod.Sessions[sessId] = fsess
 			fsess.Session.Status.SessionStatus = fornaxv1.SessionStatusAvailable
 			n.notify(n.fornoxCoreRef, session.BuildFornaxcoreGrpcSessionState(revision, fsess))
+			klog.InfoS("Opened session", "session", msg.SessionIdentifier, "pod", msg.PodIdentifier, "node", n.node.V1Node.Name)
 		}()
 	}
 	return nil
@@ -431,8 +432,8 @@ func (n *SimulationNodeActor) onSessionCloseCommand(msg *fornaxgrpc.SessionClose
 				revision := n.incrementNodeRevision()
 				fsess.Session.ResourceVersion = fmt.Sprint(revision)
 				fsess.Session.Status.SessionStatus = fornaxv1.SessionStatusClosed
-				fsess.Session.Status.CloseTime = util.NewCurrentMetaTime()
 				n.notify(n.fornoxCoreRef, session.BuildFornaxcoreGrpcSessionState(revision, fsess))
+				klog.InfoS("Closed session", "session", msg.SessionIdentifier, "pod", msg.PodIdentifier, "node", n.node.V1Node.Name)
 			}()
 		} else {
 			return fmt.Errorf("Session: %s does not exist, can not terminate session", sessId)

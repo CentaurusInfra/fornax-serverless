@@ -9,7 +9,7 @@ If you have a brand new machine, you may need to install following component to 
 ```script
 sudo apt-get update
 sudo apt install build-essential
-sudo snap install curl  # version 7.81.0
+sudo apt install curl
 sudo apt-get install vim
 sudo apt install git
 ```
@@ -191,7 +191,7 @@ debug: true
 pull-image-on-create: false
 ```
 
-notes: Note: The default endpoints are now deprecated and the runtime endpoint should always be set instead.
+Notes: The default endpoints are now deprecated and the runtime endpoint should always be set instead.
 
 #### 2.5.2 Check Containerd State
 ```script
@@ -208,7 +208,7 @@ sudo journalctl -fu containerd
 
 #### 2.6.1 Install Golang (See 1.2.1)
 #### 2.6.2 Compile Source Code (See 1.2.2)
-#### 2.6.2 Start Node Agent (See [get_start.md](https://github.com/CentaurusInfra/fornax-serverless/edit/main/doc/get_start.md)
+#### 2.6.2 Start Node Agent. See [get_start.md](https://github.com/CentaurusInfra/fornax-serverless/edit/main/doc/get_start.md)
 
 
 ## 3. Play Fornax Serverless
@@ -331,5 +331,10 @@ version = 2
 ```
 
 ```sh
-./bin/fornaxtest --test-case app_full_cycle --num-of-session-per-app 0 --num-of-init-pod-per-app 10 --burst-of-app-pods 100 --num-of-app 1 --run-once
+./bin/fornaxtest --test-case app_full_cycle --num-of-session-per-app 1 --num-of-init-pod-per-app 1 --burst-of-pod-per-app 10 --num-of-app 1 --num-of-test-cycle 5
+```
+
+5. Tmux
+```sh
+sudo apt  install tmux
 ```

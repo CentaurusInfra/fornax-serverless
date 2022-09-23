@@ -123,12 +123,11 @@ func (am *ApplicationManager) onApplicationSessionAddEvent(obj interface{}) {
 		am.onApplicationSessionDeleteEvent(obj)
 		return
 	}
-	sessionKey := util.Name(session)
 	applicationKey := am.getSessionApplicationKey(session)
 	pool := am.getOrCreateApplicationPool(applicationKey)
 
 	if !util.SessionInTerminalState(session) {
-		klog.InfoS("Application session created", "session", sessionKey)
+		klog.InfoS("Application session created", "session", util.Name(session))
 		am.updateSessionPool(pool, session)
 		am.enqueueApplication(applicationKey)
 	}
@@ -146,7 +145,6 @@ func (am *ApplicationManager) onApplicationSessionUpdateEvent(old, cur interface
 		return
 	}
 
-	sessionKey := util.Name(newCopy)
 	applicationKey := am.getSessionApplicationKey(newCopy)
 	pool := am.getOrCreateApplicationPool(applicationKey)
 	if v := pool.getSession(string(newCopy.GetUID())); v != nil {
@@ -168,7 +166,7 @@ func (am *ApplicationManager) onApplicationSessionUpdateEvent(old, cur interface
 	}
 
 	if (newCopy.DeletionTimestamp != nil && oldCopy.DeletionTimestamp == nil) || !reflect.DeepEqual(oldCopy.Status, newCopy.Status) {
-		klog.InfoS("Application session updated", "session", sessionKey, "old status", oldCopy.Status.SessionStatus, "new status", newCopy.Status.SessionStatus, "deleting", newCopy.DeletionTimestamp != nil)
+		klog.InfoS("Application session updated", "session", util.Name(newCopy), "old status", oldCopy.Status.SessionStatus, "new status", newCopy.Status.SessionStatus, "deleting", newCopy.DeletionTimestamp != nil)
 		am.enqueueApplication(applicationKey)
 	}
 }
@@ -188,7 +186,6 @@ func (am *ApplicationManager) onApplicationSessionDeleteEvent(obj interface{}) {
 			return
 		}
 	}
-	sessionKey := util.Name(session)
 	if session.DeletionTimestamp == nil {
 		session.DeletionTimestamp = util.NewCurrentMetaTime()
 	}
@@ -201,7 +198,7 @@ func (am *ApplicationManager) onApplicationSessionDeleteEvent(obj interface{}) {
 		return
 	}
 
-	oldCopy := pool.getSession(sessionKey)
+	oldCopy := pool.getSession(string(session.GetUID()))
 	if oldCopy != nil {
 		if util.SessionInTerminalState(oldCopy) {
 			am.updateSessionPool(pool, oldCopy)
@@ -210,7 +207,7 @@ func (am *ApplicationManager) onApplicationSessionDeleteEvent(obj interface{}) {
 		}
 
 		// delete a closed or timeout session does not impact application at all, no need to sync
-		klog.InfoS("Application session deleted", "session", sessionKey, "status", session.Status, "finalizer", session.Finalizers)
+		klog.InfoS("Application session deleted", "session", util.Name(session), "status", session.Status, "finalizer", session.Finalizers)
 		am.enqueueApplication(applicationKey)
 	}
 }

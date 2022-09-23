@@ -241,6 +241,7 @@ func (am *ApplicationManager) Run(ctx context.Context) {
 
 	am.initApplicationSessionInformer(ctx)
 	cache.WaitForNamedCacheSync(fornaxv1.ApplicationSessionKind.Kind, ctx.Done(), am.aplicationSessionListerSynced)
+	klog.Info("Fornaxv1 application manager started")
 
 	go func() {
 		defer utilruntime.HandleCrash()

@@ -193,11 +193,23 @@ func (am *ApplicationManager) onApplicationSessionDeleteEvent(obj interface{}) {
 		session.DeletionTimestamp = util.NewCurrentMetaTime()
 	}
 
+	// as fornaxcore update cache memory before update etcd, if there is no a cached copy,
+	// do not need to sync a deleted session, as fornaxcore update cache memory before update etcd
 	applicationKey := am.getSessionApplicationKey(session)
-	pool := am.getOrCreateApplicationPool(applicationKey)
-	am.updateSessionPool(pool, session)
-	// delete a closed or timeout session does not impact application at all, no need to sync
-	if !util.SessionInTerminalState(session) {
+	pool := am.getApplicationPool(applicationKey)
+	if pool == nil {
+		return
+	}
+
+	oldCopy := pool.getSession(sessionKey)
+	if oldCopy != nil {
+		if util.SessionInTerminalState(oldCopy) {
+			am.updateSessionPool(pool, oldCopy)
+		} else {
+			am.updateSessionPool(pool, session)
+		}
+
+		// delete a closed or timeout session does not impact application at all, no need to sync
 		klog.InfoS("Application session deleted", "session", sessionKey, "status", session.Status, "finalizer", session.Finalizers)
 		am.enqueueApplication(applicationKey)
 	}

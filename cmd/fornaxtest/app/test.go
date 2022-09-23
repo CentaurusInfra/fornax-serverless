@@ -44,7 +44,7 @@ import (
 var (
 	allTestApps              = TestApplicationArray{}
 	allTestSessions          = TestSessionArray{}
-	oneTestCycleSessions     = TestSessionArray{}
+	oneTestCycleSessions     = TestSessionMap{}
 	oneTestCycleSessionsLock = sync.Mutex{}
 
 	apiServerClient = getApiServerClient()
@@ -107,20 +107,7 @@ func initApplicationSessionInformer(ctx context.Context) {
 
 func onApplicationSessionAddEvent(obj interface{}) {
 	newCopy := obj.(*fornaxv1.ApplicationSession)
-	for _, v := range oneTestCycleSessions {
-		if v.session.GetUID() == newCopy.GetUID() {
-			fmt.Println(v.session.Name, newCopy.Status.SessionStatus)
-			v.status = newCopy.Status.SessionStatus
-			switch newCopy.Status.SessionStatus {
-			case fornaxv1.SessionStatusAvailable:
-				v.availableTimeMilli = time.Now().UnixMilli()
-			case fornaxv1.SessionStatusClosed:
-				v.availableTimeMilli = time.Now().UnixMilli()
-			case fornaxv1.SessionStatusTimeout:
-				v.availableTimeMilli = time.Now().UnixMilli()
-			}
-		}
-	}
+	updateSessionStatus(newCopy)
 }
 
 // callback from Application informer when ApplicationSession is updated
@@ -129,20 +116,22 @@ func onApplicationSessionAddEvent(obj interface{}) {
 // else add new copy into pool
 // do not need to sync application unless session is deleting or status changed
 func onApplicationSessionUpdateEvent(old, cur interface{}) {
-	// oldCopy := old.(*fornaxv1.ApplicationSession)
+	_ = old.(*fornaxv1.ApplicationSession)
 	newCopy := cur.(*fornaxv1.ApplicationSession)
-	for _, v := range oneTestCycleSessions {
-		if v.session.GetUID() == newCopy.GetUID() {
-			fmt.Println(v.session.Name, newCopy.Status.SessionStatus)
-			v.status = newCopy.Status.SessionStatus
-			switch newCopy.Status.SessionStatus {
-			case fornaxv1.SessionStatusAvailable:
-				v.availableTimeMilli = time.Now().UnixMilli()
-			case fornaxv1.SessionStatusClosed:
-				v.availableTimeMilli = time.Now().UnixMilli()
-			case fornaxv1.SessionStatusTimeout:
-				v.availableTimeMilli = time.Now().UnixMilli()
-			}
+	updateSessionStatus(newCopy)
+}
+
+func updateSessionStatus(session *fornaxv1.ApplicationSession) {
+	oneTestCycleSessionsLock.Lock()
+	defer oneTestCycleSessionsLock.Unlock()
+	availableTimeMilli := time.Now().UnixMilli()
+	if ts, found := oneTestCycleSessions[session.Name]; found {
+		if ts.status == fornaxv1.SessionStatusPending &&
+			(session.Status.SessionStatus == fornaxv1.SessionStatusAvailable ||
+				session.Status.SessionStatus == fornaxv1.SessionStatusClosed ||
+				session.Status.SessionStatus == fornaxv1.SessionStatusTimeout) {
+			ts.status = session.Status.SessionStatus
+			ts.availableTimeMilli = availableTimeMilli
 		}
 	}
 }
@@ -152,14 +141,13 @@ func onApplicationSessionDeleteEvent(obj interface{}) {
 	// no op
 }
 
-func waitForSessionSetupNew(namespace, appName string, sessions TestSessionArray) {
+func waitForSessionSetup(namespace, appName string, sessions TestSessionArray) {
 	if len(sessions) > 0 {
 		klog.Infof("waiting for %d sessions of app %s setup", len(sessions), appName)
 		for {
 			time.Sleep(500 * time.Millisecond)
 			allSetup := true
 			for _, ts := range sessions {
-				fmt.Println(*ts)
 				if ts.status == fornaxv1.SessionStatusPending {
 					allSetup = false
 					break
@@ -254,6 +242,8 @@ func (sn TestApplicationArray) Swap(i, j int) {
 	sn[i], sn[j] = sn[j], sn[i]
 }
 
+type TestSessionMap map[string]*TestSession
+
 type TestSessionArray []*TestSession
 
 func (sn TestSessionArray) Len() int {
@@ -280,10 +270,13 @@ func createAndWaitForSessionSetup(application *fornaxv1.Application, namespace, 
 		ts, err := createSession(namespace, sessName, appName, SessionWrapperEchoServerSessionSpec)
 		if err == nil && ts != nil {
 			sessions = append(sessions, ts)
+			oneTestCycleSessionsLock.Lock()
+			oneTestCycleSessions[ts.session.Name] = ts
+			oneTestCycleSessionsLock.Unlock()
 		}
 		if i > 0 && i%sessionOneSec == 0 {
 			klog.Infof("created %d session of app %s", len(sessions), appName)
-			// create burst of sessions every second
+			// control create burst of sessions every second
 			time.Sleep(time.Unix(time.Now().Unix()+1, 0).Sub(time.Now()))
 		}
 	}
@@ -291,9 +284,6 @@ func createAndWaitForSessionSetup(application *fornaxv1.Application, namespace, 
 	et := time.Now().UnixMilli()
 	if len(sessions) > 0 {
 		klog.Infof("%d sessions created in %d ms, rate %d/s", len(sessions), et-st, int64(len(sessions))*1000/(et-st))
-		oneTestCycleSessionsLock.Lock()
-		oneTestCycleSessions = append(oneTestCycleSessions, sessions...)
-		oneTestCycleSessionsLock.Unlock()
 	}
 	waitForSessionSetup(namespace, appName, sessions)
 	return sessions
@@ -361,7 +351,7 @@ func waitForSessionTearDown(namespace, appName string, sessions []*TestSession) 
 	}
 }
 
-func waitForSessionSetup(namespace, appName string, sessions TestSessionArray) {
+func waitForSessionSetupOld(namespace, appName string, sessions TestSessionArray) {
 	if len(sessions) > 0 {
 		klog.Infof("waiting for %d sessions of app %s setup", len(sessions), appName)
 		for {
@@ -380,7 +370,6 @@ func waitForSessionSetup(namespace, appName string, sessions TestSessionArray) {
 				switch sess.Status.SessionStatus {
 				case fornaxv1.SessionStatusAvailable:
 					ts.availableTimeMilli = sess.Status.AvailableTimeMicro / 1000
-					// ts.availableTimeMilli = time.Now().UnixMilli()
 					ts.status = sess.Status.SessionStatus
 				case fornaxv1.SessionStatusTimeout:
 					ts.status = sess.Status.SessionStatus

@@ -93,7 +93,7 @@ func NewCommand() *cobra.Command {
 }
 
 func Run(ctx context.Context, testConfig config.TestConfiguration) {
-	// initApplicationSessionInformer(ctx)
+	initApplicationSessionInformer(ctx)
 
 	RunTest := func(cycle int) {
 		wg := sync.WaitGroup{}
@@ -128,11 +128,15 @@ func Run(ctx context.Context, testConfig config.TestConfiguration) {
 	for i := 0; i < testConfig.NumOfTestCycle; i++ {
 		st := time.Now().UnixMilli()
 		klog.Infof("--------Test %d begin--------\n", i+1)
-		oneTestCycleSessions = TestSessionArray{}
+		oneTestCycleSessions = TestSessionMap{}
 		RunTest(i)
 		et := time.Now().UnixMilli()
-		summarySessionTestResult(oneTestCycleSessions, st, et)
-		allTestSessions = append(allTestSessions, oneTestCycleSessions...)
+		sessions := TestSessionArray{}
+		for _, v := range oneTestCycleSessions {
+			sessions = append(sessions, v)
+		}
+		summarySessionTestResult(sessions, st, et)
+		allTestSessions = append(allTestSessions, sessions...)
 		klog.Infof("--------Test %d end----------\n\n", i+1)
 	}
 	endTime := time.Now().UnixMilli()

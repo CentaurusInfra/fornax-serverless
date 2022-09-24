@@ -141,9 +141,6 @@ func (am *ApplicationManager) onApplicationSessionAddEvent(obj interface{}) {
 func (am *ApplicationManager) onApplicationSessionUpdateEvent(old, cur interface{}) {
 	oldCopy := old.(*fornaxv1.ApplicationSession)
 	newCopy := cur.(*fornaxv1.ApplicationSession)
-	if reflect.DeepEqual(oldCopy, newCopy) {
-		return
-	}
 
 	applicationKey := am.getSessionApplicationKey(newCopy)
 	pool := am.getOrCreateApplicationPool(applicationKey)
@@ -154,6 +151,10 @@ func (am *ApplicationManager) onApplicationSessionUpdateEvent(old, cur interface
 		oldCopy = v.DeepCopy()
 		if util.SessionInTerminalState(oldCopy) {
 			am.updateSessionPool(pool, oldCopy)
+		} else if reflect.DeepEqual(oldCopy.Status, newCopy.Status) {
+			// ignore no status change
+		} else if util.SessionIsOpen(oldCopy) && (newCopy.Status.SessionStatus == fornaxv1.SessionStatusUnspecified || newCopy.Status.SessionStatus == fornaxv1.SessionStatusPending) {
+			// ignore weird etcd late update, a open session can not change back
 		} else {
 			am.updateSessionPool(pool, newCopy)
 		}

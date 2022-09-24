@@ -99,6 +99,23 @@ func (sm *sessionManager) Run(ctx context.Context) {
 	go func() {
 		defer klog.Info("Shutting down fornaxv1 session status manager")
 
+		failedSessions := map[string]*fornaxv1.ApplicationSessionStatus{}
+		batchUpdateSession := func(sessionBatch map[string]*fornaxv1.ApplicationSessionStatus) {
+			wg := sync.WaitGroup{}
+			for name, status := range sessionBatch {
+				wg.Add(1)
+				go func(name string, status *fornaxv1.ApplicationSessionStatus) {
+					err := sm.updateSessionStatus(name, status)
+					if err != nil {
+						failedSessions[name] = status
+						klog.ErrorS(err, "Failed to update session status", "session", name)
+					}
+					wg.Done()
+				}(name, status)
+			}
+			wg.Wait()
+		}
+
 		FornaxCore_SessionStatusManager_Retry := "FornaxCore_SessionStatusManager_StatusUpdate_Retry"
 		for {
 			select {
@@ -111,14 +128,16 @@ func (sm *sessionManager) Run(ctx context.Context) {
 					<-sm.statusUpdateCh
 				}
 				sessionStatuses := sm.statusChanges.getAndRemoveStatusChangeSnapshot()
-				failedSessions := map[string]*fornaxv1.ApplicationSessionStatus{}
-				for name, status := range sessionStatuses {
-					err := sm.updateSessionStatus(name, status)
-					if err != nil {
-						failedSessions[name] = status
-						klog.ErrorS(err, "Failed to update session status", "session", name)
+
+				sessions := map[string]*fornaxv1.ApplicationSessionStatus{}
+				for n, v := range sessionStatuses {
+					sessions[n] = v
+					if len(sessions) == 10 {
+						batchUpdateSession(sessions)
+						sessions = map[string]*fornaxv1.ApplicationSessionStatus{}
 					}
 				}
+				batchUpdateSession(sessions)
 
 				// a trick to retry, all failed status update are still in map, send a fake update to retry,
 				// it's bit risky, if some guy put a lot of event into channel before we can put a retry signal,
@@ -133,6 +152,7 @@ func (sm *sessionManager) Run(ctx context.Context) {
 				if len(failedSessions) > 0 {
 					time.Sleep(10 * time.Millisecond)
 				}
+				failedSessions = map[string]*fornaxv1.ApplicationSessionStatus{}
 			}
 		}
 	}()

@@ -84,7 +84,7 @@ func (am *ApplicationManager) onSessionEventFromNode(se *ie.SessionEvent) error 
 	return nil
 }
 
-func (am *ApplicationManager) changeSessionStatus(v *fornaxv1.ApplicationSession, status fornaxv1.SessionStatus) error {
+func (am *ApplicationManager) changeSessionStatus(pool *ApplicationPool, v *fornaxv1.ApplicationSession, status fornaxv1.SessionStatus) error {
 	session := v.DeepCopy()
 	newStatus := v.Status.DeepCopy()
 	newStatus.SessionStatus = status
@@ -92,6 +92,8 @@ func (am *ApplicationManager) changeSessionStatus(v *fornaxv1.ApplicationSession
 		// reset client session to let it can be hard deleted
 		newStatus.ClientSessions = []v1.LocalObjectReference{}
 	}
+	cachedCopy := pool.getSession(string(v.GetUID()))
+	cachedCopy.Status = *newStatus
 	return am.sessionManager.UpdateSessionStatus(session, newStatus)
 }
 
@@ -191,8 +193,7 @@ func (am *ApplicationManager) onApplicationSessionDeleteEvent(obj interface{}) {
 		session.DeletionTimestamp = util.NewCurrentMetaTime()
 	}
 
-	// as fornaxcore update cache memory before update etcd, if there is no a cached copy,
-	// do not need to sync a deleted session, as fornaxcore update cache memory before update etcd
+	// as fornaxcore update cache memory before update etcd, if there is no a cached copy, do not need to sync a deleted session, etcd is late
 	applicationKey := am.getSessionApplicationKey(session)
 	pool := am.getApplicationPool(applicationKey)
 	if pool == nil {
@@ -269,9 +270,9 @@ func (am *ApplicationManager) deployApplicationSessions(pool *ApplicationPool, a
 		}
 	}
 
-	// 2, cleanup timeout session, set session status to timeout and delete it from list
+	// 2, cleanup timeout session,
 	for _, v := range timeoutSessions {
-		if err := am.changeSessionStatus(v, fornaxv1.SessionStatusTimeout); err != nil {
+		if err := am.deleteApplicationSession(pool, v); err != nil {
 			klog.ErrorS(err, "Failed to cleanup timeout session")
 			sessionErrors = append(sessionErrors, err)
 		}
@@ -305,7 +306,7 @@ func (am *ApplicationManager) deleteApplicationSession(pool *ApplicationPool, se
 		if session.DeletionTimestamp == nil {
 			session.DeletionTimestamp = util.NewCurrentMetaTime()
 		}
-		err := am.closeApplicationSession(session)
+		err := am.closeApplicationSession(pool, session)
 		if err != nil {
 			return err
 		} else {
@@ -315,7 +316,7 @@ func (am *ApplicationManager) deleteApplicationSession(pool *ApplicationPool, se
 	} else {
 		// in terminal or pending state, just delete it from pool
 		if util.SessionIsPending(session) {
-			if err := am.changeSessionStatus(session, fornaxv1.SessionStatusTimeout); err != nil {
+			if err := am.changeSessionStatus(pool, session, fornaxv1.SessionStatusTimeout); err != nil {
 				return err
 			}
 		}
@@ -352,7 +353,7 @@ func (am *ApplicationManager) bindSessionToPod(pod *v1.Pod, session *fornaxv1.Ap
 	}
 }
 
-func (am *ApplicationManager) closeApplicationSession(session *fornaxv1.ApplicationSession) error {
+func (am *ApplicationManager) closeApplicationSession(pool *ApplicationPool, session *fornaxv1.ApplicationSession) error {
 	klog.Infof("Close applciation sessions %s", util.Name(session))
 	if util.SessionIsOpen(session) {
 		if session.Status.PodReference != nil {
@@ -366,10 +367,11 @@ func (am *ApplicationManager) closeApplicationSession(session *fornaxv1.Applicat
 					return err
 				}
 			} else {
-				// how to handle it, this case could happen when FornaxCore restart
-				// it have not get all pods reported by node, and client want to close a session
-				am.changeSessionStatus(session, fornaxv1.SessionStatusClosed)
-				return nil
+				// handle this case when FornaxCore restart, node holding session have not connected
+				// and can not send close command, but client want to close a session
+				return fmt.Errorf("Can not talk to pod to close session because node disconnected, try later")
+
+				// TODO, how to handle node is actually dead
 			}
 		}
 	} else {
@@ -389,17 +391,14 @@ func (am *ApplicationManager) cleanupSessionOnDeletedPod(pool *ApplicationPool, 
 		klog.Infof("Delete session %s on deleted pod %s", util.Name(session), podName)
 		pool.deleteSession(session)
 	}
-	// use go routine to update session status, as session has been remove from pool,
-	// update dead session status later will not impact sync application result
-	go func() {
-		for _, v := range podSessions {
-			if util.SessionIsOpen(v) {
-				am.changeSessionStatus(v, fornaxv1.SessionStatusClosed)
-			} else if util.SessionIsPending(v) {
-				am.changeSessionStatus(v, fornaxv1.SessionStatusTimeout)
-			}
+	// if pod is dead, there is no chance to close session, just update dead session status
+	for _, v := range podSessions {
+		if util.SessionIsOpen(v) {
+			am.changeSessionStatus(pool, v, fornaxv1.SessionStatusClosed)
+		} else if util.SessionIsPending(v) {
+			am.changeSessionStatus(pool, v, fornaxv1.SessionStatusTimeout)
 		}
-	}()
+	}
 }
 
 // cleanupSessionOfApplication if a application is being deleted,

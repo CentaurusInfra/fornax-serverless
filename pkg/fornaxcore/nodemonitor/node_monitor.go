@@ -78,15 +78,15 @@ type nodeMonitor struct {
 func (nm *nodeMonitor) OnSessionUpdate(ctx context.Context, message *grpc.FornaxCoreMessage) (*grpc.FornaxCoreMessage, error) {
 	sessionState := message.GetSessionState()
 	revision := sessionState.GetNodeRevision()
+	nodeId := message.GetNodeIdentifier().GetIdentifier()
 
 	session := &fornaxv1.ApplicationSession{}
 	if err := json.Unmarshal(sessionState.GetSessionData(), session); err != nil {
 		klog.ErrorS(err, "Malformed SessionData, is not a valid fornaxv1.ApplicationSession object")
 		return nil, err
 	}
+	klog.InfoS("Received a session state", "node", nodeId, "session", util.Name(session), "node revision", revision, "status", session.Status)
 
-	klog.InfoS("Received a session state", "session", util.Name(session), "node revision", revision, "status", session.Status)
-	nodeId := message.GetNodeIdentifier().GetIdentifier()
 	nodeWS := nm.nodes.get(nodeId)
 	if nodeWS == nil {
 		return nil, nodeagent.NodeRevisionOutOfOrderError
@@ -220,6 +220,7 @@ func (nm *nodeMonitor) OnNodeStateUpdate(ctx context.Context, message *grpc.Forn
 func (nm *nodeMonitor) OnPodStateUpdate(ctx context.Context, message *grpc.FornaxCoreMessage) (*grpc.FornaxCoreMessage, error) {
 	podState := message.GetPodState()
 	revision := podState.GetNodeRevision()
+	nodeId := message.GetNodeIdentifier()
 	klog.InfoS("Received a pod state", "pod", util.Name(podState.GetPod()), "fornax state", podState.GetState(), "pod phase", podState.GetPod().Status.Phase, "condition", k8spodutil.IsPodReady(podState.GetPod()), "node revision", revision)
 
 	_, found := podState.GetPod().Labels[fornaxv1.LabelFornaxCoreNode]
@@ -228,8 +229,7 @@ func (nm *nodeMonitor) OnPodStateUpdate(ctx context.Context, message *grpc.Forna
 		return nil, nodeagent.ObjectMissingNodeLabelError
 	}
 
-	nodeIdentifier := message.GetNodeIdentifier()
-	nodeWS := nm.nodes.get(nodeIdentifier.GetIdentifier())
+	nodeWS := nm.nodes.get(nodeId.GetIdentifier())
 	if nodeWS == nil {
 		return nil, nodeagent.NodeRevisionOutOfOrderError
 	}
@@ -251,7 +251,7 @@ func (nm *nodeMonitor) OnPodStateUpdate(ctx context.Context, message *grpc.Forna
 	}
 
 	nodeWS.Revision = revision
-	err := nm.nodeManager.UpdatePodState(nodeIdentifier.GetIdentifier(), podState.GetPod().DeepCopy(), sessions)
+	err := nm.nodeManager.UpdatePodState(nodeId.GetIdentifier(), podState.GetPod().DeepCopy(), sessions)
 	if err != nil {
 		klog.ErrorS(err, "Failed to update pod state", "pod", podState)
 		return nil, err

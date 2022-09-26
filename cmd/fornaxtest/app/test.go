@@ -42,10 +42,10 @@ import (
 )
 
 var (
-	allTestApps              = TestApplicationArray{}
-	allTestSessions          = TestSessionArray{}
-	oneTestCycleSessions     = TestSessionMap{}
-	oneTestCycleSessionsLock = sync.Mutex{}
+	allTestApps             = TestApplicationArray{}
+	allTestSessions         = TestSessionArray{}
+	testCycleSessionMap     = TestSessionMap{}
+	testCycleSessionMapLock = sync.Mutex{}
 
 	apiServerClient = getApiServerClient()
 
@@ -122,10 +122,11 @@ func onApplicationSessionUpdateEvent(old, cur interface{}) {
 }
 
 func updateSessionStatus(session *fornaxv1.ApplicationSession) {
-	oneTestCycleSessionsLock.Lock()
-	defer oneTestCycleSessionsLock.Unlock()
+	testCycleSessionMapLock.Lock()
+	defer testCycleSessionMapLock.Unlock()
 	availableTimeMilli := time.Now().UnixMilli()
-	if ts, found := oneTestCycleSessions[session.Name]; found {
+	// availableTimeMilli = session.Status.AvailableTimeMicro / 1000
+	if ts, found := testCycleSessionMap[session.Name]; found {
 		if ts.status == fornaxv1.SessionStatusPending &&
 			(session.Status.SessionStatus == fornaxv1.SessionStatusAvailable ||
 				session.Status.SessionStatus == fornaxv1.SessionStatusClosed ||
@@ -264,20 +265,11 @@ func createAndWaitForSessionSetup(application *fornaxv1.Application, namespace, 
 	sessions := []*TestSession{}
 	sessionBaseName := uuid.New().String()
 	numOfSession := testConfig.NumOfSessionPerApp
-	sessionOneSec := testConfig.NumOfSessionPerSec
 	for i := 0; i < numOfSession; i++ {
 		sessName := fmt.Sprintf("%s-%s-session-%d", appName, sessionBaseName, i)
 		ts, err := createSession(namespace, sessName, appName, SessionWrapperEchoServerSessionSpec)
 		if err == nil && ts != nil {
 			sessions = append(sessions, ts)
-			oneTestCycleSessionsLock.Lock()
-			oneTestCycleSessions[ts.session.Name] = ts
-			oneTestCycleSessionsLock.Unlock()
-		}
-		if i > 0 && i%sessionOneSec == 0 {
-			klog.Infof("created %d session of app %s", len(sessions), appName)
-			// control create burst of sessions every second
-			time.Sleep(time.Unix(time.Now().Unix()+1, 0).Sub(time.Now()))
 		}
 	}
 
@@ -463,17 +455,25 @@ func createSession(namespace, name, applicationName string, sessionSpec *fornaxv
 		Spec: spec,
 	}
 	creationTimeMilli := time.Now().UnixMilli()
-	session, err := appClient.Create(context.Background(), session, metav1.CreateOptions{})
-	if err != nil {
-		return nil, err
-	}
-	// klog.InfoS("Session created", "application", applicationName, "session", name)
-	return &TestSession{
+	ts := &TestSession{
 		session:            session,
 		creationTimeMilli:  creationTimeMilli,
 		availableTimeMilli: 0,
 		status:             fornaxv1.SessionStatusPending,
-	}, nil
+	}
+
+	testCycleSessionMapLock.Lock()
+	testCycleSessionMap[ts.session.Name] = ts
+	testCycleSessionMapLock.Unlock()
+	session, err := appClient.Create(context.Background(), session, metav1.CreateOptions{})
+	if err != nil {
+		testCycleSessionMapLock.Lock()
+		delete(testCycleSessionMap, ts.session.Name)
+		testCycleSessionMapLock.Unlock()
+		return nil, err
+	}
+	// klog.InfoS("Session created", "application", applicationName, "session", name)
+	return ts, nil
 }
 
 func deleteApplication(namespace, name string) error {

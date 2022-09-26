@@ -99,7 +99,7 @@ func Run(ctx context.Context, testConfig config.TestConfiguration) {
 		wg := sync.WaitGroup{}
 		for i := 0; i < testConfig.NumOfApps; i++ {
 			namespace := "fornaxtest"
-			appName := fmt.Sprintf("echoserver%d", cycle*testConfig.NumOfApps+i)
+			appName := fmt.Sprintf("echoserver%d", i)
 			wg.Add(1)
 			go func() {
 				switch testConfig.TestCase {
@@ -128,11 +128,11 @@ func Run(ctx context.Context, testConfig config.TestConfiguration) {
 	for i := 0; i < testConfig.NumOfTestCycle; i++ {
 		st := time.Now().UnixMilli()
 		klog.Infof("--------Test %d begin--------\n", i+1)
-		oneTestCycleSessions = TestSessionMap{}
+		testCycleSessionMap = TestSessionMap{}
 		RunTest(i)
 		et := time.Now().UnixMilli()
 		sessions := TestSessionArray{}
-		for _, v := range oneTestCycleSessions {
+		for _, v := range testCycleSessionMap {
 			sessions = append(sessions, v)
 		}
 		summarySessionTestResult(sessions, st, et)

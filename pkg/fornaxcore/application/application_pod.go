@@ -93,14 +93,14 @@ func (am *ApplicationManager) handlePodAddUpdateFromNode(pod *v1.Pod) {
 
 	if len(applicationKey) == 0 {
 		klog.InfoS("Pod does not belong to any application, terminated it", "pod", podName, "labels", pod.GetLabels())
-		am.podManager.TerminatePod(pod)
+		am.podManager.TerminatePod(podName)
 		return
 	} else {
 		pool := am.getOrCreateApplicationPool(applicationKey)
 		ap := pool.getPod(podName)
 		if ap != nil && ap.state == PodStateDeleting {
 			// this pod was requested to terminate, and node did not receive termination or failed to do it, try it again
-			am.deleteApplicationPod(pool, pod, true)
+			am.deleteApplicationPod(pool, podName, true)
 			return
 		}
 		if ap != nil && ap.state == PodStateAllocated {
@@ -159,9 +159,7 @@ func (am *ApplicationManager) handlePodDeleteFromNode(pod *v1.Pod) {
 	am.enqueueApplication(applicationKey)
 }
 
-func (am *ApplicationManager) deleteApplicationPod(pool *ApplicationPool, pod *v1.Pod, retry bool) error {
-	podName := util.Name(pod)
-
+func (am *ApplicationManager) deleteApplicationPod(pool *ApplicationPool, podName string, retry bool) error {
 	podState := pool.getPod(podName)
 	if podState == nil {
 		return nil
@@ -172,7 +170,8 @@ func (am *ApplicationManager) deleteApplicationPod(pool *ApplicationPool, pod *v
 		return nil
 	}
 
-	err := am.podManager.TerminatePod(pod)
+	pool.addOrUpdatePod(podName, PodStateDeleting, []string{})
+	err := am.podManager.TerminatePod(podName)
 	if err != nil {
 		if err == fornaxpod.PodNotFoundError {
 			pool.deletePod(podName)
@@ -181,7 +180,6 @@ func (am *ApplicationManager) deleteApplicationPod(pool *ApplicationPool, pod *v
 			return err
 		}
 	} else {
-		pool.addOrUpdatePod(podName, PodStateDeleting, []string{})
 		klog.InfoS("Delete a application pod", "application", pool.appName, "pod", podName)
 	}
 
@@ -426,7 +424,7 @@ func (am *ApplicationManager) deployApplicationPods(pool *ApplicationPool, appli
 		deleteErrors := []error{}
 		podsToDelete := am.getPodsToBeDelete(pool, desiredSubstraction)
 		for _, pod := range podsToDelete {
-			err := am.deleteApplicationPod(pool, pod, false)
+			err := am.deleteApplicationPod(pool, util.Name(pod), false)
 			if err != nil {
 				deleteErrors = append(deleteErrors, err)
 			}
@@ -510,23 +508,12 @@ func (am *ApplicationManager) getPodApplicationKey(pod *v1.Pod) (string, error) 
 // when alive pods reported as terminated by Node Agent, then application can be eventually deleted
 func (am *ApplicationManager) cleanupPodOfApplication(pool *ApplicationPool) error {
 	deleteErrors := []error{}
-	podsToDelete := []string{}
 	pods := pool.podList()
 	for _, k := range pods {
-		pod := am.podManager.FindPod(k.podName)
-		if pod == nil {
-			podsToDelete = append(podsToDelete, k.podName)
-		} else {
-			err := am.deleteApplicationPod(pool, pod, false)
-			if err != nil {
-				deleteErrors = append(deleteErrors, err)
-			}
+		err := am.deleteApplicationPod(pool, k.podName, false)
+		if err != nil {
+			deleteErrors = append(deleteErrors, err)
 		}
-	}
-
-	// these pods can be delete just as no longer exist in Pod Manager
-	for _, k := range podsToDelete {
-		pool.deletePod(k)
 	}
 
 	if len(deleteErrors) != 0 {

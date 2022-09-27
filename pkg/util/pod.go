@@ -171,24 +171,9 @@ func GetPodResourceList(v1pod *v1.Pod) *v1.ResourceList {
 }
 
 func MergePod(oldPod, newPod *v1.Pod) {
+	MergeObjectMeta(&oldPod.ObjectMeta, &newPod.ObjectMeta)
+
 	oldPod.Status = *newPod.Status.DeepCopy()
-	oldPod.ResourceVersion = newPod.ResourceVersion
-
-	for k, v := range newPod.GetLabels() {
-		oldPod.Labels[k] = v
-	}
-
-	for k, v := range newPod.GetAnnotations() {
-		oldPod.Annotations[k] = v
-	}
-
-	if newPod.DeletionTimestamp != nil && oldPod.DeletionTimestamp == nil {
-		oldPod.DeletionTimestamp = newPod.DeletionTimestamp
-	}
-
-	if newPod.DeletionGracePeriodSeconds != nil && oldPod.DeletionGracePeriodSeconds == nil {
-		oldPod.DeletionGracePeriodSeconds = newPod.DeletionGracePeriodSeconds
-	}
 
 	// pod spec could be modified by NodeAgent, especially container port mapping
 	if !reflect.DeepEqual(oldPod.Spec, newPod.Spec) {

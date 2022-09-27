@@ -193,15 +193,15 @@ func (pm *podManager) DeletePod(nodeId string, pod *v1.Pod) (*v1.Pod, error) {
 // if pod not scheduled yet, just delete
 // there could be a race condition with pod scheduler if node have not report back after sending to it
 // pod will be terminate again by pod owner when node report this pod back,
-func (pm *podManager) TerminatePod(pod *v1.Pod) error {
-	// try best to remove pod from schedule queue, if it does not exit, it's no op
-	pm.podScheduler.RemovePod(pod)
+func (pm *podManager) TerminatePod(podName string) error {
 
-	fornaxPodState := pm.podStatePool.findPod(util.Name(pod))
+	fornaxPodState := pm.podStatePool.findPod(podName)
 	if fornaxPodState == nil {
 		return PodNotFoundError
 	}
 	podInCache := fornaxPodState.v1pod
+	// try best to remove pod from schedule queue, if it does not exit, it's no op
+	pm.podScheduler.RemovePod(podInCache)
 
 	// two cases,
 	// 1/ pod not scheduled at all, then it's save to delete
@@ -209,22 +209,16 @@ func (pm *podManager) TerminatePod(pod *v1.Pod) error {
 	// there could be a race condition when scheduler send a pod to node, but node have not report back,
 	// we decided to just delete this pod, when node report it back and app owner will determine should pod de deleted again
 	if len(fornaxPodState.nodeId) == 0 {
-		pm.DeletePod("", pod)
+		pm.DeletePod("", podInCache)
 	}
 
 	// if pod exist, and pod does not have deletion timestamp, set it
 	if podInCache.GetDeletionTimestamp() == nil {
 		podInCache.DeletionTimestamp = util.NewCurrentMetaTime()
-		if pod.DeletionTimestamp != nil {
-			podInCache.DeletionTimestamp = pod.DeletionTimestamp.DeepCopy()
-		}
 	}
 
 	if podInCache.DeletionGracePeriodSeconds == nil {
 		gracePeriod := DefaultDeletionGracefulSeconds
-		if pod.DeletionGracePeriodSeconds != nil {
-			gracePeriod = *pod.GetDeletionGracePeriodSeconds()
-		}
 		podInCache.DeletionGracePeriodSeconds = &gracePeriod
 	}
 

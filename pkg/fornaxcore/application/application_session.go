@@ -50,7 +50,7 @@ func (am *ApplicationManager) onSessionEventFromNode(se *ie.SessionEvent) error 
 	// session removed from pod and pod is set idle and be picked up by other session
 	if session.Spec.KillInstanceWhenSessionClosed && session.Status.SessionStatus == fornaxv1.SessionStatusClosed && util.PodNotTerminated(pod) {
 		klog.InfoS("Terminate a pod as KillInstanceWhenSessionClosed is true", "pod", util.Name(pod), "session", util.Name(session))
-		am.deleteApplicationPod(pool, pod, false)
+		am.deleteApplicationPod(pool, util.Name(pod), false)
 	}
 
 	oldCopy := pool.getSession(string(session.GetUID()))

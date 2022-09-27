@@ -88,7 +88,7 @@ func (nm *nodeManager) List() []*ie.NodeEvent {
 func (nm *nodeManager) UpdatePodState(nodeId string, pod *v1.Pod, sessions []*fornaxv1.ApplicationSession) error {
 	if nodeWS := nm.nodes.get(nodeId); nodeWS != nil {
 		nodeWS.LastSeen = time.Now()
-		nm.handleAPodState(nodeId, nodeWS, pod.DeepCopy())
+		nm.handleAPodState(nodeId, nodeWS, pod)
 		nm.sessionManager.ReceiveSessionStatusFromNode(nodeId, pod, sessions)
 	} else {
 		// TODO, node supposed to exist

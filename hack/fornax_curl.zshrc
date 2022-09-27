@@ -39,3 +39,4 @@ get_sessions() {
 
 
 alias kubeproxy='kubectl --kubeconfig kubeconfig proxy --address localhost'
+alias kubectl='kubectl --kubeconfig kubeconfig'

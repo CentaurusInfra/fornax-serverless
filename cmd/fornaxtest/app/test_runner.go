@@ -29,13 +29,21 @@ import (
 	"github.com/spf13/pflag"
 	"k8s.io/klog/v2"
 
+	"k8s.io/apimachinery/pkg/util/rand"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
+
 	// "k8s.io/apimachinery/pkg/util/wait"
 	utilfeature "k8s.io/apiserver/pkg/util/feature"
 	cliflag "k8s.io/component-base/cli/flag"
 	"k8s.io/component-base/logs"
 	"k8s.io/component-base/version/verflag"
 )
+
+type TestSessionCounter struct {
+	numOfSessions int
+	st            int64
+	et            int64
+}
 
 func init() {
 	utilruntime.Must(logs.AddFeatureGates(utilfeature.DefaultMutableFeatureGate))
@@ -93,52 +101,64 @@ func NewCommand() *cobra.Command {
 }
 
 func Run(ctx context.Context, testConfig config.TestConfiguration) {
-	// initApplicationSessionInformer(ctx)
+	initApplicationSessionInformer(ctx)
 
-	RunTest := func(cycle int) {
-		wg := sync.WaitGroup{}
-		for i := 0; i < testConfig.NumOfApps; i++ {
+	RunTest := func(appName string) {
+		klog.Infof("--------App %s Test begin--------\n", appName)
+		for i := 1; i <= testConfig.NumOfTestCycle; i++ {
+			sessions := []*TestSession{}
+			cycleName := fmt.Sprintf("%s-cycle-%d", rand.String(16), i)
 			namespace := "fornaxtest"
-			appName := fmt.Sprintf("echoserver%d", cycle*testConfig.NumOfApps+i)
-			wg.Add(1)
-			go func() {
-				switch testConfig.TestCase {
-				case config.AppFullCycleTest:
-					runAppFullCycleTest(namespace, appName, testConfig)
-				case config.SessionFullCycleTest:
-					runSessionFullCycleTest(namespace, appName, testConfig)
-				case config.SessionCreateTest:
-					createSessionTest(namespace, appName, testConfig)
-				case config.AppCreateTest:
-				}
-				wg.Done()
-			}()
-
-			if i > 0 && i%testConfig.NumOfAppPerSec == 0 {
-				klog.Infof("created %d app", i)
-				time.Sleep(1000 * time.Millisecond)
+			switch testConfig.TestCase {
+			case config.AppFullCycleTest:
+				sessions = runAppFullCycleTest(cycleName, namespace, appName, testConfig)
+			case config.SessionFullCycleTest:
+				sessions = runSessionFullCycleTest(cycleName, namespace, appName, testConfig)
+			case config.SessionCreateTest:
+				sessions = createSessionTest(cycleName, namespace, appName, testConfig)
+			case config.AppCreateTest:
 			}
+			appSessionMapLock.Lock()
+			allTestSessions = append(allTestSessions, sessions...)
+			appSessionMapLock.Unlock()
 		}
-		klog.Infof("created %d app", testConfig.NumOfApps)
-		wg.Wait()
+		klog.Infof("--------App %s Test end----------\n\n", appName)
 	}
 	logs.InitLogs()
 
-	startTime := time.Now().UnixMilli()
-	for i := 0; i < testConfig.NumOfTestCycle; i++ {
-		st := time.Now().UnixMilli()
-		klog.Infof("--------Test %d begin--------\n", i+1)
-		oneTestCycleSessions = TestSessionArray{}
-		RunTest(i)
-		et := time.Now().UnixMilli()
-		summarySessionTestResult(oneTestCycleSessions, st, et)
-		allTestSessions = append(allTestSessions, oneTestCycleSessions...)
-		klog.Infof("--------Test %d end----------\n\n", i+1)
-	}
-	endTime := time.Now().UnixMilli()
+	done := false
+	st := time.Now().UnixMilli()
+	go func() {
+		for {
+			time.Sleep(1 * time.Second)
+			et := time.Now().UnixMilli()
+			testSessionCounters = append(testSessionCounters, &TestSessionCounter{
+				numOfSessions: len(allTestSessions),
+				st:            st,
+				et:            et,
+			})
+			if done {
+				break
+			}
+		}
+	}()
 
+	wg := sync.WaitGroup{}
+	for i := 0; i < testConfig.NumOfApps; i++ {
+		wg.Add(1)
+		appName := fmt.Sprintf("echoserver%d", i)
+		klog.Infof("Run test app %s", appName)
+		go func(app string) {
+			RunTest(app)
+			wg.Done()
+		}(appName)
+	}
+	wg.Wait()
+	done = true
+
+	et := time.Now().UnixMilli()
 	klog.Infof("--------Test summary ----------\n")
-	summaryAppTestResult(allTestApps, startTime, endTime)
-	summarySessionTestResult(allTestSessions, startTime, endTime)
+	summaryAppTestResult(allTestApps, st, et)
+	summarySessionTestResult(allTestSessions, st, et)
 	os.Exit(0)
 }

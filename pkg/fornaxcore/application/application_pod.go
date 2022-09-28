@@ -100,7 +100,7 @@ func (am *ApplicationManager) handlePodAddUpdateFromNode(pod *v1.Pod) {
 		ap := pool.getPod(podName)
 		if ap != nil && ap.state == PodStateDeleting {
 			// this pod was requested to terminate, and node did not receive termination or failed to do it, try it again
-			am.deleteApplicationPod(pool, podName, true)
+			am.deleteApplicationPod(pool, ap.podName, true)
 			return
 		}
 		if ap != nil && ap.state == PodStateAllocated {
@@ -314,8 +314,8 @@ func (am *ApplicationManager) getPodApplicationPodTemplate(uid uuid.UUID, name s
 // 1, pods not find in podManager
 // 2, pods still in pending state
 // 3, idle pods
-func (am *ApplicationManager) getPodsToBeDelete(pool *ApplicationPool, numOfDesiredDelete int) []*v1.Pod {
-	podsToDelete := []*v1.Pod{}
+func (am *ApplicationManager) getPodsToBeDelete(pool *ApplicationPool, numOfDesiredDelete int) []*ApplicationPod {
+	podsToDelete := []*ApplicationPod{}
 	candidates := 0
 
 	pendingPods := pool.podListOfState(PodStatePending)
@@ -323,7 +323,7 @@ func (am *ApplicationManager) getPodsToBeDelete(pool *ApplicationPool, numOfDesi
 	for _, p := range pendingPods {
 		pod := am.podManager.FindPod(p.podName)
 		if pod == nil || len(pod.Status.HostIP) == 0 {
-			podsToDelete = append(podsToDelete, pod)
+			podsToDelete = append(podsToDelete, p)
 			candidates += 1
 			if candidates == numOfDesiredDelete {
 				return podsToDelete
@@ -335,7 +335,7 @@ func (am *ApplicationManager) getPodsToBeDelete(pool *ApplicationPool, numOfDesi
 	for _, p := range pendingPods {
 		pod := am.podManager.FindPod(p.podName)
 		if pod == nil || len(pod.Status.HostIP) == 0 {
-			podsToDelete = append(podsToDelete, pod)
+			podsToDelete = append(podsToDelete, p)
 			candidates += 1
 			if candidates == numOfDesiredDelete {
 				return podsToDelete
@@ -347,7 +347,7 @@ func (am *ApplicationManager) getPodsToBeDelete(pool *ApplicationPool, numOfDesi
 	for _, p := range pendingPods {
 		pod := am.podManager.FindPod(p.podName)
 		if pod == nil || (len(pod.Status.HostIP) >= 0) {
-			podsToDelete = append(podsToDelete, pod)
+			podsToDelete = append(podsToDelete, p)
 			candidates += 1
 			if candidates == numOfDesiredDelete {
 				return podsToDelete
@@ -360,7 +360,7 @@ func (am *ApplicationManager) getPodsToBeDelete(pool *ApplicationPool, numOfDesi
 	for _, p := range idlePods {
 		pod := am.podManager.FindPod(p.podName)
 		if pod == nil || pod.Status.Phase == v1.PodUnknown {
-			podsToDelete = append(podsToDelete, pod)
+			podsToDelete = append(podsToDelete, p)
 			candidates += 1
 			if candidates == numOfDesiredDelete {
 				return podsToDelete
@@ -372,7 +372,7 @@ func (am *ApplicationManager) getPodsToBeDelete(pool *ApplicationPool, numOfDesi
 	for _, p := range idlePods {
 		pod := am.podManager.FindPod(p.podName)
 		if pod == nil || pod.Status.Phase == v1.PodRunning {
-			podsToDelete = append(podsToDelete, pod)
+			podsToDelete = append(podsToDelete, p)
 			candidates += 1
 			if candidates == numOfDesiredDelete {
 				return podsToDelete
@@ -423,8 +423,8 @@ func (am *ApplicationManager) deployApplicationPods(pool *ApplicationPool, appli
 		// Choose which Pods to delete, preferring those in earlier phases of startup.
 		deleteErrors := []error{}
 		podsToDelete := am.getPodsToBeDelete(pool, desiredSubstraction)
-		for _, pod := range podsToDelete {
-			err := am.deleteApplicationPod(pool, util.Name(pod), false)
+		for _, ap := range podsToDelete {
+			err := am.deleteApplicationPod(pool, ap.podName, false)
 			if err != nil {
 				deleteErrors = append(deleteErrors, err)
 			}
@@ -509,8 +509,8 @@ func (am *ApplicationManager) getPodApplicationKey(pod *v1.Pod) (string, error) 
 func (am *ApplicationManager) cleanupPodOfApplication(pool *ApplicationPool) error {
 	deleteErrors := []error{}
 	pods := pool.podList()
-	for _, k := range pods {
-		err := am.deleteApplicationPod(pool, k.podName, false)
+	for _, ap := range pods {
+		err := am.deleteApplicationPod(pool, ap.podName, false)
 		if err != nil {
 			deleteErrors = append(deleteErrors, err)
 		}

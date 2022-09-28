@@ -46,7 +46,7 @@ const (
 	DefaultApplicationSyncErrorRecycleDuration = 10 * time.Second
 
 	// The number of workers sync application
-	DefaultNumOfApplicationWorkers = 8
+	DefaultNumOfApplicationWorkers = 4
 )
 
 type ApplicationPool struct {

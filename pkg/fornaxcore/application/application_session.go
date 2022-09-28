@@ -84,16 +84,17 @@ func (am *ApplicationManager) onSessionEventFromNode(se *ie.SessionEvent) error 
 	return nil
 }
 
-func (am *ApplicationManager) changeSessionStatus(pool *ApplicationPool, v *fornaxv1.ApplicationSession, status fornaxv1.SessionStatus) error {
-	session := v.DeepCopy()
-	newStatus := v.Status.DeepCopy()
+func (am *ApplicationManager) changeSessionStatus(pool *ApplicationPool, session *fornaxv1.ApplicationSession, status fornaxv1.SessionStatus) error {
+	newStatus := session.Status.DeepCopy()
 	newStatus.SessionStatus = status
 	if status == fornaxv1.SessionStatusClosed || status == fornaxv1.SessionStatusTimeout {
 		// reset client session to let it can be hard deleted
 		newStatus.ClientSessions = []v1.LocalObjectReference{}
 	}
-	cachedCopy := pool.getSession(string(v.GetUID()))
-	cachedCopy.Status = *newStatus
+	cachedCopy := pool.getSession(string(session.GetUID()))
+	if cachedCopy != nil {
+		cachedCopy.Status = *newStatus
+	}
 	return am.sessionManager.UpdateSessionStatus(session, newStatus)
 }
 
@@ -367,15 +368,14 @@ func (am *ApplicationManager) closeApplicationSession(pool *ApplicationPool, ses
 					return err
 				}
 			} else {
+				// TODO
 				// handle this case when FornaxCore restart, node holding session have not connected
 				// and can not send close command, but client want to close a session
-				return fmt.Errorf("Can not talk to pod to close session because node disconnected, try later")
-
-				// TODO, how to handle node is actually dead
+				am.changeSessionStatus(pool, session, fornaxv1.SessionStatusClosed)
 			}
 		}
 	} else {
-		// no op
+		am.changeSessionStatus(pool, session, fornaxv1.SessionStatusTimeout)
 	}
 
 	return nil
@@ -389,15 +389,7 @@ func (am *ApplicationManager) cleanupSessionOnDeletedPod(pool *ApplicationPool, 
 	podSessions := pool.getPodSessions(podName)
 	for _, session := range podSessions {
 		klog.Infof("Delete session %s on deleted pod %s", util.Name(session), podName)
-		pool.deleteSession(session)
-	}
-	// if pod is dead, there is no chance to close session, just update dead session status
-	for _, v := range podSessions {
-		if util.SessionIsOpen(v) {
-			am.changeSessionStatus(pool, v, fornaxv1.SessionStatusClosed)
-		} else if util.SessionIsPending(v) {
-			am.changeSessionStatus(pool, v, fornaxv1.SessionStatusTimeout)
-		}
+		am.deleteApplicationSession(pool, session)
 	}
 }
 

@@ -25,7 +25,7 @@ import (
 	"k8s.io/klog/v2"
 )
 
-func GetFornaxCoreApiClient() *fornaxclient.Clientset {
+func GetFornaxCoreKubeConfig() *rest.Config {
 	var kubeconfig *rest.Config
 	if root, err := os.Getwd(); err == nil {
 		kubeconfigPath := root + "/kubeconfig"
@@ -37,7 +37,9 @@ func GetFornaxCoreApiClient() *fornaxclient.Clientset {
 		klog.ErrorS(err, "Failed to get working dir")
 		os.Exit(-1)
 	}
+	return kubeconfig
+}
+func GetFornaxCoreApiClient(kubeconfig *rest.Config) *fornaxclient.Clientset {
 	apiServerClient := fornaxclient.NewForConfigOrDie(kubeconfig)
 	return apiServerClient
-
 }

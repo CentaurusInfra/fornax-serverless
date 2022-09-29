@@ -28,6 +28,7 @@ import (
 	ie "centaurusinfra.io/fornax-serverless/pkg/fornaxcore/internal"
 	"centaurusinfra.io/fornax-serverless/pkg/util"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/cache"
 
 	v1 "k8s.io/api/core/v1"
@@ -49,6 +50,7 @@ type sessionManager struct {
 	watchers        []chan<- interface{}
 	statusUpdateCh  chan string
 	statusChanges   *SessionStatusChangeMap
+	kubeConfig      *rest.Config
 }
 
 func (sscm *SessionStatusChangeMap) addSessionStatusChange(name string, status *fornaxv1.ApplicationSessionStatus, replace bool) {
@@ -87,6 +89,7 @@ func NewSessionManager(ctx context.Context, nodeAgentProxy nodeagent.NodeAgentCl
 			changes: map[string]*fornaxv1.ApplicationSessionStatus{},
 			mu:      sync.Mutex{},
 		},
+		kubeConfig: util.GetFornaxCoreKubeConfig(),
 	}
 	return mgr
 }
@@ -203,7 +206,7 @@ func (sm *sessionManager) UpdateSessionStatus(session *fornaxv1.ApplicationSessi
 
 // updateApplicationSessionStatus attempts to update the Status of the given Application Session
 func (sm *sessionManager) updateSessionStatus(sessionName string, newStatus *fornaxv1.ApplicationSessionStatus) error {
-	apiServerClient := util.GetFornaxCoreApiClient()
+	apiServerClient := util.GetFornaxCoreApiClient(sm.kubeConfig)
 	namespace, name, _ := cache.SplitMetaNamespaceKey(sessionName)
 	session, err := apiServerClient.CoreV1().ApplicationSessions(namespace).Get(context.Background(), name, metav1.GetOptions{})
 	if err != nil {
@@ -238,7 +241,7 @@ func (sm *sessionManager) updateSessionStatus(sessionName string, newStatus *for
 }
 
 func (sm *sessionManager) UpdateSessionFinalizer(session *fornaxv1.ApplicationSession) error {
-	apiServerClient := util.GetFornaxCoreApiClient()
+	apiServerClient := util.GetFornaxCoreApiClient(sm.kubeConfig)
 	client := apiServerClient.CoreV1().ApplicationSessions(session.Namespace)
 	updatedSession := session.DeepCopy()
 	if util.SessionIsOpen(updatedSession) {

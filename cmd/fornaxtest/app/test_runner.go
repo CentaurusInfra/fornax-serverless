@@ -30,23 +30,26 @@ import (
 	"k8s.io/klog/v2"
 
 	"k8s.io/apimachinery/pkg/util/rand"
-	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 
 	// "k8s.io/apimachinery/pkg/util/wait"
-	utilfeature "k8s.io/apiserver/pkg/util/feature"
+
 	cliflag "k8s.io/component-base/cli/flag"
 	"k8s.io/component-base/logs"
 	"k8s.io/component-base/version/verflag"
+)
+
+var (
+	allTestApps         = TestApplicationArray{}
+	allTestSessions     = TestSessionArray{}
+	appSessionMap       = TestSessionMap{}
+	appSessionMapLock   = sync.Mutex{}
+	testSessionCounters = []*TestSessionCounter{}
 )
 
 type TestSessionCounter struct {
 	numOfSessions int
 	st            int64
 	et            int64
-}
-
-func init() {
-	utilruntime.Must(logs.AddFeatureGates(utilfeature.DefaultMutableFeatureGate))
 }
 
 const (
@@ -105,10 +108,11 @@ func Run(ctx context.Context, testConfig config.TestConfiguration) {
 
 	RunTest := func(appName string) {
 		klog.Infof("--------App %s Test begin--------\n", appName)
+		namespace := "fornaxtest"
+		randAppName := rand.String(16)
 		for i := 1; i <= testConfig.NumOfTestCycle; i++ {
 			sessions := []*TestSession{}
-			cycleName := fmt.Sprintf("%s-cycle-%d", rand.String(16), i)
-			namespace := "fornaxtest"
+			cycleName := fmt.Sprintf("%s-cycle-%d", randAppName, i)
 			switch testConfig.TestCase {
 			case config.AppFullCycleTest:
 				sessions = runAppFullCycleTest(cycleName, namespace, appName, testConfig)

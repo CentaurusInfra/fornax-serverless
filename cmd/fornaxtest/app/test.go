@@ -19,14 +19,11 @@ package app
 import (
 	"context"
 	"fmt"
-	"os"
 	"sort"
-	"sync"
 	"time"
 
 	"centaurusinfra.io/fornax-serverless/cmd/fornaxtest/config"
 	fornaxv1 "centaurusinfra.io/fornax-serverless/pkg/apis/core/v1"
-	fornaxclient "centaurusinfra.io/fornax-serverless/pkg/client/clientset/versioned"
 	"centaurusinfra.io/fornax-serverless/pkg/client/informers/externalversions"
 	"centaurusinfra.io/fornax-serverless/pkg/util"
 
@@ -35,17 +32,12 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/tools/cache"
-	"k8s.io/client-go/tools/clientcmd"
 	_ "k8s.io/component-base/logs/json/register"
 	"k8s.io/klog/v2"
 )
 
 var (
-	allTestApps         = TestApplicationArray{}
-	allTestSessions     = TestSessionArray{}
-	appSessionMap       = TestSessionMap{}
-	appSessionMapLock   = sync.Mutex{}
-	testSessionCounters = []*TestSessionCounter{}
+	kubeConfig = util.GetFornaxCoreKubeConfig()
 
 	SessionWrapperEchoServerSpec = &fornaxv1.ApplicationSpec{
 		Containers: []v1.Container{{
@@ -91,7 +83,7 @@ var (
 )
 
 func initApplicationSessionInformer(ctx context.Context) {
-	sessionInformerFactory := externalversions.NewSharedInformerFactory(util.GetFornaxCoreApiClient(), 10*time.Minute)
+	sessionInformerFactory := externalversions.NewSharedInformerFactory(util.GetFornaxCoreApiClient(util.GetFornaxCoreKubeConfig()), 10*time.Minute)
 	applicationSessionInformer := sessionInformerFactory.Core().V1().ApplicationSessions()
 	applicationSessionInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc:    onApplicationSessionAddEvent,
@@ -394,7 +386,7 @@ func cleanupSessionFullCycleTest(namespace, appName string, sessions []*TestSess
 }
 
 func createApplication(namespace, name string, appSpec *fornaxv1.ApplicationSpec) (*fornaxv1.Application, error) {
-	client := getApiServerClient()
+	client := util.GetFornaxCoreApiClient(kubeConfig)
 	appClient := client.CoreV1().Applications(namespace)
 	application := &fornaxv1.Application{
 		TypeMeta: metav1.TypeMeta{
@@ -414,7 +406,7 @@ func createApplication(namespace, name string, appSpec *fornaxv1.ApplicationSpec
 }
 
 func createSession(namespace, name, applicationName string, sessionSpec *fornaxv1.ApplicationSessionSpec) (*TestSession, error) {
-	client := getApiServerClient()
+	client := util.GetFornaxCoreApiClient(kubeConfig)
 	appClient := client.CoreV1().ApplicationSessions(namespace)
 	spec := *sessionSpec.DeepCopy()
 	spec.ApplicationName = applicationName
@@ -430,17 +422,15 @@ func createSession(namespace, name, applicationName string, sessionSpec *fornaxv
 		},
 		Spec: spec,
 	}
-	creationTimeMilli := time.Now().UnixMilli()
 	ts := &TestSession{
-		session:            session,
-		creationTimeMilli:  creationTimeMilli,
-		availableTimeMilli: 0,
-		status:             fornaxv1.SessionStatusPending,
+		session: session,
+		status:  fornaxv1.SessionStatusPending,
 	}
 
 	appSessionMapLock.Lock()
 	appSessionMap[ts.session.Name] = ts
 	appSessionMapLock.Unlock()
+	ts.creationTimeMilli = time.Now().UnixMilli()
 	session, err := appClient.Create(context.Background(), session, metav1.CreateOptions{})
 	if err != nil {
 		appSessionMapLock.Lock()
@@ -453,20 +443,20 @@ func createSession(namespace, name, applicationName string, sessionSpec *fornaxv
 }
 
 func deleteApplication(namespace, name string) error {
-	client := getApiServerClient()
+	client := util.GetFornaxCoreApiClient(kubeConfig)
 	appClient := client.CoreV1().Applications(namespace)
 	klog.InfoS("Applications deleted", "namespace", namespace, "app", name)
 	return appClient.Delete(context.Background(), name, metav1.DeleteOptions{})
 }
 
 func deleteSession(namespace, name string) error {
-	client := getApiServerClient()
+	client := util.GetFornaxCoreApiClient(kubeConfig)
 	appClient := client.CoreV1().ApplicationSessions(namespace)
 	return appClient.Delete(context.Background(), name, metav1.DeleteOptions{})
 }
 
 func describeApplication(namespace, name string) (*fornaxv1.Application, error) {
-	client := getApiServerClient()
+	client := util.GetFornaxCoreApiClient(kubeConfig)
 	appClient := client.CoreV1().Applications(namespace)
 	apps, err := appClient.Get(context.Background(), name, metav1.GetOptions{})
 	if err != nil {
@@ -479,7 +469,7 @@ func describeApplication(namespace, name string) (*fornaxv1.Application, error) 
 	return apps, err
 }
 func describeSession(namespace, name string) (*fornaxv1.ApplicationSession, error) {
-	client := getApiServerClient()
+	client := util.GetFornaxCoreApiClient(kubeConfig)
 	appClient := client.CoreV1().ApplicationSessions(namespace)
 	sess, err := appClient.Get(context.Background(), name, metav1.GetOptions{})
 	if err != nil {
@@ -490,23 +480,6 @@ func describeSession(namespace, name string) (*fornaxv1.ApplicationSession, erro
 	}
 
 	return sess, err
-}
-
-func getApiServerClient() *fornaxclient.Clientset {
-	if root, err := os.Getwd(); err == nil {
-		kubeconfigPath := root + "/kubeconfig"
-		if kubeconfig, err := clientcmd.BuildConfigFromFlags("", kubeconfigPath); err != nil {
-			klog.ErrorS(err, "Failed to construct kube rest config")
-			os.Exit(-1)
-		} else {
-			return fornaxclient.NewForConfigOrDie(kubeconfig)
-		}
-	} else {
-		klog.ErrorS(err, "Failed to get working dir")
-		os.Exit(-1)
-	}
-
-	return nil
 }
 
 func summaryAppTestResult(apps TestApplicationArray, st, et int64) {

@@ -174,7 +174,7 @@ func (am *ApplicationManager) getOrCreateApplicationPool(applicationKey string) 
 }
 
 func (am *ApplicationManager) initApplicationInformer(ctx context.Context) {
-	apiServerClient := util.GetFornaxCoreApiClient()
+	apiServerClient := util.GetFornaxCoreApiClient(util.GetFornaxCoreKubeConfig())
 	appInformerFactory := externalversions.NewSharedInformerFactory(apiServerClient, 10*time.Minute)
 
 	applicationInformer := appInformerFactory.Core().V1().Applications()
@@ -205,7 +205,7 @@ func (am *ApplicationManager) initApplicationInformer(ctx context.Context) {
 }
 
 func (am *ApplicationManager) initApplicationSessionInformer(ctx context.Context) {
-	apiServerClient := util.GetFornaxCoreApiClient()
+	apiServerClient := util.GetFornaxCoreApiClient(util.GetFornaxCoreKubeConfig())
 	sessionInformerFactory := externalversions.NewSharedInformerFactory(apiServerClient, 10*time.Minute)
 	applicationSessionInformer := sessionInformerFactory.Core().V1().ApplicationSessions()
 	applicationSessionInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{

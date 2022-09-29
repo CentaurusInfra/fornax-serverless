@@ -53,7 +53,7 @@ type nodeManager struct {
 	houseKeepingTicker *time.Ticker
 }
 
-// UpdateSessionState implements NodeManager
+// UpdateSessionState implements NodeManagerInterface
 func (nm *nodeManager) UpdateSessionState(nodeIdentifier string, session *fornaxv1.ApplicationSession) error {
 	podName := session.Status.PodReference.Name
 	pod := nm.podManager.FindPod(podName)
@@ -65,7 +65,7 @@ func (nm *nodeManager) UpdateSessionState(nodeIdentifier string, session *fornax
 	return nil
 }
 
-// WatchNode implements NodeManager
+// WatchNode implements NodeManagerInterface
 func (nm *nodeManager) Watch(watcher chan<- interface{}) {
 	nm.watchers = append(nm.watchers, watcher)
 }

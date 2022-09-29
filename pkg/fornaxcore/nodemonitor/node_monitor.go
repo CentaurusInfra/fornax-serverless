@@ -40,26 +40,26 @@ type NodeWithRevision struct {
 	Revision       int64
 }
 
-type NodeRevisionPool struct {
+type NodeRevisionMap struct {
 	mu    sync.RWMutex
 	nodes map[string]*NodeWithRevision
 }
 
-func (pool *NodeRevisionPool) add(name string, node *NodeWithRevision) {
+func (pool *NodeRevisionMap) add(name string, node *NodeWithRevision) {
 	pool.mu.Lock()
 	defer pool.mu.Unlock()
 	pool.nodes[name] = node
 }
 
-func (pool *NodeRevisionPool) delete(name string) {
+func (pool *NodeRevisionMap) delete(name string) {
 	pool.mu.Lock()
 	defer pool.mu.Unlock()
 	delete(pool.nodes, name)
 }
 
-func (pool *NodeRevisionPool) get(name string) *NodeWithRevision {
-	pool.mu.Lock()
-	defer pool.mu.Unlock()
+func (pool *NodeRevisionMap) get(name string) *NodeWithRevision {
+	pool.mu.RLock()
+	defer pool.mu.RUnlock()
 	if n, found := pool.nodes[name]; found {
 		return n
 	}
@@ -70,8 +70,8 @@ func (pool *NodeRevisionPool) get(name string) *NodeWithRevision {
 type nodeMonitor struct {
 	chQuit      chan interface{}
 	nodeManager ie.NodeManagerInterface
-	nodes       NodeRevisionPool
-	staleNodes  NodeRevisionPool
+	nodes       NodeRevisionMap
+	staleNodes  NodeRevisionMap
 }
 
 // OnSessionUpdate implements server.NodeMonitor
@@ -91,12 +91,8 @@ func (nm *nodeMonitor) OnSessionUpdate(ctx context.Context, message *grpc.Fornax
 	if nodeWS == nil {
 		return nil, nodeagent.NodeRevisionOutOfOrderError
 	}
-	if err := nm.checkNodeRevision(nodeWS, revision); err != nil {
+	if err := nm.validateNodeRevision(nodeWS, revision, false); err != nil {
 		return nil, err
-	}
-	if revision == nodeWS.Revision {
-		// klog.Infof("Received a same revision from node agent, revision: %d, skip", revision)
-		return nil, nil
 	}
 
 	nodeWS.Revision = revision
@@ -233,7 +229,7 @@ func (nm *nodeMonitor) OnPodStateUpdate(ctx context.Context, message *grpc.Forna
 	if nodeWS == nil {
 		return nil, nodeagent.NodeRevisionOutOfOrderError
 	}
-	if err := nm.checkNodeRevision(nodeWS, revision); err != nil {
+	if err := nm.validateNodeRevision(nodeWS, revision, false); err != nil {
 		return nil, err
 	}
 	if revision == nodeWS.Revision {
@@ -259,7 +255,7 @@ func (nm *nodeMonitor) OnPodStateUpdate(ctx context.Context, message *grpc.Forna
 	return nil, nil
 }
 
-func (nm *nodeMonitor) checkNodeRevision(nodeWS *NodeWithRevision, revision int64) error {
+func (nm *nodeMonitor) validateNodeRevision(nodeWS *NodeWithRevision, revision int64, allowEqual bool) error {
 	if nodeWS == nil {
 		return nodeagent.NodeRevisionOutOfOrderError
 	}
@@ -289,8 +285,8 @@ func (nm *nodeMonitor) updateOrCreateNode(nodeId string, v1node *v1.Node, revisi
 		}
 		nm.nodeManager.SyncNodePodStates(nodeId, podStates)
 	} else {
-		if revision < nodeWS.Revision {
-			return nodeagent.NodeRevisionOutOfOrderError
+		if err := nm.validateNodeRevision(nodeWS, revision, true); err != nil {
+			return err
 		}
 
 		nodeWS.Revision = revision
@@ -305,8 +301,6 @@ func (nm *nodeMonitor) updateOrCreateNode(nodeId string, v1node *v1.Node, revisi
 	return nil
 }
 
-// nm.staleNodeBucket.refreshNode(fornaxNode)
-// nm.staleNodeBucket.refreshNode(nodeWS)
 func (nm *nodeMonitor) CheckStaleNode() {
 	// ask nodes to send full sync request
 	// for _, node := range nm.staleNodes {
@@ -314,19 +308,15 @@ func (nm *nodeMonitor) CheckStaleNode() {
 	// }
 }
 
-// nm.nodeUpdateBucket.appendUpdate(update)
-// case <-nm.houseKeepingTicker.C:
-//   nm.PrintNodeSummary()
-//   nm.CheckStaleNode()
 func NewNodeMonitor(nodeManager ie.NodeManagerInterface) *nodeMonitor {
 	nm := &nodeMonitor{
 		chQuit:      make(chan interface{}),
 		nodeManager: nodeManager,
-		nodes: NodeRevisionPool{
+		nodes: NodeRevisionMap{
 			mu:    sync.RWMutex{},
 			nodes: map[string]*NodeWithRevision{},
 		},
-		staleNodes: NodeRevisionPool{
+		staleNodes: NodeRevisionMap{
 			mu:    sync.RWMutex{},
 			nodes: map[string]*NodeWithRevision{},
 		},

@@ -27,6 +27,7 @@ import (
 	listerv1 "centaurusinfra.io/fornax-serverless/pkg/client/listers/core/v1"
 	"centaurusinfra.io/fornax-serverless/pkg/util"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/client-go/rest"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/klog/v2"
@@ -76,6 +77,7 @@ type ApplicationStatusManager struct {
 	applicationLister listerv1.ApplicationLister
 	statusUpdateCh    chan string
 	statusChanges     *ApplicationStatusChangeMap
+	kubeConfig        *rest.Config
 }
 
 func NewApplicationStatusManager(appLister listerv1.ApplicationLister) *ApplicationStatusManager {
@@ -86,6 +88,7 @@ func NewApplicationStatusManager(appLister listerv1.ApplicationLister) *Applicat
 			changes: map[string]*fornaxv1.ApplicationStatus{},
 			mu:      sync.Mutex{},
 		},
+		kubeConfig: util.GetFornaxCoreKubeConfig(),
 	}
 }
 
@@ -148,7 +151,7 @@ func (asm *ApplicationStatusManager) updateApplicationStatus(applicationKey stri
 	var updateErr error
 	var updatedApplication *fornaxv1.Application
 
-	apiServerClient := util.GetFornaxCoreApiClient()
+	apiServerClient := util.GetFornaxCoreApiClient(asm.kubeConfig)
 	application, updateErr := GetApplication(apiServerClient, applicationKey)
 	if updateErr != nil {
 		if apierrors.IsNotFound(updateErr) {

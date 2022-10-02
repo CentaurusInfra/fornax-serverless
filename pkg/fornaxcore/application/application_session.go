@@ -105,7 +105,7 @@ func (am *ApplicationManager) getSessionApplicationKey(session *fornaxv1.Applica
 }
 
 // add active session into application's session pool and delete terminal session from pool
-// add session/delete session will update pod state according pod's session usage
+// pool.addSession/deleteSession will update associated pod state according session state
 func (am *ApplicationManager) updateSessionPool(pool *ApplicationPool, session *fornaxv1.ApplicationSession) {
 	sessionId := string(session.GetUID())
 	if util.SessionInTerminalState(session) {

@@ -20,18 +20,27 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"path"
+	"reflect"
+	"strings"
 	"sync"
+	"sync/atomic"
 
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
-	// metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/api/meta"
+	"k8s.io/apimachinery/pkg/conversion"
+	"k8s.io/klog/v2"
+
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/watch"
-	"k8s.io/klog"
 
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apiserver/pkg/features"
 	"k8s.io/apiserver/pkg/storage"
 	apistorage "k8s.io/apiserver/pkg/storage"
 	"k8s.io/apiserver/pkg/storage/etcd3"
+	"k8s.io/apiserver/pkg/storage/etcd3/metrics"
 )
 
 type objState struct {
@@ -41,12 +50,34 @@ type objState struct {
 	stale bool
 }
 
+type Key struct {
+	key string
+	rev int64
+}
+
+type Keys []*Key
+
+func (keys Keys) Len() int {
+	return len(keys)
+}
+
+//so, sort latency from smaller to lager value
+func (keys Keys) Less(i, j int) bool {
+	return keys[i].rev < keys[i].rev
+}
+
+func (keys Keys) Swap(i, j int) {
+	keys[i], keys[j] = keys[j], keys[i]
+}
+
 type memoryStore struct {
 	// codec               runtime.Codec
 	versioner storage.Versioner
 	// transformer         value.Transformer
 	mu                  sync.RWMutex
 	kvs                 map[string]runtime.Object
+	rev                 int64
+	klist               []*Key
 	pathPrefix          string
 	groupResource       schema.GroupResource
 	groupResourceString string
@@ -160,14 +191,198 @@ func (ms *memoryStore) Get(ctx context.Context, key string, opts storage.GetOpti
 func (ms *memoryStore) GetList(ctx context.Context, key string, opts storage.ListOptions, listObj runtime.Object) error {
 	ms.mu.RLock()
 	defer ms.mu.RUnlock()
-	panic("unimplemented")
+
+	recursive := opts.Recursive
+	resourceVersion := opts.ResourceVersion
+	match := opts.ResourceVersionMatch
+	pred := opts.Predicate
+
+	klog.InfoS("GWJ get list of obj", "key", key, "opts", opts)
+	listPtr, err := meta.GetItemsPtr(listObj)
+	if err != nil {
+		return err
+	}
+	v, err := conversion.EnforcePtr(listPtr)
+	if err != nil || v.Kind() != reflect.Slice {
+		return fmt.Errorf("need ptr to slice: %v", err)
+	}
+	key = path.Join(ms.pathPrefix, key)
+
+	// For recursive lists, we need to make sure the key ended with "/" so that we only
+	// get children "directories". e.g. if we have key "/a", "/a/b", "/ab", getting keys
+	// with prefix "/a" will return all three, while with prefix "/a/" will return only
+	// "/a/b" which is the correct answer.
+	if recursive && !strings.HasSuffix(key, "/") {
+		key += "/"
+	}
+	keyPrefix := key
+
+	// set the appropriate clientv3 options to filter the returned data set
+	var limit int64 = pred.Limit
+	if ms.pagingEnabled && pred.Limit > 0 {
+	}
+
+	newItemFunc := getNewItemFunc(listObj, v)
+
+	var fromRV *uint64
+	if len(resourceVersion) > 0 {
+		parsedRV, err := ms.versioner.ParseResourceVersion(resourceVersion)
+		if err != nil {
+			return apierrors.NewBadRequest(fmt.Sprintf("invalid resource version: %v", err))
+		}
+		fromRV = &parsedRV
+	}
+
+	var returnedRV, continueRV, withRev int64
+	var continueKey string
+	switch {
+	case recursive && ms.pagingEnabled && len(pred.Continue) > 0:
+		continueKey, continueRV, err = decodeContinue(pred.Continue, keyPrefix)
+		if err != nil {
+			return apierrors.NewBadRequest(fmt.Sprintf("invalid continue token: %v", err))
+		}
+
+		if len(resourceVersion) > 0 && resourceVersion != "0" {
+			return apierrors.NewBadRequest("specifying resource version is not allowed when using continue")
+		}
+
+		key = continueKey
+
+		// If continueRV > 0, the LIST request needs a specific resource version.
+		// continueRV==0 is invalid.
+		// If continueRV < 0, the request is for the latest resource version.
+		if continueRV > 0 {
+			withRev = continueRV
+			returnedRV = continueRV
+		}
+	case recursive && ms.pagingEnabled && pred.Limit > 0:
+		if fromRV != nil {
+			switch match {
+			case metav1.ResourceVersionMatchNotOlderThan:
+				// The not older than constraint is checked after we get a response from etcd,
+				// and returnedRV is then set to the revision we get from the etcd response.
+			case metav1.ResourceVersionMatchExact:
+				returnedRV = int64(*fromRV)
+				withRev = returnedRV
+			case "": // legacy case
+				if *fromRV > 0 {
+					returnedRV = int64(*fromRV)
+					withRev = returnedRV
+				}
+			default:
+				return fmt.Errorf("unknown ResourceVersionMatch value: %v", match)
+			}
+		}
+
+	default:
+		if fromRV != nil {
+			switch match {
+			case metav1.ResourceVersionMatchNotOlderThan:
+				// The not older than constraint is checked after we get a response from etcd,
+				// and returnedRV is then set to the revision we get from the etcd response.
+			case metav1.ResourceVersionMatchExact:
+				returnedRV = int64(*fromRV)
+				withRev = returnedRV
+			case "": // legacy case
+			default:
+				return fmt.Errorf("unknown ResourceVersionMatch value: %v", match)
+			}
+		}
+
+		if recursive {
+		}
+	}
+
+	// loop until we have filled the requested limit from etcd or there are no more results
+	var lastKey []byte
+	var hasMore bool
+	var getResp *clientv3.GetResponse
+	var numFetched int
+	var numEvald int
+	// Because these metrics are for understanding the costs of handling LIST requests,
+	// get them recorded even in error cases.
+	defer func() {
+		numReturn := v.Len()
+		metrics.RecordStorageListMetrics(s.groupResourceString, numFetched, numEvald, numReturn)
+	}()
+	for {
+	}
+
+	// instruct the client to begin querying from immediately after the last key we returned
+	// we never return a key that the client wouldn't be allowed to see
+	if hasMore {
+		// we want to start immediately after the last key
+		next, err := encodeContinue(string(lastKey)+"\x00", keyPrefix, returnedRV)
+		if err != nil {
+			return err
+		}
+		var remainingItemCount *int64
+		// getResp.Count counts in objects that do not match the pred.
+		// Instead of returning inaccurate count for non-empty selectors, we return nil.
+		// Only set remainingItemCount if the predicate is empty.
+		if utilfeature.DefaultFeatureGate.Enabled(features.RemainingItemCount) {
+			if pred.Empty() {
+				c := int64(getResp.Count - pred.Limit)
+				remainingItemCount = &c
+			}
+		}
+		return ms.versioner.UpdateList(listObj, uint64(returnedRV), next, remainingItemCount)
+	}
+
+	// no continuation
+	return s.versioner.UpdateList(listObj, uint64(returnedRV), "", nil)
+
+	return nil
 }
 
 // GuaranteedUpdate implements storage.Interface
-func (ms *memoryStore) GuaranteedUpdate(ctx context.Context, key string, ptrToType runtime.Object, ignoreNotFound bool, preconditions *storage.Preconditions, tryUpdate storage.UpdateFunc, cachedExistingObject runtime.Object) error {
+func (ms *memoryStore) GuaranteedUpdate(ctx context.Context, key string, out runtime.Object, ignoreNotFound bool, preconditions *storage.Preconditions, tryUpdate storage.UpdateFunc, cachedExistingObject runtime.Object) error {
 	ms.mu.Lock()
 	defer ms.mu.Unlock()
-	panic("unimplemented")
+
+	klog.InfoS("GWJ update obj", "key", key, "obj", cachedExistingObject)
+	_, err := conversion.EnforcePtr(out)
+	if err != nil {
+		return fmt.Errorf("unable to convert output object to pointer: %v", err)
+	}
+	key = path.Join(ms.pathPrefix, key)
+
+	if existingObj, found := ms.kvs[key]; !found {
+		if ignoreNotFound {
+			return runtime.SetZeroValue(out)
+		}
+		return storage.NewKeyNotFoundError(key, 0)
+	} else {
+		currState, err := ms.getStateFromObject(existingObj)
+		if err != nil {
+			return err
+		}
+
+		if cachedExistingObject != nil {
+			s, err := ms.getStateFromObject(cachedExistingObject)
+			if err != nil {
+				return err
+			}
+			if s.rev != currState.rev {
+				return apierrors.NewBadRequest(fmt.Sprintf("resource version is staled: %d", s.rev))
+			}
+		}
+
+		if preconditions != nil {
+			if err := preconditions.Check(key, currState.obj); err != nil {
+				return err
+			}
+
+			ret, _, err := ms.updateState(currState, tryUpdate)
+			if err != nil {
+				return err
+			}
+			ms.kvs[key] = ret
+			out = out.DeepCopyObject()
+		}
+	}
+
+	return nil
 }
 
 // Versioner implements storage.Interface
@@ -220,6 +435,38 @@ func (ms *memoryStore) validateMinimumResourceVersion(minimumResourceVersion str
 		return storage.NewTooLargeResourceVersionError(minimumRV, actualRevision, 0)
 	}
 	return nil
+}
+
+// appendListItem decodes and appends the object (if it passes filter) to v, which must be a slice.
+func appendListItem(v reflect.Value, data []byte, rev uint64, pred storage.SelectionPredicate, codec runtime.Codec, versioner storage.Versioner, newItemFunc func() runtime.Object) error {
+	obj, _, err := codec.Decode(data, nil, newItemFunc())
+	if err != nil {
+		return err
+	}
+	// being unable to set the version does not prevent the object from being extracted
+	if err := versioner.UpdateObject(obj, rev); err != nil {
+		klog.Errorf("failed to update object version: %v", err)
+	}
+	if matched, err := pred.Matches(obj); err == nil && matched {
+		v.Set(reflect.Append(v, reflect.ValueOf(obj).Elem()))
+	}
+	return nil
+}
+
+func (ms *memoryStore) updateState(st *objState, userUpdate storage.UpdateFunc) (runtime.Object, uint64, error) {
+	ret, ttlPtr, err := userUpdate(st.obj, *st.meta)
+	if err != nil {
+		return nil, 0, err
+	}
+
+	if err := ms.versioner.PrepareObjectForStorage(ret); err != nil {
+		return nil, 0, fmt.Errorf("PrepareObjectForStorage failed: %v", err)
+	}
+	var ttl uint64
+	if ttlPtr != nil {
+		ttl = *ttlPtr
+	}
+	return ret, ttl, nil
 }
 
 var _ apistorage.Interface = &memoryStore{}

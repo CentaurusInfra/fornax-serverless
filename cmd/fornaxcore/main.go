@@ -103,14 +103,6 @@ func main() {
 		WithLocalDebugExtension().
 		WithResource(&fornaxv1.Application{}).
 		WithResource(&fornaxv1.ApplicationSession{})
-	// WithResourceAndStorage(&fornaxv1.ApplicationInstance{}, storageFunc).
-	// WithResourceAndStorage(&fornaxv1.ClientSession{}, storageFunc).
-	// WithResourceAndStorage(&fornaxv1.IngressEndpoint{}, storageFunc).
-	// WithConfigFns(func(config *apiserver.RecommendedConfig) *apiserver.RecommendedConfig {
-	//  fmt.Printf("%T\n", config.Authentication.Authenticator)
-	//  fmt.Println(config.Authentication.APIAudiences)
-	//  return config
-	// })
 
 	err = apiserver.Execute()
 	if err != nil {

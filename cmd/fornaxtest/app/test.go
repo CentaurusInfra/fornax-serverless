@@ -114,8 +114,8 @@ func onApplicationSessionUpdateEvent(old, cur interface{}) {
 func updateSessionStatus(session *fornaxv1.ApplicationSession) {
 	appSessionMapLock.Lock()
 	defer appSessionMapLock.Unlock()
-	// availableTimeMilli := time.Now().UnixMilli()
-	availableTimeMilli := session.Status.AvailableTimeMicro / 1000
+	availableTimeMilli := time.Now().UnixMilli()
+	// availableTimeMilli := session.Status.AvailableTimeMicro / 1000
 	if ts, found := appSessionMap[session.Name]; found {
 		if ts.status == fornaxv1.SessionStatusPending &&
 			(session.Status.SessionStatus == fornaxv1.SessionStatusAvailable ||

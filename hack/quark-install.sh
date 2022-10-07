@@ -11,10 +11,10 @@ sudo swapoff -a
 
 basic_install() {
     echo -e "## INSTALL BASIC TOOL"
-    sudo apt-get update
-    sudo apt install build-essential
-    sudo apt install curl
-    sudo apt-get install vim
+    sudo apt-get update -y
+    sudo apt install build-essential -y
+    sudo apt install curl -y
+    sudo apt-get install vim -y
     echo -e "## DONE BASIC TOOL\n"
 }
 

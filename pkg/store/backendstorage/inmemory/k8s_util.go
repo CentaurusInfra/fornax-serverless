@@ -66,7 +66,7 @@ func getStateFromObject(versioner apistorage.Versioner, obj runtime.Object) (*ob
 
 // validateMinimumResourceVersion returns a 'too large resource' version error when the provided minimumResourceVersion is
 // greater than the most recent actualRevision available from storage.
-func (ms *memoryStore) validateMinimumResourceVersion(versioner apistorage.Versioner, minimumResourceVersion string, actualRevision uint64) error {
+func (ms *MemoryStore) validateMinimumResourceVersion(versioner apistorage.Versioner, minimumResourceVersion string, actualRevision uint64) error {
 	if minimumResourceVersion == "" {
 		return nil
 	}

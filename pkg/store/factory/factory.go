@@ -14,13 +14,13 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package store
+package factory
 
 import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apiserver/pkg/registry/generic"
-	"k8s.io/apiserver/pkg/storage"
+	apistorage "k8s.io/apiserver/pkg/storage"
 	"k8s.io/apiserver/pkg/storage/storagebackend"
 	"k8s.io/apiserver/pkg/storage/storagebackend/factory"
 	"k8s.io/client-go/tools/cache"
@@ -34,23 +34,27 @@ type FornaxRestOptionsFactory struct {
 
 func (f *FornaxRestOptionsFactory) GetRESTOptions(resource schema.GroupResource) (generic.RESTOptions, error) {
 	options, err := f.OptionsGetter.GetRESTOptions(resource)
-	options.Decorator = FornaxStorage
+	options.Decorator = FornaxStorageFunc
 	if err != nil {
 		return options, err
 	}
 	return options, nil
 }
 
+func NewFornaxStorage(groupResource schema.GroupResource, pagingEnabled bool) *inmemory.MemoryStore {
+	return inmemory.NewMemoryStore(groupResource, pagingEnabled)
+}
+
 // Creates a cacher based given storageConfig.
-func FornaxStorage(
+func FornaxStorageFunc(
 	storageConfig *storagebackend.ConfigForResource,
 	resourcePrefix string,
 	keyFunc func(obj runtime.Object) (string, error),
 	newFunc func() runtime.Object,
 	newListFunc func() runtime.Object,
-	getAttrsFunc storage.AttrFunc,
-	triggerFuncs storage.IndexerFuncs,
-	indexers *cache.Indexers) (storage.Interface, factory.DestroyFunc, error) {
+	getAttrsFunc apistorage.AttrFunc,
+	triggerFuncs apistorage.IndexerFuncs,
+	indexers *cache.Indexers) (apistorage.Interface, factory.DestroyFunc, error) {
 
 	s, d, err := factory.Create(*storageConfig, newFunc)
 	if err != nil {

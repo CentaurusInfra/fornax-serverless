@@ -24,12 +24,12 @@ import (
 	"time"
 
 	fornaxv1 "centaurusinfra.io/fornax-serverless/pkg/apis/core/v1"
-	listerv1 "centaurusinfra.io/fornax-serverless/pkg/client/listers/core/v1"
 	"centaurusinfra.io/fornax-serverless/pkg/util"
-	apierrors "k8s.io/apimachinery/pkg/api/errors"
-	"k8s.io/client-go/rest"
 
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	apistorage "k8s.io/apiserver/pkg/storage"
+	"k8s.io/client-go/rest"
 	"k8s.io/klog/v2"
 )
 
@@ -74,16 +74,16 @@ func (ascm *ApplicationStatusChangeMap) getAndRemoveStatusChangeSnapshot() map[s
 }
 
 type ApplicationStatusManager struct {
-	applicationLister listerv1.ApplicationLister
-	statusUpdateCh    chan string
-	statusChanges     *ApplicationStatusChangeMap
-	kubeConfig        *rest.Config
+	applicationStore apistorage.Interface
+	statusUpdateCh   chan string
+	statusChanges    *ApplicationStatusChangeMap
+	kubeConfig       *rest.Config
 }
 
-func NewApplicationStatusManager(appLister listerv1.ApplicationLister) *ApplicationStatusManager {
+func NewApplicationStatusManager(appStore apistorage.Interface) *ApplicationStatusManager {
 	return &ApplicationStatusManager{
-		applicationLister: appLister,
-		statusUpdateCh:    make(chan string, 500),
+		applicationStore: appStore,
+		statusUpdateCh:   make(chan string, 500),
 		statusChanges: &ApplicationStatusChangeMap{
 			changes: map[string]*fornaxv1.ApplicationStatus{},
 			mu:      sync.Mutex{},

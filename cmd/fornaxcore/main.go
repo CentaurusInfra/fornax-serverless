@@ -36,8 +36,7 @@ import (
 	"centaurusinfra.io/fornax-serverless/pkg/fornaxcore/pod"
 	"centaurusinfra.io/fornax-serverless/pkg/fornaxcore/podscheduler"
 	"centaurusinfra.io/fornax-serverless/pkg/fornaxcore/session"
-	"centaurusinfra.io/fornax-serverless/pkg/store"
-	"centaurusinfra.io/fornax-serverless/pkg/store/backendstorage/inmemory"
+	"centaurusinfra.io/fornax-serverless/pkg/store/factory"
 )
 
 var (
@@ -49,12 +48,12 @@ func init() {
 }
 
 func main() {
-	// initialize in memory store
+	// initialize fornax in memory store
 	app := &fornaxv1.Application{}
-	appStore := inmemory.NewMemoryStore(app.GetGroupVersionResource().GroupResource(), true)
+	appStore := factory.NewFornaxStorage(app.GetGroupVersionResource().GroupResource(), true)
 	appStore.Load()
 	appSession := &fornaxv1.ApplicationSession{}
-	appSessionStore := inmemory.NewMemoryStore(appSession.GetGroupVersionResource().GroupResource(), true)
+	appSessionStore := factory.NewFornaxStorage(appSession.GetGroupVersionResource().GroupResource(), true)
 	appSessionStore.Load()
 
 	// new fornaxcore grpc grpcServer which implement node agent proxy
@@ -62,7 +61,7 @@ func main() {
 
 	// start node and pod manager
 	podManager := pod.NewPodManager(context.Background(), grpcServer)
-	sessionManager := session.NewSessionManager(context.Background(), grpcServer, podManager)
+	sessionManager := session.NewSessionManager(context.Background(), grpcServer, appSessionStore)
 	sessionManager.Run(context.Background())
 	nodeManager := node.NewNodeManager(context.Background(), node.DefaultStaleNodeTimeout, grpcServer, podManager, sessionManager)
 	podScheduler := podscheduler.NewPodScheduler(context.Background(), grpcServer, nodeManager, podManager,
@@ -77,13 +76,14 @@ func main() {
 
 	// start application manager at last as it require api server
 	klog.Info("starting application manager")
-	appManager := application.NewApplicationManager(context.Background(), podManager, sessionManager)
+	appManager := application.NewApplicationManager(context.Background(), podManager, sessionManager, appStore, appSessionStore)
 	go appManager.Run(context.Background())
 
 	// start fornaxcore grpc server to listen nodes
 	klog.Info("starting fornaxcore grpc node agent server")
 	port := 18001
-	// TODO, get certificates from command line arguments
+	// we are using k8s api server, command line flags are only parsed when apiserver started
+	// TODO, parse flags out of api server or start api server earlier and get certificates from command line flags,
 	certFile := ""
 	keyFile := ""
 	err := grpcServer.RunGrpcServer(context.Background(), nodemonitor.NewNodeMonitor(nodeManager), port, certFile, keyFile)
@@ -99,7 +99,7 @@ func main() {
 		WithLocalDebugExtension().
 		WithConfigFns(func(config *server.RecommendedConfig) *server.RecommendedConfig {
 			optionsGetter := config.RESTOptionsGetter
-			config.RESTOptionsGetter = &store.FornaxRestOptionsFactory{
+			config.RESTOptionsGetter = &factory.FornaxRestOptionsFactory{
 				OptionsGetter: optionsGetter,
 			}
 			return config

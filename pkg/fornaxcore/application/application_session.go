@@ -17,6 +17,7 @@ limitations under the License.
 package application
 
 import (
+	"context"
 	"fmt"
 	"reflect"
 	"sort"
@@ -24,9 +25,12 @@ import (
 
 	fornaxv1 "centaurusinfra.io/fornax-serverless/pkg/apis/core/v1"
 	ie "centaurusinfra.io/fornax-serverless/pkg/fornaxcore/internal"
+	fornaxstore "centaurusinfra.io/fornax-serverless/pkg/store"
 	"centaurusinfra.io/fornax-serverless/pkg/util"
 
 	v1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/watch"
+	apistorage "k8s.io/apiserver/pkg/storage"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/klog/v2"
 )
@@ -36,6 +40,45 @@ const (
 	DefaultSessionOpenTimeoutDuration    = 10 * time.Second
 	HouseKeepingDuration                 = 1 * time.Minute
 )
+
+func GetApplicationSessionCache(store apistorage.Interface, sessionKey string) (*fornaxv1.ApplicationSession, error) {
+	out := &fornaxv1.ApplicationSession{}
+	err := store.Get(context.Background(), sessionKey, apistorage.GetOptions{IgnoreNotFound: false}, out)
+	if err != nil {
+		if fornaxstore.IsObjectNotFoundErr(err) {
+			return nil, nil
+		}
+	}
+	return out, nil
+}
+
+func (am *ApplicationManager) initApplicationSessionInformer(ctx context.Context) error {
+	app := &fornaxv1.ApplicationSession{}
+	grv := app.GetGroupVersionResource()
+	wi, err := am.sessionStore.WatchWithOldObj(ctx, grv.GroupResource().String(), apistorage.ListOptions{
+		ResourceVersion:      "0",
+		ResourceVersionMatch: "",
+		Predicate:            apistorage.SelectionPredicate{},
+		Recursive:            true,
+		ProgressNotify:       true,
+	})
+	if err != nil {
+		return err
+	}
+	am.sessionStoreUpdate = wi.ResultChanWithPrevobj()
+	return nil
+}
+
+func (am *ApplicationManager) onSessionEventFromStorage(we fornaxstore.WatchEventWithOldObj) {
+	switch we.Type {
+	case watch.Added:
+		am.onApplicationSessionAddEvent(we.Object)
+	case watch.Modified:
+		am.onApplicationSessionUpdateEvent(we.OldObject, we.Object)
+	case watch.Deleted:
+		am.onApplicationSessionDeleteEvent(we.Object)
+	}
+}
 
 // treat node as authority for session status, session status from node could be Starting, Available, Closed,
 // use status from node always, then session will be closed if session is already deleted

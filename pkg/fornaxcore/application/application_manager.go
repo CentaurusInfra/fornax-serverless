@@ -26,9 +26,9 @@ import (
 
 	fornaxv1 "centaurusinfra.io/fornax-serverless/pkg/apis/core/v1"
 	fornaxclient "centaurusinfra.io/fornax-serverless/pkg/client/clientset/versioned"
-	"centaurusinfra.io/fornax-serverless/pkg/client/informers/externalversions"
-	listerv1 "centaurusinfra.io/fornax-serverless/pkg/client/listers/core/v1"
 	ie "centaurusinfra.io/fornax-serverless/pkg/fornaxcore/internal"
+	"centaurusinfra.io/fornax-serverless/pkg/store"
+	fornaxstore "centaurusinfra.io/fornax-serverless/pkg/store"
 	"centaurusinfra.io/fornax-serverless/pkg/util"
 
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -36,6 +36,8 @@ import (
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/apimachinery/pkg/util/wait"
+	"k8s.io/apimachinery/pkg/watch"
+	apistorage "k8s.io/apiserver/pkg/storage"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/util/workqueue"
 	"k8s.io/klog/v2"
@@ -79,13 +81,15 @@ func GetApplication(apiServerClient fornaxclient.Interface, applicationKey strin
 	return apiServerClient.CoreV1().Applications(namespace).Get(context.Background(), name, metav1.GetOptions{})
 }
 
-func GetApplicationCache(lister listerv1.ApplicationLister, applicationKey string) (*fornaxv1.Application, error) {
-	namespace, name, err := cache.SplitMetaNamespaceKey(applicationKey)
+func GetApplicationCache(store apistorage.Interface, applicationKey string) (*fornaxv1.Application, error) {
+	out := &fornaxv1.Application{}
+	err := store.Get(context.Background(), applicationKey, apistorage.GetOptions{IgnoreNotFound: false}, out)
 	if err != nil {
-		klog.ErrorS(err, "Application key is not a valid meta namespace key, skip", "application", applicationKey)
-		return nil, err
+		if fornaxstore.IsObjectNotFoundErr(err) {
+			return nil, nil
+		}
 	}
-	return lister.Applications(namespace).Get(name)
+	return out, nil
 }
 
 // ApplicationManager is responsible for synchronizing Application objects stored
@@ -93,17 +97,17 @@ func GetApplicationCache(lister listerv1.ApplicationLister, applicationKey strin
 type ApplicationManager struct {
 	mu sync.RWMutex
 
-	appKind        schema.GroupVersionKind
-	appSessionKind schema.GroupVersionKind
+	appKind          schema.GroupVersionKind
+	appSessionKind   schema.GroupVersionKind
+	applicationQueue workqueue.RateLimitingInterface
 
-	applicationLister      listerv1.ApplicationLister
+	applicationStore       store.FornaxStorage
+	appStoreUpdate         <-chan store.WatchEventWithOldObj
 	aplicationListerSynced cache.InformerSynced
-	applicationIndexer     cache.Indexer
-	applicationQueue       workqueue.RateLimitingInterface
 
-	applicationSessionLister      listerv1.ApplicationSessionLister
-	aplicationSessionListerSynced cache.InformerSynced
-	applicationSessionIndexer     cache.Indexer
+	sessionStore        store.FornaxStorage
+	sessionStoreUpdate  <-chan store.WatchEventWithOldObj
+	sessionListerSynced cache.InformerSynced
 
 	// A pool of pods grouped by application key
 	applicationPools map[string]*ApplicationPool
@@ -118,13 +122,15 @@ type ApplicationManager struct {
 
 // NewApplicationManager init ApplicationInformer and ApplicationSessionInformer,
 // and start to listen to pod event from node
-func NewApplicationManager(ctx context.Context, podManager ie.PodManagerInterface, sessionManager ie.SessionManagerInterface) *ApplicationManager {
+func NewApplicationManager(ctx context.Context, podManager ie.PodManagerInterface, sessionManager ie.SessionManagerInterface, appStore, sessionStore store.FornaxStorage) *ApplicationManager {
 	am := &ApplicationManager{
 		applicationQueue: workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "fornaxv1.Application"),
 		applicationPools: map[string]*ApplicationPool{},
 		updateChannel:    make(chan interface{}, 500),
 		podManager:       podManager,
 		sessionManager:   sessionManager,
+		applicationStore: appStore,
+		sessionStore:     sessionStore,
 	}
 	am.podManager.Watch(am.updateChannel)
 	am.sessionManager.Watch(am.updateChannel)
@@ -173,74 +179,65 @@ func (am *ApplicationManager) getOrCreateApplicationPool(applicationKey string) 
 	}
 }
 
-func (am *ApplicationManager) initApplicationInformer(ctx context.Context) {
-	apiServerClient := util.GetFornaxCoreApiClient(util.GetFornaxCoreKubeConfig())
-	appInformerFactory := externalversions.NewSharedInformerFactory(apiServerClient, 10*time.Minute)
-
-	applicationInformer := appInformerFactory.Core().V1().Applications()
-	applicationInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
-		AddFunc:    am.onApplicationAddEvent,
-		UpdateFunc: am.onApplicationUpdateEvent,
-		DeleteFunc: am.onApplicationDeleteEvent,
+func (am *ApplicationManager) initApplicationInformer(ctx context.Context) error {
+	app := &fornaxv1.Application{}
+	grv := app.GetGroupVersionResource()
+	wi, err := am.applicationStore.WatchWithOldObj(ctx, grv.GroupResource().String(), apistorage.ListOptions{
+		ResourceVersion:      "0",
+		ResourceVersionMatch: "",
+		Predicate:            apistorage.SelectionPredicate{},
+		Recursive:            true,
+		ProgressNotify:       true,
 	})
-	applicationInformer.Informer().AddIndexers(cache.Indexers{
-		"controllerUID": func(obj interface{}) ([]string, error) {
-			application, ok := obj.(*fornaxv1.Application)
-			if !ok {
-				return []string{}, nil
-			}
-			controllerRef := metav1.GetControllerOf(application)
-			if controllerRef == nil {
-				return []string{}, nil
-			}
-			return []string{string(controllerRef.UID)}, nil
-		},
-	})
-	am.applicationIndexer = applicationInformer.Informer().GetIndexer()
-	am.applicationLister = applicationInformer.Lister()
-	am.aplicationListerSynced = applicationInformer.Informer().HasSynced
-	am.applicationStatusManager = NewApplicationStatusManager(am.applicationLister)
-	am.applicationStatusManager.Run(ctx)
-	appInformerFactory.Start(ctx.Done())
+	if err != nil {
+		return err
+	}
+	am.appStoreUpdate = wi.ResultChanWithPrevobj()
+	return nil
 }
 
-func (am *ApplicationManager) initApplicationSessionInformer(ctx context.Context) {
-	apiServerClient := util.GetFornaxCoreApiClient(util.GetFornaxCoreKubeConfig())
-	sessionInformerFactory := externalversions.NewSharedInformerFactory(apiServerClient, 10*time.Minute)
-	applicationSessionInformer := sessionInformerFactory.Core().V1().ApplicationSessions()
-	applicationSessionInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
-		AddFunc:    am.onApplicationSessionAddEvent,
-		UpdateFunc: am.onApplicationSessionUpdateEvent,
-		DeleteFunc: am.onApplicationSessionDeleteEvent,
-	})
-	applicationSessionInformer.Informer().AddIndexers(cache.Indexers{
-		"controllerUID": func(obj interface{}) ([]string, error) {
-			session, ok := obj.(*fornaxv1.ApplicationSession)
-			if !ok {
-				return []string{}, nil
-			}
-			controllerRef := metav1.GetControllerOf(session)
-			if controllerRef == nil {
-				return []string{}, nil
-			}
-			return []string{string(controllerRef.UID)}, nil
-		},
-	})
-	am.applicationSessionIndexer = applicationSessionInformer.Informer().GetIndexer()
-	am.applicationSessionLister = applicationSessionInformer.Lister()
-	am.aplicationSessionListerSynced = applicationSessionInformer.Informer().HasSynced
-	sessionInformerFactory.Start(ctx.Done())
+func (am *ApplicationManager) onApplicationEventFromStorage(we fornaxstore.WatchEventWithOldObj) {
+	switch we.Type {
+	case watch.Added:
+		am.onApplicationAddEvent(we.Object)
+	case watch.Modified:
+		am.onApplicationUpdateEvent(we.OldObject, we.Object)
+	case watch.Deleted:
+		am.onApplicationDeleteEvent(we.Object)
+	}
 }
 
 // Run sync and watchs application, pod and session
 func (am *ApplicationManager) Run(ctx context.Context) {
 	klog.Info("Starting fornaxv1 application manager")
 
+	am.applicationStatusManager = NewApplicationStatusManager(am.applicationStore)
+	am.applicationStatusManager.Run(ctx)
+
 	am.initApplicationInformer(ctx)
-	cache.WaitForNamedCacheSync(fornaxv1.ApplicationKind.Kind, ctx.Done(), am.aplicationListerSynced)
+	go func() {
+		for {
+			select {
+			case <-ctx.Done():
+				break
+			case we := <-am.appStoreUpdate:
+				am.onApplicationEventFromStorage(we)
+			}
+		}
+	}()
 
 	am.initApplicationSessionInformer(ctx)
-	cache.WaitForNamedCacheSync(fornaxv1.ApplicationSessionKind.Kind, ctx.Done(), am.aplicationSessionListerSynced)
+	go func() {
+		for {
+			select {
+			case <-ctx.Done():
+				break
+			case we := <-am.sessionStoreUpdate:
+				am.onSessionEventFromStorage(we)
+			}
+		}
+	}()
+
 	klog.Info("Fornaxv1 application manager started")
 
 	go func() {
@@ -405,7 +402,7 @@ func (am *ApplicationManager) syncApplication(ctx context.Context, applicationKe
 
 	var numOfDesiredPod int
 	var action fornaxv1.DeploymentAction
-	application, syncErr := GetApplicationCache(am.applicationLister, applicationKey)
+	application, syncErr := GetApplicationCache(am.applicationStore, applicationKey)
 	if syncErr != nil {
 		if apierrors.IsNotFound(syncErr) {
 			numOfDesiredPod = 0

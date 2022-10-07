@@ -28,6 +28,7 @@ import (
 	ie "centaurusinfra.io/fornax-serverless/pkg/fornaxcore/internal"
 	"centaurusinfra.io/fornax-serverless/pkg/util"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	apistorage "k8s.io/apiserver/pkg/storage"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/cache"
 
@@ -46,7 +47,6 @@ type SessionStatusChangeMap struct {
 type sessionManager struct {
 	ctx             context.Context
 	nodeAgentClient nodeagent.NodeAgentClient
-	podManager      ie.PodManagerInterface
 	watchers        []chan<- interface{}
 	statusUpdateCh  chan string
 	statusChanges   *SessionStatusChangeMap
@@ -79,11 +79,10 @@ func (sscm *SessionStatusChangeMap) getAndRemoveStatusChangeSnapshot() map[strin
 	return updatedSessions
 }
 
-func NewSessionManager(ctx context.Context, nodeAgentProxy nodeagent.NodeAgentClient, podManager ie.PodManagerInterface) *sessionManager {
+func NewSessionManager(ctx context.Context, nodeAgentProxy nodeagent.NodeAgentClient, sessionStore apistorage.Interface) *sessionManager {
 	mgr := &sessionManager{
 		ctx:             ctx,
 		nodeAgentClient: nodeAgentProxy,
-		podManager:      podManager,
 		statusUpdateCh:  make(chan string, 500),
 		statusChanges: &SessionStatusChangeMap{
 			changes: map[string]*fornaxv1.ApplicationSessionStatus{},

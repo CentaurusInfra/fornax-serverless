@@ -13,7 +13,7 @@ basic_install() {
     echo -e "## INSTALL BASIC TOOL"
     sudo apt-get update
     sudo apt install build-essential
-    sudo snap install curl  # version 7.81.0
+    sudo apt install curl
     sudo apt-get install vim
     echo -e "## DONE BASIC TOOL\n"
 }

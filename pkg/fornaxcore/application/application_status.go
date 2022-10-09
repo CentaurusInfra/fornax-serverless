@@ -24,11 +24,10 @@ import (
 	"time"
 
 	fornaxv1 "centaurusinfra.io/fornax-serverless/pkg/apis/core/v1"
+	fornaxstore "centaurusinfra.io/fornax-serverless/pkg/store"
+	storefactory "centaurusinfra.io/fornax-serverless/pkg/store/factory"
 	"centaurusinfra.io/fornax-serverless/pkg/util"
 
-	apierrors "k8s.io/apimachinery/pkg/api/errors"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	apistorage "k8s.io/apiserver/pkg/storage"
 	"k8s.io/client-go/rest"
 	"k8s.io/klog/v2"
 )
@@ -74,13 +73,13 @@ func (ascm *ApplicationStatusChangeMap) getAndRemoveStatusChangeSnapshot() map[s
 }
 
 type ApplicationStatusManager struct {
-	applicationStore apistorage.Interface
+	applicationStore fornaxstore.FornaxStorage
 	statusUpdateCh   chan string
 	statusChanges    *ApplicationStatusChangeMap
 	kubeConfig       *rest.Config
 }
 
-func NewApplicationStatusManager(appStore apistorage.Interface) *ApplicationStatusManager {
+func NewApplicationStatusManager(appStore fornaxstore.FornaxStorage) *ApplicationStatusManager {
 	return &ApplicationStatusManager{
 		applicationStore: appStore,
 		statusUpdateCh:   make(chan string, 500),
@@ -149,23 +148,20 @@ func (asm *ApplicationStatusManager) UpdateApplicationStatus(application *fornax
 // updateApplicationStatus attempts to update the Status of the given Application and return updated Application
 func (asm *ApplicationStatusManager) updateApplicationStatus(applicationKey string, newStatus *fornaxv1.ApplicationStatus) error {
 	var updateErr error
-	var updatedApplication *fornaxv1.Application
+	for i := 0; i <= UPDATE_RETRIES; i++ {
+		var updatedApplication *fornaxv1.Application
+		application, err := storefactory.GetApplicationCache(asm.applicationStore, applicationKey)
+		if err != nil {
+			if fornaxstore.IsObjectNotFoundErr(err) {
+				return nil
+			}
+			return err
+		}
 
-	apiServerClient := util.GetFornaxCoreApiClient(asm.kubeConfig)
-	application, updateErr := GetApplication(apiServerClient, applicationKey)
-	if updateErr != nil {
-		if apierrors.IsNotFound(updateErr) {
+		if reflect.DeepEqual(application.Status, *newStatus) {
 			return nil
 		}
-		return updateErr
-	}
 
-	if reflect.DeepEqual(application.Status, *newStatus) {
-		return nil
-	}
-
-	client := apiServerClient.CoreV1().Applications(application.Namespace)
-	for i := 0; i <= UPDATE_RETRIES; i++ {
 		klog.Infof(fmt.Sprintf("Updating application status for %s, ", util.Name(application)) +
 			fmt.Sprintf("totalInstances %d->%d, ", application.Status.TotalInstances, newStatus.TotalInstances) +
 			fmt.Sprintf("desiredInstances %d->%d, ", application.Status.DesiredInstances, newStatus.DesiredInstances) +
@@ -174,36 +170,22 @@ func (asm *ApplicationStatusManager) updateApplicationStatus(applicationKey stri
 			fmt.Sprintf("allocatedInstances %d->%d, ", application.Status.AllocatedInstances, newStatus.AllocatedInstances) +
 			fmt.Sprintf("idleInstances %d->%d, ", application.Status.IdleInstances, newStatus.IdleInstances))
 
+		modifiedApplication := &fornaxv1.Application{}
+		key := fmt.Sprintf("%s/%s", fornaxv1.ApplicationGrvKey, applicationKey)
 		updatedApplication = application.DeepCopy()
 		updatedApplication.Status = *newStatus
-		updatedApplication, updateErr = client.UpdateStatus(context.TODO(), updatedApplication, metav1.UpdateOptions{})
-		if updateErr == nil {
-			break
+		if newStatus.TotalInstances == 0 {
+			util.RemoveFinalizer(&updatedApplication.ObjectMeta, fornaxv1.FinalizerApplicationPod)
 		} else {
-			// set it again, returned updatedApplication could be polluted if there is error
-			updatedApplication = application.DeepCopy()
-			updatedApplication.Status = *newStatus
+			util.AddFinalizer(&updatedApplication.ObjectMeta, fornaxv1.FinalizerApplicationPod)
 		}
 
-		if updateErr != nil {
-			return updateErr
+		updateErr = asm.applicationStore.Update(context.Background(), key, true, nil, updatedApplication, modifiedApplication)
+		if updateErr == nil {
+			// if version conflict, has to get new version and update again
+			break
 		}
 	}
 
-	// update finalizer
-	finalizers := updatedApplication.Finalizers
-	if newStatus.TotalInstances == 0 {
-		util.RemoveFinalizer(&updatedApplication.ObjectMeta, fornaxv1.FinalizerApplicationPod)
-	} else {
-		util.AddFinalizer(&updatedApplication.ObjectMeta, fornaxv1.FinalizerApplicationPod)
-	}
-	if len(updatedApplication.Finalizers) != len(finalizers) {
-		for i := 0; i <= UPDATE_RETRIES; i++ {
-			_, updateErr = client.Update(context.TODO(), updatedApplication, metav1.UpdateOptions{})
-			if updateErr == nil {
-				break
-			}
-		}
-	}
 	return updateErr
 }

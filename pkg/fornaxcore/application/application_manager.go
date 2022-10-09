@@ -25,14 +25,12 @@ import (
 	"time"
 
 	fornaxv1 "centaurusinfra.io/fornax-serverless/pkg/apis/core/v1"
-	fornaxclient "centaurusinfra.io/fornax-serverless/pkg/client/clientset/versioned"
 	ie "centaurusinfra.io/fornax-serverless/pkg/fornaxcore/internal"
-	"centaurusinfra.io/fornax-serverless/pkg/store"
 	fornaxstore "centaurusinfra.io/fornax-serverless/pkg/store"
+	storefactory "centaurusinfra.io/fornax-serverless/pkg/store/factory"
 	"centaurusinfra.io/fornax-serverless/pkg/util"
 
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/apimachinery/pkg/util/wait"
@@ -72,26 +70,6 @@ func NewApplicationPool(appName string) *ApplicationPool {
 	}
 }
 
-func GetApplication(apiServerClient fornaxclient.Interface, applicationKey string) (*fornaxv1.Application, error) {
-	namespace, name, err := cache.SplitMetaNamespaceKey(applicationKey)
-	if err != nil {
-		klog.ErrorS(err, "Application key is not a valid meta namespace key, skip", "application", applicationKey)
-		return nil, err
-	}
-	return apiServerClient.CoreV1().Applications(namespace).Get(context.Background(), name, metav1.GetOptions{})
-}
-
-func GetApplicationCache(store apistorage.Interface, applicationKey string) (*fornaxv1.Application, error) {
-	out := &fornaxv1.Application{}
-	err := store.Get(context.Background(), applicationKey, apistorage.GetOptions{IgnoreNotFound: false}, out)
-	if err != nil {
-		if fornaxstore.IsObjectNotFoundErr(err) {
-			return nil, nil
-		}
-	}
-	return out, nil
-}
-
 // ApplicationManager is responsible for synchronizing Application objects stored
 // in the system with actual running pods.
 type ApplicationManager struct {
@@ -101,12 +79,12 @@ type ApplicationManager struct {
 	appSessionKind   schema.GroupVersionKind
 	applicationQueue workqueue.RateLimitingInterface
 
-	applicationStore       store.FornaxStorage
-	appStoreUpdate         <-chan store.WatchEventWithOldObj
+	applicationStore       fornaxstore.FornaxStorage
+	appStoreUpdate         <-chan fornaxstore.WatchEventWithOldObj
 	aplicationListerSynced cache.InformerSynced
 
-	sessionStore        store.FornaxStorage
-	sessionStoreUpdate  <-chan store.WatchEventWithOldObj
+	sessionStore        fornaxstore.FornaxStorage
+	sessionStoreUpdate  <-chan fornaxstore.WatchEventWithOldObj
 	sessionListerSynced cache.InformerSynced
 
 	// A pool of pods grouped by application key
@@ -122,7 +100,7 @@ type ApplicationManager struct {
 
 // NewApplicationManager init ApplicationInformer and ApplicationSessionInformer,
 // and start to listen to pod event from node
-func NewApplicationManager(ctx context.Context, podManager ie.PodManagerInterface, sessionManager ie.SessionManagerInterface, appStore, sessionStore store.FornaxStorage) *ApplicationManager {
+func NewApplicationManager(ctx context.Context, podManager ie.PodManagerInterface, sessionManager ie.SessionManagerInterface, appStore, sessionStore fornaxstore.FornaxStorage) *ApplicationManager {
 	am := &ApplicationManager{
 		applicationQueue: workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "fornaxv1.Application"),
 		applicationPools: map[string]*ApplicationPool{},
@@ -180,12 +158,10 @@ func (am *ApplicationManager) getOrCreateApplicationPool(applicationKey string) 
 }
 
 func (am *ApplicationManager) initApplicationInformer(ctx context.Context) error {
-	app := &fornaxv1.Application{}
-	grv := app.GetGroupVersionResource()
-	wi, err := am.applicationStore.WatchWithOldObj(ctx, grv.GroupResource().String(), apistorage.ListOptions{
+	wi, err := am.applicationStore.WatchWithOldObj(ctx, fornaxv1.ApplicationGrvKey, apistorage.ListOptions{
 		ResourceVersion:      "0",
 		ResourceVersionMatch: "",
-		Predicate:            apistorage.SelectionPredicate{},
+		Predicate:            apistorage.Everything,
 		Recursive:            true,
 		ProgressNotify:       true,
 	})
@@ -286,7 +262,6 @@ func (am *ApplicationManager) onApplicationAddEvent(obj interface{}) {
 	application := obj.(*fornaxv1.Application)
 	applicationKey := util.Name(application)
 	klog.Infof("Creating application %s", applicationKey)
-
 	am.getOrCreateApplicationPool(applicationKey)
 	am.enqueueApplication(applicationKey)
 }
@@ -297,13 +272,7 @@ func (am *ApplicationManager) onApplicationUpdateEvent(old, cur interface{}) {
 	newCopy := cur.(*fornaxv1.Application)
 
 	applicationKey := util.Name(newCopy)
-	if newCopy.UID != oldCopy.UID {
-		am.onApplicationDeleteEvent(cache.DeletedFinalStateUnknown{
-			Key: applicationKey,
-			Obj: oldCopy,
-		})
-	}
-
+	klog.InfoS("GWJ Updating application", "app", applicationKey, "old", oldCopy, "new", newCopy)
 	// application status are update when session or pod changed, its own status change does not need sync,
 	// only sync when deleting or spec change
 	if (newCopy.DeletionTimestamp != nil && oldCopy.DeletionTimestamp == nil) || !reflect.DeepEqual(oldCopy.Spec, newCopy.Spec) {
@@ -314,20 +283,7 @@ func (am *ApplicationManager) onApplicationUpdateEvent(old, cur interface{}) {
 
 // callback from application informer when Application is deleted
 func (am *ApplicationManager) onApplicationDeleteEvent(obj interface{}) {
-	appliation, ok := obj.(*fornaxv1.Application)
-	if !ok {
-		tombstone, ok := obj.(cache.DeletedFinalStateUnknown)
-		if !ok {
-			klog.Errorf("couldn't get object from tombstone %#v", obj)
-			return
-		}
-		appliation, ok = tombstone.Obj.(*fornaxv1.Application)
-		if !ok {
-			klog.Errorf("tombstone contained object that is not a Application %#v", obj)
-			return
-		}
-	}
-
+	appliation := obj.(*fornaxv1.Application)
 	applicationKey := util.Name(appliation)
 	klog.Infof("Deleting application %s", applicationKey)
 	am.applicationQueue.Add(applicationKey)
@@ -402,7 +358,7 @@ func (am *ApplicationManager) syncApplication(ctx context.Context, applicationKe
 
 	var numOfDesiredPod int
 	var action fornaxv1.DeploymentAction
-	application, syncErr := GetApplicationCache(am.applicationStore, applicationKey)
+	application, syncErr := storefactory.GetApplicationCache(am.applicationStore, applicationKey)
 	if syncErr != nil {
 		if apierrors.IsNotFound(syncErr) {
 			numOfDesiredPod = 0

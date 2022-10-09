@@ -49,11 +49,9 @@ func init() {
 
 func main() {
 	// initialize fornax in memory store
-	app := &fornaxv1.Application{}
-	appStore := factory.NewFornaxStorage(app.GetGroupVersionResource().GroupResource(), true)
+	appStore := factory.NewFornaxStorage(fornaxv1.ApplicationGrv.GroupResource(), true)
 	appStore.Load()
-	appSession := &fornaxv1.ApplicationSession{}
-	appSessionStore := factory.NewFornaxStorage(appSession.GetGroupVersionResource().GroupResource(), true)
+	appSessionStore := factory.NewFornaxStorage(fornaxv1.ApplicationSessionGrv.GroupResource(), true)
 	appSessionStore.Load()
 
 	// new fornaxcore grpc grpcServer which implement node agent proxy

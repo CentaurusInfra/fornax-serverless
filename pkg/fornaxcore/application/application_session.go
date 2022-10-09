@@ -41,24 +41,11 @@ const (
 	HouseKeepingDuration                 = 1 * time.Minute
 )
 
-func GetApplicationSessionCache(store apistorage.Interface, sessionKey string) (*fornaxv1.ApplicationSession, error) {
-	out := &fornaxv1.ApplicationSession{}
-	err := store.Get(context.Background(), sessionKey, apistorage.GetOptions{IgnoreNotFound: false}, out)
-	if err != nil {
-		if fornaxstore.IsObjectNotFoundErr(err) {
-			return nil, nil
-		}
-	}
-	return out, nil
-}
-
 func (am *ApplicationManager) initApplicationSessionInformer(ctx context.Context) error {
-	app := &fornaxv1.ApplicationSession{}
-	grv := app.GetGroupVersionResource()
-	wi, err := am.sessionStore.WatchWithOldObj(ctx, grv.GroupResource().String(), apistorage.ListOptions{
+	wi, err := am.sessionStore.WatchWithOldObj(ctx, fornaxv1.ApplicationSessionGrvKey, apistorage.ListOptions{
 		ResourceVersion:      "0",
 		ResourceVersionMatch: "",
-		Predicate:            apistorage.SelectionPredicate{},
+		Predicate:            apistorage.Everything,
 		Recursive:            true,
 		ProgressNotify:       true,
 	})

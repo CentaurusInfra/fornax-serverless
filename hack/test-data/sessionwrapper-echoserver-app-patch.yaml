@@ -1,9 +1,25 @@
 spec:
   scalingPolicy:
-    minimumInstance: 300
+    minimumInstance: 0
     maximumInstance: 300
     burst: 10
     scalingPolicyType: idle_session_number
     idleSessionNumThreshold:
-      highWaterMark: 0
+      highWaterMark: 30
       lowWaterMark: 0
+  containers:
+    - image: centaurusinfra.io/fornax-serverless/session-wrapper:v0.1.0
+      name: echoserver
+      env:
+        - name: SESSION_WRAPPER_OPEN_SESSION_CMD
+          value: "/opt/bin/sessionwrapper-echoserver"
+      resources:
+        requests:
+          memory: "20M"
+          cpu: "20m"
+        limits:
+          memory: "20M"
+          cpu: "20m"
+      ports:
+        - containerPort: 80
+          name: echoserver

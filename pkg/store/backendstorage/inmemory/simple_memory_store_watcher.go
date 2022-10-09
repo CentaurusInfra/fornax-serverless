@@ -24,6 +24,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/watch"
 	apistorage "k8s.io/apiserver/pkg/storage"
+	"k8s.io/klog/v2"
 )
 
 type memoryStoreWatcher struct {
@@ -53,10 +54,10 @@ func NewMemoryStoreWatcher(ctx context.Context, key string, recursive, progressN
 		outgoingChan:           make(chan watch.Event, 100),
 		outgoingChanWithOldObj: make(chan store.WatchEventWithOldObj, 100),
 	}
-	if predicate.Empty() {
-		// The filter doesn't filter out any object.
-		watcher.predicate = apistorage.Everything
-	}
+	// if predicate.Empty() {
+	//  // The filter doesn't filter out any object.
+	//  watcher.predicate = apistorage.Everything
+	// }
 	return watcher
 }
 
@@ -75,24 +76,31 @@ func (wc *memoryStoreWatcher) acceptAll() bool {
 // send existing events, then start consume events in channel, events should be larger than env
 // pasted objEvents should be already sorted according to event's rev
 func (wc *memoryStoreWatcher) run(rev uint64, existingObjEvents []*objEvent, eventWithOldObj bool) {
-	startingRev := rev
-	for _, event := range existingObjEvents {
-		if event.rev > startingRev {
-			startingRev = event.rev
-			wcEvent := wc.transform(event)
-			if wcEvent != nil {
-				if e := wc.transformToEventWithOldObj(wcEvent, event.prevObj); e != nil {
-					wc.outgoingChanWithOldObj <- *e
-				}
-			}
-		}
-	}
 	defer func() {
 		wc.stopped = true
 		close(wc.incomingChan)
 		close(wc.outgoingChan)
 		close(wc.outgoingChanWithOldObj)
 	}()
+
+	startingRev := rev
+	for _, event := range existingObjEvents {
+		wcEvent := wc.transform(event)
+		if wcEvent != nil {
+			if eventWithOldObj {
+				if e := wc.transformToEventWithOldObj(wcEvent, event.oldObj); e != nil {
+					wc.outgoingChanWithOldObj <- *e
+				}
+			} else {
+				wc.outgoingChan <- *wcEvent
+			}
+		}
+		// existingObjEvents is supposed to sorted with rev, but do this check anyway
+		if event.rev > startingRev {
+			startingRev = event.rev
+		}
+	}
+
 	for {
 		select {
 		case <-wc.ctx.Done():
@@ -105,10 +113,11 @@ func (wc *memoryStoreWatcher) run(rev uint64, existingObjEvents []*objEvent, eve
 				wcEvent := wc.transform(event)
 				if wcEvent != nil {
 					if eventWithOldObj {
-						if e := wc.transformToEventWithOldObj(wcEvent, event.prevObj); e != nil {
+						if e := wc.transformToEventWithOldObj(wcEvent, event.oldObj); e != nil {
 							wc.outgoingChanWithOldObj <- *e
 						}
 					} else {
+						klog.InfoS("GWJ send a watch event", "e", *wcEvent, "obj", wcEvent.Object)
 						wc.outgoingChan <- *wcEvent
 					}
 				}
@@ -148,7 +157,7 @@ func (wc *memoryStoreWatcher) transform(e *objEvent) (res *watch.Event) {
 			return nil
 		}
 	}
-	curObj, oldObj := e.obj, e.prevObj
+	curObj, oldObj := e.obj, e.oldObj
 
 	switch {
 	case e.isDeleted:
@@ -203,7 +212,7 @@ func (wc *memoryStoreWatcher) transform(e *objEvent) (res *watch.Event) {
 	return res
 }
 
-func (wc *memoryStoreWatcher) transformToEventWithOldObj(e *watch.Event, prevObj runtime.Object) (res *store.WatchEventWithOldObj) {
+func (wc *memoryStoreWatcher) transformToEventWithOldObj(e *watch.Event, oldObj runtime.Object) (res *store.WatchEventWithOldObj) {
 	switch e.Type {
 	case watch.Added:
 		return &store.WatchEventWithOldObj{
@@ -221,7 +230,7 @@ func (wc *memoryStoreWatcher) transformToEventWithOldObj(e *watch.Event, prevObj
 		return &store.WatchEventWithOldObj{
 			Type:      e.Type,
 			Object:    e.Object,
-			OldObject: prevObj,
+			OldObject: oldObj,
 		}
 	default:
 		return nil

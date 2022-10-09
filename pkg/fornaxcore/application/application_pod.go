@@ -24,6 +24,8 @@ import (
 	default_config "centaurusinfra.io/fornax-serverless/pkg/config"
 	ie "centaurusinfra.io/fornax-serverless/pkg/fornaxcore/internal"
 	fornaxpod "centaurusinfra.io/fornax-serverless/pkg/fornaxcore/pod"
+	fornaxstore "centaurusinfra.io/fornax-serverless/pkg/store"
+	storefactory "centaurusinfra.io/fornax-serverless/pkg/store/factory"
 	"centaurusinfra.io/fornax-serverless/pkg/util"
 	"github.com/google/uuid"
 
@@ -443,9 +445,9 @@ func (am *ApplicationManager) getPodApplicationKey(pod *v1.Pod) (string, error) 
 		klog.Warningf("Pod %s does not have fornaxv1 application label:%s", util.Name(pod), fornaxv1.LabelFornaxCoreApplication)
 		return "", nil
 	} else {
-		application, err := GetApplicationCache(am.applicationStore, applicationLabel)
+		_, err := storefactory.GetApplicationCache(am.applicationStore, applicationLabel)
 		if err != nil {
-			if application == nil {
+			if fornaxstore.IsObjectNotFoundErr(err) {
 				return "", nil
 			}
 			return "", err

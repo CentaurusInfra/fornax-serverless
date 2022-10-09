@@ -136,7 +136,7 @@ func waitForSessionSetup(namespace, appName string, sessions TestSessionArray) {
 	if len(sessions) > 0 {
 		klog.Infof("waiting for %d sessions of app %s setup", len(sessions), appName)
 		for {
-			time.Sleep(10 * time.Millisecond)
+			time.Sleep(2 * time.Millisecond)
 			allSetup := true
 			for _, ts := range sessions {
 				if ts.status == fornaxv1.SessionStatusPending {
@@ -306,46 +306,6 @@ func waitForSessionTearDown(namespace, appName string, sessions []*TestSession) 
 				break
 			}
 
-		}
-	}
-}
-
-func waitForSessionSetupOld(namespace, appName string, sessions TestSessionArray) {
-	if len(sessions) > 0 {
-		klog.Infof("waiting for %d sessions of app %s setup", len(sessions), appName)
-		for {
-			time.Sleep(1000 * time.Millisecond)
-			allSetup := true
-			for _, ts := range sessions {
-				if ts.status != fornaxv1.SessionStatusPending {
-					continue
-				}
-				sess, err := describeSession(namespace, ts.session.Name)
-				if err != nil || sess == nil {
-					allSetup = false
-					continue
-				}
-
-				switch sess.Status.SessionStatus {
-				case fornaxv1.SessionStatusAvailable:
-					ts.availableTimeMilli = sess.Status.AvailableTimeMicro / 1000
-					ts.status = sess.Status.SessionStatus
-				case fornaxv1.SessionStatusTimeout:
-					ts.status = sess.Status.SessionStatus
-				case fornaxv1.SessionStatusClosed:
-					ts.status = sess.Status.SessionStatus
-				default:
-					allSetup = false
-					continue
-				}
-			}
-
-			if allSetup {
-				// for _, v := range sessions {
-				//  klog.Infof("Session: %s took %d milli second to setup, status %s\n", v.session.Name, v.availableTimeMilli-v.creationTimeMilli, v.status)
-				// }
-				break
-			}
 		}
 	}
 }

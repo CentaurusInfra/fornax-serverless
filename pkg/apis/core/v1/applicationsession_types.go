@@ -159,12 +159,14 @@ func (in *ApplicationSession) NewList() runtime.Object {
 	return &ApplicationSessionList{}
 }
 
+var ApplicationSessionGrv = schema.GroupVersionResource{
+	Group:    "core.fornax-serverless.centaurusinfra.io",
+	Version:  "v1",
+	Resource: "applicationsessions",
+}
+
 func (in *ApplicationSession) GetGroupVersionResource() schema.GroupVersionResource {
-	return schema.GroupVersionResource{
-		Group:    "core.fornax-serverless.centaurusinfra.io",
-		Version:  "v1",
-		Resource: "applicationsessions",
-	}
+	return ApplicationSessionGrv
 }
 
 func (in *ApplicationSession) IsStorageVersion() bool {

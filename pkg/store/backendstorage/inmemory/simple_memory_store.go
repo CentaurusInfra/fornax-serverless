@@ -143,6 +143,7 @@ func (ms *MemoryStore) Stop() error {
 func (ms *MemoryStore) Count(key string) (int64, error) {
 	ms.mu.RLock()
 	defer ms.mu.RUnlock()
+	klog.InfoS("GWJ count object", "key", key, "count", len(ms.kvs))
 	return int64(len(ms.kvs)), nil
 }
 
@@ -182,7 +183,7 @@ func (ms *MemoryStore) Create(ctx context.Context, key string, obj runtime.Objec
 		outVal.Set(reflect.ValueOf(obj).Elem())
 		event := &objEvent{
 			key:       key,
-			obj:       out.DeepCopyObject(),
+			obj:       obj.DeepCopyObject(),
 			oldObj:    nil,
 			rev:       rv,
 			isDeleted: false,
@@ -255,6 +256,7 @@ func (ms *MemoryStore) Get(ctx context.Context, key string, opts storage.GetOpti
 	ms.mu.RLock()
 	defer ms.mu.RUnlock()
 
+	klog.InfoS("GWJ get object", "key", key, "opts", opts)
 	outVal, err := conversion.EnforcePtr(out)
 	if err != nil {
 		return fmt.Errorf("unable to convert output object to pointer: %v", err)
@@ -285,8 +287,7 @@ func (ms *MemoryStore) GetList(ctx context.Context, key string, opts storage.Lis
 	ms.mu.RLock()
 	defer ms.mu.RUnlock()
 
-	klog.InfoS("GWJ get list of object", "key", key)
-	totalCount := int64(len(ms.kvs))
+	klog.InfoS("GWJ get list of object", "key", key, "opts", opts)
 	recursive := opts.Recursive
 	resourceVersion := opts.ResourceVersion
 	match := opts.ResourceVersionMatch
@@ -305,13 +306,6 @@ func (ms *MemoryStore) GetList(ctx context.Context, key string, opts storage.Lis
 		key += "/"
 	}
 	keyPrefix := key
-
-	var limit uint64 = math.MaxInt64
-	if ms.pagingEnabled && pred.Limit > 0 {
-		limit = uint64(pred.Limit)
-	} else {
-		limit = uint64(len(ms.kvs))
-	}
 
 	var fromRV *uint64
 	if len(resourceVersion) > 0 {
@@ -381,10 +375,16 @@ func (ms *MemoryStore) GetList(ctx context.Context, key string, opts storage.Lis
 	}
 
 	// loop until we have filled the requested limit from etcd or there are no more results
+	var limit uint64 = math.MaxInt64
+	if ms.pagingEnabled && pred.Limit > 0 {
+		limit = uint64(pred.Limit)
+	}
+	remainingItemCount := int64(0)
 	hasMore := false
 	lastKey := ""
 	returnedRV = atomic.LoadUint64(&_MemoryRev)
 	listBufferLen := uint64(len(ms.klist))
+	klog.InfoS("GWJ get list ", "withRV", withRV, "index", uindex, "list size", listBufferLen)
 	for i := uindex; i < listBufferLen; i++ {
 		v := ms.klist[i]
 		if v != nil {
@@ -396,39 +396,43 @@ func (ms *MemoryStore) GetList(ctx context.Context, key string, opts storage.Lis
 			}
 			switch match {
 			case metav1.ResourceVersionMatchNotOlderThan:
-				if rv > uint64(withRV) {
+				if rv >= uint64(withRV) {
 					appendListItem(listRetVal, v.obj, rv, pred, ms.versioner)
 				}
 			case metav1.ResourceVersionMatchExact:
-				appendListItem(listRetVal, v.obj, rv, pred, ms.versioner)
+				if rv == uint64(withRV) {
+					appendListItem(listRetVal, v.obj, rv, pred, ms.versioner)
+				}
 			case "":
-				// append
-				appendListItem(listRetVal, v.obj, rv, pred, ms.versioner)
+				if rv > uint64(withRV) {
+					// append
+					appendListItem(listRetVal, v.obj, rv, pred, ms.versioner)
+				}
 			default:
 				return fmt.Errorf("unknown ResourceVersionMatch value: %v", match)
 			}
 		}
 		// have got enough items, check if there are still items in list
 		if uint64(listRetVal.Len()) == limit {
-			if i < listBufferLen {
+			if i < listBufferLen-1 {
+				remainingItemCount = int64(listBufferLen - 1 - i)
 				hasMore = true
 			}
 			break
 		}
 	}
 
+	klog.InfoS("GWJ get list return a list", "len", listRetVal.Len(), "lastkey", lastKey, "rev", returnedRV, "hasMore", hasMore)
 	if hasMore {
 		next, err := encodeContinue(lastKey, keyPrefix, returnedRV)
 		if err != nil {
 			return err
 		}
-		var remainingItemCount *int64
 		if pred.Empty() {
-			c := int64(totalCount - pred.Limit)
-			remainingItemCount = &c
+			return ms.versioner.UpdateList(listObj, returnedRV, next, &remainingItemCount)
+		} else {
+			return ms.versioner.UpdateList(listObj, returnedRV, next, nil)
 		}
-		resp := ms.versioner.UpdateList(listObj, returnedRV, next, remainingItemCount)
-		return resp
 	}
 
 	// no continuation
@@ -462,7 +466,6 @@ func (ms *MemoryStore) GuaranteedUpdate(ctx context.Context, key string, out run
 		if cachedExistingObject != nil {
 			s, err := getStateFromObject(ms.versioner, cachedExistingObject)
 			if err != nil {
-				klog.ErrorS(err, "GWJ failed to update object", "key", key, "existing obj", cachedExistingObject)
 				return err
 			}
 			if s.rev != currState.rev {
@@ -525,9 +528,18 @@ func (ms *MemoryStore) WatchWithOldObj(ctx context.Context, key string, opts sto
 	return ms._watch(ctx, key, opts, true)
 }
 
-// Watch implements FornaxStorage
-func (ms *MemoryStore) Update(ctx context.Context, key string, ignoreNotFound bool, preconditions *storage.Preconditions, updatedObj runtime.Object, output runtime.Object) error {
-	return ms.GuaranteedUpdate(ctx, key, output, ignoreNotFound, preconditions, ms._getTryUpdateFunc(updatedObj), nil)
+// EnsureUpdateOrDelete implements FornaxStorage
+func (ms *MemoryStore) EnsureUpdateOrDelete(ctx context.Context, key string, ignoreNotFound bool, preconditions *storage.Preconditions, updatedObj runtime.Object, output runtime.Object) error {
+	err := ms.GuaranteedUpdate(ctx, key, output, ignoreNotFound, preconditions, ms._getTryUpdateFunc(updatedObj), nil)
+	if err != nil {
+		return err
+	}
+
+	if shouldDeleteDuringUpdate(output) {
+		err = ms.Delete(ctx, key, output, preconditions, func(ctx context.Context, obj runtime.Object) error { return nil }, output)
+	}
+
+	return nil
 }
 
 func (ms *MemoryStore) _getTryUpdateFunc(updating runtime.Object) apistorage.UpdateFunc {
@@ -540,7 +552,7 @@ func (ms *MemoryStore) _getTryUpdateFunc(updating runtime.Object) apistorage.Upd
 		if existingVersion != updatingVersion {
 			return nil, nil, fmt.Errorf("object is already updated to a newer version, try to reget object and update again")
 		}
-		return updating, nil, nil
+		return updating.DeepCopyObject(), nil, nil
 	}
 }
 
@@ -605,7 +617,9 @@ func (ms *MemoryStore) getObjEventsAfterRev(key string, opts storage.ListOptions
 			}
 		case "":
 			// append
-			objEvents = append(objEvents, e)
+			if oState.rev > uint64(rev) {
+				objEvents = append(objEvents, e)
+			}
 		default:
 			return nil, fmt.Errorf("Unknown ResourceVersionMatch value: %s", opts.ResourceVersionMatch)
 		}

@@ -25,6 +25,7 @@ import (
 	"strings"
 
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/runtime"
 	apistorage "k8s.io/apiserver/pkg/storage"
 	"k8s.io/klog/v2"
@@ -179,6 +180,7 @@ func decodeContinue(continueValue, keyPrefix string) (fromKey string, rv int64, 
 
 // encodeContinue returns a string representing the encoded continuation of the current query.
 func encodeContinue(key, keyPrefix string, resourceVersion uint64) (string, error) {
+	klog.InfoS("encode continue key", "key", key, "keyprefix", keyPrefix, "rev", resourceVersion)
 	nextKey := strings.TrimPrefix(key, keyPrefix)
 	if nextKey == key {
 		return "", fmt.Errorf("unable to encode next field: the key and key prefix do not match")
@@ -188,4 +190,18 @@ func encodeContinue(key, keyPrefix string, resourceVersion uint64) (string, erro
 		return "", err
 	}
 	return base64.RawURLEncoding.EncodeToString(out), nil
+}
+
+func shouldDeleteDuringUpdate(obj runtime.Object) bool {
+	objMeta, err := meta.Accessor(obj)
+	if err != nil {
+		return false
+	}
+	if len(objMeta.GetFinalizers()) > 0 {
+		return false
+	}
+	if objMeta.GetDeletionTimestamp() == nil {
+		return false
+	}
+	return objMeta.GetDeletionGracePeriodSeconds() == nil || *objMeta.GetDeletionGracePeriodSeconds() == 0
 }

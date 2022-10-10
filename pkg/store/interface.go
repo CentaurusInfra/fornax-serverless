@@ -37,10 +37,10 @@ type WatchWithOldObjInterface interface {
 	ResultChanWithPrevobj() <-chan WatchEventWithOldObj
 }
 
-type FornaxStorage interface {
+type FornaxStorageInterface interface {
 	apistorage.Interface
 	WatchWithOldObj(ctx context.Context, key string, opts storage.ListOptions) (WatchWithOldObjInterface, error)
-	Update(ctx context.Context, key string, ignoreNotFound bool, preconditions *storage.Preconditions, updatedObj runtime.Object, output runtime.Object) error
+	EnsureUpdateOrDelete(ctx context.Context, key string, ignoreNotFound bool, preconditions *storage.Preconditions, updatedObj runtime.Object, output runtime.Object) error
 }
 
 func IsObjectNotFoundErr(err error) bool {

@@ -31,6 +31,7 @@ import (
 	fornaxv1 "centaurusinfra.io/fornax-serverless/pkg/apis/core/v1"
 	fornaxstore "centaurusinfra.io/fornax-serverless/pkg/store"
 	"centaurusinfra.io/fornax-serverless/pkg/store/backendstorage/inmemory"
+	"centaurusinfra.io/fornax-serverless/pkg/util"
 )
 
 type FornaxRestOptionsFactory struct {
@@ -50,7 +51,6 @@ func NewFornaxStorage(groupResource schema.GroupResource, pagingEnabled bool) *i
 	return inmemory.NewMemoryStore(groupResource, pagingEnabled)
 }
 
-// Creates a cacher based given storageConfig.
 func FornaxStorageFunc(
 	storageConfig *storagebackend.ConfigForResource,
 	resourcePrefix string,
@@ -76,7 +76,7 @@ func FornaxStorageFunc(
 	return storage, destroyFunc, nil
 }
 
-func GetApplicationSessionCache(store fornaxstore.FornaxStorage, sessionLabel string) (*fornaxv1.ApplicationSession, error) {
+func GetApplicationSessionCache(store fornaxstore.FornaxStorageInterface, sessionLabel string) (*fornaxv1.ApplicationSession, error) {
 	out := &fornaxv1.ApplicationSession{}
 	key := fmt.Sprintf("%s/%s", fornaxv1.ApplicationSessionGrvKey, sessionLabel)
 	err := store.Get(context.Background(), key, apistorage.GetOptions{IgnoreNotFound: false}, out)
@@ -88,7 +88,7 @@ func GetApplicationSessionCache(store fornaxstore.FornaxStorage, sessionLabel st
 	return out, nil
 }
 
-func GetApplicationCache(store fornaxstore.FornaxStorage, applicationLabel string) (*fornaxv1.Application, error) {
+func GetApplicationCache(store fornaxstore.FornaxStorageInterface, applicationLabel string) (*fornaxv1.Application, error) {
 	out := &fornaxv1.Application{}
 	key := fmt.Sprintf("%s/%s", fornaxv1.ApplicationGrvKey, applicationLabel)
 	err := store.Get(context.Background(), key, apistorage.GetOptions{IgnoreNotFound: false}, out)
@@ -96,6 +96,26 @@ func GetApplicationCache(store fornaxstore.FornaxStorage, applicationLabel strin
 		if fornaxstore.IsObjectNotFoundErr(err) {
 			return nil, nil
 		}
+		return nil, err
+	}
+	return out, nil
+}
+
+func CreateApplicationSession(store fornaxstore.FornaxStorageInterface, obj runtime.Object) (*fornaxv1.ApplicationSession, error) {
+	out := &fornaxv1.ApplicationSession{}
+	key := fmt.Sprintf("%s/%s", fornaxv1.ApplicationSessionGrvKey, util.Name(obj))
+	err := store.Create(context.Background(), key, obj, out, uint64(0))
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func CreateApplication(store fornaxstore.FornaxStorageInterface, obj runtime.Object) (*fornaxv1.Application, error) {
+	out := &fornaxv1.Application{}
+	key := fmt.Sprintf("%s/%s", fornaxv1.ApplicationGrvKey, util.Name(obj))
+	err := store.Create(context.Background(), key, obj, out, uint64(0))
+	if err != nil {
 		return nil, err
 	}
 	return out, nil

@@ -26,6 +26,7 @@ import (
 	fornaxv1 "centaurusinfra.io/fornax-serverless/pkg/apis/core/v1"
 	ie "centaurusinfra.io/fornax-serverless/pkg/fornaxcore/internal"
 	fornaxstore "centaurusinfra.io/fornax-serverless/pkg/store"
+	"centaurusinfra.io/fornax-serverless/pkg/store/factory"
 	"centaurusinfra.io/fornax-serverless/pkg/util"
 
 	v1 "k8s.io/api/core/v1"
@@ -67,8 +68,8 @@ func (am *ApplicationManager) onSessionEventFromStorage(we fornaxstore.WatchEven
 	}
 }
 
-// treat node as authority for session status, session status from node could be Starting, Available, Closed,
-// use status from node always, then session will be closed if session is already deleted
+// use status from node to update session status, session will be closed if session is already deleted
+// if a session from node does not exist in pool, add it
 func (am *ApplicationManager) onSessionEventFromNode(se *ie.SessionEvent) error {
 	pod := se.Pod
 	session := se.Session
@@ -83,32 +84,35 @@ func (am *ApplicationManager) onSessionEventFromNode(se *ie.SessionEvent) error 
 		am.deleteApplicationPod(pool, util.Name(pod), false)
 	}
 
-	oldCopy := pool.getSession(string(session.GetUID()))
+	oldCopy, err := factory.GetApplicationSessionCache(am.sessionStore, util.Name(session))
+	if err != nil {
+		return err
+	}
 	if oldCopy == nil {
+		// it should not happen as session from node should be created in store already, unless store corruption
 		if util.SessionIsClosed(session) {
+			// if session already closed, no need to add it, instead of treat it as deleted session
 			am.onApplicationSessionDeleteEvent(session)
 		} else {
-			am.onApplicationSessionAddEvent(session)
+			factory.CreateApplicationSession(am.sessionStore, session)
 		}
 	} else {
 		if util.SessionIsOpen(session) && oldCopy.DeletionTimestamp != nil {
-			// session was requested to delete by application, save old copy's deletiontimestamp and close session
+			// session was requested to delete, ask node to close session
 			session.DeletionTimestamp = oldCopy.DeletionTimestamp
 			am.sessionManager.CloseSession(pod, session)
 		}
-		// set available and close time when received in fornax core, for perf benchmark
+		// set available and close time received in fornax core, for perf benchmark
 		if session.Status.SessionStatus == fornaxv1.SessionStatusAvailable {
 			session.Status.AvailableTime = util.NewCurrentMetaTimeNormallized()
 			session.Status.AvailableTimeMicro = time.Now().UnixMicro()
 		}
-
 		if session.Status.SessionStatus == fornaxv1.SessionStatusClosed {
 			session.Status.CloseTime = util.NewCurrentMetaTimeNormallized()
 		}
 
-		am.onApplicationSessionUpdateEvent(oldCopy, session)
-		// update session in go routine, this is persist status change to return by api server
-		am.sessionManager.UpdateSessionStatus(oldCopy.DeepCopy(), session.Status.DeepCopy())
+		// update store
+		am.sessionManager.UpdateSessionStatus(oldCopy, session.Status.DeepCopy())
 	}
 
 	return nil
@@ -167,7 +171,6 @@ func (am *ApplicationManager) onApplicationSessionAddEvent(obj interface{}) {
 }
 
 // callback from Application informer when ApplicationSession is updated
-// or session status is reported back from node
 // if session in terminal state, remove this session from pool,
 // else add new copy into pool
 // do not need to sync application unless session is deleting or status changed
@@ -175,33 +178,22 @@ func (am *ApplicationManager) onApplicationSessionUpdateEvent(old, cur interface
 	oldCopy := old.(*fornaxv1.ApplicationSession)
 	newCopy := cur.(*fornaxv1.ApplicationSession)
 
+	klog.InfoS("Application session updated", "session", util.Name(newCopy), "old status", oldCopy.Status.SessionStatus, "new status", newCopy.Status.SessionStatus, "deleting", newCopy.DeletionTimestamp != nil)
 	applicationKey := am.getSessionApplicationKey(newCopy)
 	pool := am.getOrCreateApplicationPool(applicationKey)
 	if v := pool.getSession(string(newCopy.GetUID())); v != nil {
-		// use cached memory copy if there is,
-		// fornaxcore update memory cache firstly then asynchronously update etcd when received session status on node.
-		// if cached copy is already closed, do not use new status, data could be old since etcd is asynchronously updated.
-		oldCopy = v.DeepCopy()
-		if util.SessionInTerminalState(oldCopy) {
-			am.updateSessionPool(pool, oldCopy)
-		} else if reflect.DeepEqual(oldCopy.Status, newCopy.Status) {
-			// ignore no status change
-		} else if util.SessionIsOpen(oldCopy) && (newCopy.Status.SessionStatus == fornaxv1.SessionStatusUnspecified || newCopy.Status.SessionStatus == fornaxv1.SessionStatusPending) {
-			// ignore weird etcd late update, a open session can not change back
-		} else {
+		// ignore no change sessions
+		if (newCopy.DeletionTimestamp != nil && oldCopy.DeletionTimestamp == nil) || !reflect.DeepEqual(v.Status, newCopy.Status) {
 			am.updateSessionPool(pool, newCopy)
-		}
-	} else {
-		// do not need to add a new session if it's terminated
-		if util.SessionInTerminalState(newCopy) {
+			am.enqueueApplication(applicationKey)
 			return
 		}
-		am.updateSessionPool(pool, newCopy)
-	}
-
-	if (newCopy.DeletionTimestamp != nil && oldCopy.DeletionTimestamp == nil) || !reflect.DeepEqual(oldCopy.Status, newCopy.Status) {
-		klog.InfoS("Application session updated", "session", util.Name(newCopy), "old status", oldCopy.Status.SessionStatus, "new status", newCopy.Status.SessionStatus, "deleting", newCopy.DeletionTimestamp != nil)
-		am.enqueueApplication(applicationKey)
+	} else {
+		// do not need to add a session if it's terminated
+		if !util.SessionInTerminalState(newCopy) {
+			am.updateSessionPool(pool, newCopy)
+			am.enqueueApplication(applicationKey)
+		}
 	}
 }
 

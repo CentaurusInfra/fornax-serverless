@@ -73,13 +73,14 @@ func (ascm *ApplicationStatusChangeMap) getAndRemoveStatusChangeSnapshot() map[s
 }
 
 type ApplicationStatusManager struct {
-	applicationStore fornaxstore.FornaxStorage
+	ctx              context.Context
+	applicationStore fornaxstore.FornaxStorageInterface
 	statusUpdateCh   chan string
 	statusChanges    *ApplicationStatusChangeMap
 	kubeConfig       *rest.Config
 }
 
-func NewApplicationStatusManager(appStore fornaxstore.FornaxStorage) *ApplicationStatusManager {
+func NewApplicationStatusManager(appStore fornaxstore.FornaxStorageInterface) *ApplicationStatusManager {
 	return &ApplicationStatusManager{
 		applicationStore: appStore,
 		statusUpdateCh:   make(chan string, 500),
@@ -94,6 +95,7 @@ func NewApplicationStatusManager(appStore fornaxstore.FornaxStorage) *Applicatio
 // Run receive application status from channel and update applications use api service client
 func (asm *ApplicationStatusManager) Run(ctx context.Context) {
 	klog.Info("Starting fornaxv1 application status manager")
+	asm.ctx = ctx
 
 	go func() {
 		defer klog.Info("Shutting down fornaxv1 application status manager")
@@ -112,7 +114,7 @@ func (asm *ApplicationStatusManager) Run(ctx context.Context) {
 				sessionStatuses := asm.statusChanges.getAndRemoveStatusChangeSnapshot()
 				failedApps := map[string]*fornaxv1.ApplicationStatus{}
 				for app, status := range sessionStatuses {
-					err := asm.updateApplicationStatus(app, status)
+					err := asm._updateApplicationStatus(app, status)
 					if err != nil {
 						failedApps[app] = status
 						klog.ErrorS(err, "Failed to update application status", "application", app)
@@ -137,7 +139,7 @@ func (asm *ApplicationStatusManager) Run(ctx context.Context) {
 	}()
 }
 
-func (asm *ApplicationStatusManager) UpdateApplicationStatus(application *fornaxv1.Application, newStatus *fornaxv1.ApplicationStatus) {
+func (asm *ApplicationStatusManager) AsyncUpdateApplicationStatus(application *fornaxv1.Application, newStatus *fornaxv1.ApplicationStatus) {
 	asm.statusChanges.addStatusChange(util.Name(application), newStatus, true)
 	if len(asm.statusUpdateCh) == 0 {
 		asm.statusUpdateCh <- util.Name(application)
@@ -145,17 +147,23 @@ func (asm *ApplicationStatusManager) UpdateApplicationStatus(application *fornax
 	return
 }
 
-// updateApplicationStatus attempts to update the Status of the given Application and return updated Application
-func (asm *ApplicationStatusManager) updateApplicationStatus(applicationKey string, newStatus *fornaxv1.ApplicationStatus) error {
+func (asm *ApplicationStatusManager) UpdateApplicationStatus(application *fornaxv1.Application, newStatus *fornaxv1.ApplicationStatus) error {
+	return asm._updateApplicationStatus(util.Name(application), newStatus)
+}
+
+// _updateApplicationStatus attempts to update the Status of the given Application and return updated Application
+func (asm *ApplicationStatusManager) _updateApplicationStatus(applicationKey string, newStatus *fornaxv1.ApplicationStatus) error {
 	var updateErr error
 	for i := 0; i <= UPDATE_RETRIES; i++ {
 		var updatedApplication *fornaxv1.Application
 		application, err := storefactory.GetApplicationCache(asm.applicationStore, applicationKey)
 		if err != nil {
-			if fornaxstore.IsObjectNotFoundErr(err) {
-				return nil
-			}
 			return err
+		}
+
+		if application == nil {
+			// application already deleted
+			return nil
 		}
 
 		if reflect.DeepEqual(application.Status, *newStatus) {
@@ -180,7 +188,7 @@ func (asm *ApplicationStatusManager) updateApplicationStatus(applicationKey stri
 			util.AddFinalizer(&updatedApplication.ObjectMeta, fornaxv1.FinalizerApplicationPod)
 		}
 
-		updateErr = asm.applicationStore.Update(context.Background(), key, true, nil, updatedApplication, modifiedApplication)
+		updateErr = asm.applicationStore.EnsureUpdateOrDelete(asm.ctx, key, true, nil, updatedApplication, modifiedApplication)
 		if updateErr == nil {
 			// if version conflict, has to get new version and update again
 			break

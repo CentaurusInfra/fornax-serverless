@@ -24,7 +24,6 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/watch"
 	apistorage "k8s.io/apiserver/pkg/storage"
-	"k8s.io/klog/v2"
 )
 
 type memoryStoreWatcher struct {
@@ -117,7 +116,6 @@ func (wc *memoryStoreWatcher) run(rev uint64, existingObjEvents []*objEvent, eve
 							wc.outgoingChanWithOldObj <- *e
 						}
 					} else {
-						klog.InfoS("GWJ send a watch event", "e", *wcEvent, "obj", wcEvent.Object)
 						wc.outgoingChan <- *wcEvent
 					}
 				}

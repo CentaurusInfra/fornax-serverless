@@ -47,7 +47,7 @@ type sessionManager struct {
 	watchers        []chan<- interface{}
 	statusUpdateCh  chan string
 	statusChanges   *SessionStatusChangeMap
-	sessionStore    fornaxstore.FornaxStorage
+	sessionStore    fornaxstore.FornaxStorageInterface
 }
 
 func (sscm *SessionStatusChangeMap) addSessionStatusChange(name string, status *fornaxv1.ApplicationSessionStatus, replace bool) {
@@ -76,7 +76,7 @@ func (sscm *SessionStatusChangeMap) getAndRemoveStatusChangeSnapshot() map[strin
 	return updatedSessions
 }
 
-func NewSessionManager(ctx context.Context, nodeAgentProxy nodeagent.NodeAgentClient, sessionStore fornaxstore.FornaxStorage) *sessionManager {
+func NewSessionManager(ctx context.Context, nodeAgentProxy nodeagent.NodeAgentClient, sessionStore fornaxstore.FornaxStorageInterface) *sessionManager {
 	mgr := &sessionManager{
 		ctx:             ctx,
 		nodeAgentClient: nodeAgentProxy,
@@ -104,7 +104,7 @@ func (sm *sessionManager) Run(ctx context.Context) {
 			for name, status := range sessionBatch {
 				wg.Add(1)
 				go func(name string, status *fornaxv1.ApplicationSessionStatus) {
-					err := sm.updateSessionStatus(name, status)
+					err := sm._updateSessionStatus(name, status)
 					if err != nil {
 						failedSessions[name] = status
 						klog.ErrorS(err, "Failed to update session status", "session", name)
@@ -192,7 +192,7 @@ func (sm *sessionManager) OpenSession(pod *v1.Pod, session *fornaxv1.Application
 }
 
 // UpdateApplicationSessionStatus put updated status into a map send singal into a channel to asynchronously update session status
-func (sm *sessionManager) UpdateSessionStatus(session *fornaxv1.ApplicationSession, newStatus *fornaxv1.ApplicationSessionStatus) error {
+func (sm *sessionManager) AsyncUpdateSessionStatus(session *fornaxv1.ApplicationSession, newStatus *fornaxv1.ApplicationSessionStatus) error {
 	sm.statusChanges.addSessionStatusChange(util.Name(session), newStatus, true)
 	if len(sm.statusUpdateCh) == 0 {
 		sm.statusUpdateCh <- util.Name(session)
@@ -200,8 +200,13 @@ func (sm *sessionManager) UpdateSessionStatus(session *fornaxv1.ApplicationSessi
 	return nil
 }
 
-// updateApplicationSessionStatus attempts to update the Status of the given Application Session
-func (sm *sessionManager) updateSessionStatus(sessionName string, newStatus *fornaxv1.ApplicationSessionStatus) error {
+// UpdateApplicationSessionStatus put updated status into a map send singal into a channel to asynchronously update session status
+func (sm *sessionManager) UpdateSessionStatus(session *fornaxv1.ApplicationSession, newStatus *fornaxv1.ApplicationSessionStatus) error {
+	return sm._updateSessionStatus(util.Name(session), newStatus)
+}
+
+// attempts to update the Status of the given Application Session name
+func (sm *sessionManager) _updateSessionStatus(sessionName string, newStatus *fornaxv1.ApplicationSessionStatus) error {
 	var updateErr error
 	for i := 0; i <= 3; i++ {
 		session, err := storefactory.GetApplicationSessionCache(sm.sessionStore, sessionName)
@@ -226,7 +231,7 @@ func (sm *sessionManager) updateSessionStatus(sessionName string, newStatus *for
 			util.RemoveFinalizer(&updatedSession.ObjectMeta, fornaxv1.FinalizerOpenSession)
 		}
 
-		updateErr = sm.sessionStore.Update(context.Background(), key, true, nil, updatedSession, modifiedSession)
+		updateErr = sm.sessionStore.EnsureUpdateOrDelete(sm.ctx, key, true, nil, updatedSession, modifiedSession)
 		if updateErr == nil {
 			break
 		}

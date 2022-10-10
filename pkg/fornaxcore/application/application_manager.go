@@ -79,11 +79,11 @@ type ApplicationManager struct {
 	appSessionKind   schema.GroupVersionKind
 	applicationQueue workqueue.RateLimitingInterface
 
-	applicationStore       fornaxstore.FornaxStorage
+	applicationStore       fornaxstore.FornaxStorageInterface
 	appStoreUpdate         <-chan fornaxstore.WatchEventWithOldObj
 	aplicationListerSynced cache.InformerSynced
 
-	sessionStore        fornaxstore.FornaxStorage
+	sessionStore        fornaxstore.FornaxStorageInterface
 	sessionStoreUpdate  <-chan fornaxstore.WatchEventWithOldObj
 	sessionListerSynced cache.InformerSynced
 
@@ -100,7 +100,7 @@ type ApplicationManager struct {
 
 // NewApplicationManager init ApplicationInformer and ApplicationSessionInformer,
 // and start to listen to pod event from node
-func NewApplicationManager(ctx context.Context, podManager ie.PodManagerInterface, sessionManager ie.SessionManagerInterface, appStore, sessionStore fornaxstore.FornaxStorage) *ApplicationManager {
+func NewApplicationManager(ctx context.Context, podManager ie.PodManagerInterface, sessionManager ie.SessionManagerInterface, appStore, sessionStore fornaxstore.FornaxStorageInterface) *ApplicationManager {
 	am := &ApplicationManager{
 		applicationQueue: workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "fornaxv1.Application"),
 		applicationPools: map[string]*ApplicationPool{},
@@ -272,7 +272,6 @@ func (am *ApplicationManager) onApplicationUpdateEvent(old, cur interface{}) {
 	newCopy := cur.(*fornaxv1.Application)
 
 	applicationKey := util.Name(newCopy)
-	klog.InfoS("GWJ Updating application", "app", applicationKey, "old", oldCopy, "new", newCopy)
 	// application status are update when session or pod changed, its own status change does not need sync,
 	// only sync when deleting or spec change
 	if (newCopy.DeletionTimestamp != nil && oldCopy.DeletionTimestamp == nil) || !reflect.DeepEqual(oldCopy.Spec, newCopy.Spec) {
@@ -401,10 +400,10 @@ func (am *ApplicationManager) syncApplication(ctx context.Context, applicationKe
 		}
 
 		newStatus := am.calculateStatus(application, numOfDesiredPod, action, syncErr)
-		am.applicationStatusManager.UpdateApplicationStatus(application, newStatus)
+		am.applicationStatusManager.AsyncUpdateApplicationStatus(application, newStatus)
 	}
 
-	// Resync the Application if there is error, if no error but total pods number does not meet desired number,
+	// Requeue the Application if there is error, if no error but total pods number does not meet desired number,
 	// when event of pods created/deleted in this sync come back from nodes will trigger next sync, finally meet desired state
 	if syncErr != nil {
 		klog.ErrorS(syncErr, "Failed to sync application, requeue", "application", applicationKey)

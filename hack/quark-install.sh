@@ -151,7 +151,8 @@ cni_config(){
     sudo mkdir -p /etc/cni/net.d
     sudo touch /etc/cni/net.d/10-containerd-net.conflist
     sudo chmod a+x /etc/cni/net.d/10-containerd-net.conflist
-    echo "{
+cat << EOF | sudo tee /etc/cni/net.d/10-containerd-net.conflist
+{
   "cniVersion": "0.4.0",
     "name": "containerd-net",
     "plugins": [
@@ -181,7 +182,8 @@ cni_config(){
       "capabilities": {"portMappings": true}
     }
   ]
-}" | sudo tee /etc/cni/net.d/10-containerd-net.conflist  > /dev/null
+}
+EOF
 
     sudo systemctl restart conatainerd    
 }

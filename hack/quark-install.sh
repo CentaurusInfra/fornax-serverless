@@ -110,14 +110,14 @@ config_runtimes(){
     sed -i 's+disable_plugins+#disable_plugins+g' /etc/containerd/config.toml   
     echo "
 version = 2
-[plugins."io.containerd.runtime.v1.linux"]
+[plugins.\"io.containerd.runtime.v1.linux\"]
   shim_debug = true
-[plugins."io.containerd.grpc.v1.cri".containerd.runtimes.runc]
-  runtime_type = "io.containerd.runc.v2"
-[plugins."io.containerd.grpc.v1.cri".containerd.runtimes.runsc]
-  runtime_type = "io.containerd.runsc.v1"
-[plugins."io.containerd.grpc.v1.cri".containerd.runtimes.quark]
-  runtime_type = "io.containerd.quark.v1"
+[plugins.\"io.containerd.grpc.v1.cri\".containerd.runtimes.runc]
+  runtime_type = \"io.containerd.runc.v2\"
+[plugins.\"io.containerd.grpc.v1.cri\".containerd.runtimes.runsc]
+  runtime_type = \"io.containerd.runsc.v1\"
+[plugins.\"io.containerd.grpc.v1.cri\".containerd.runtimes.quark]
+  runtime_type = \"io.containerd.quark.v1\"
 " | sudo tee -a /etc/containerd/config.toml  > /dev/null
 
    sudo systemctl restart containerd    

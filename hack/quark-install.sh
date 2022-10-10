@@ -84,7 +84,8 @@ daemon_install() {
     echo -e "## Write daeman.json File.\n"
     sudo touch /etc/docker/daemon.json
     sudo chmod 777 /etc/docker/daemon.json
-    echo "{
+cat << EOF | sudo tee /etc/docker/daemon.json
+{
     "runtimes": {
         "quark": {
             "path": "/usr/local/bin/quark"
@@ -99,7 +100,8 @@ daemon_install() {
             "path": "/usr/bin/kata-runtime"
         }
     }
-}" | sudo tee /etc/docker/daemon.json  > /dev/null
+}
+EOF
 
     sudo systemctl restart containerd
 }

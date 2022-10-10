@@ -185,7 +185,7 @@ cat << EOF | sudo tee /etc/cni/net.d/10-containerd-net.conflist
 }
 EOF
 
-    sudo systemctl restart conatainerd    
+    sudo systemctl restart containerd    
 }
 
 

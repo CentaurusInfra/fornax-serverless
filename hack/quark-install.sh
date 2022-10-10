@@ -101,7 +101,7 @@ daemon_install() {
     }
 }" | sudo tee /etc/docker/daemon.json  > /dev/null
 
-    sudo systemctl restart conatainerd
+    sudo systemctl restart containerd
 }
 
 config_runtimes(){

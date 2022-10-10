@@ -108,17 +108,18 @@ config_runtimes(){
     echo -e "## Append Text To config.toml File.\n"
     sudo chmod 777 /etc/containerd/config.toml
     sed -i 's+disable_plugins+#disable_plugins+g' /etc/containerd/config.toml   
-    echo "
+cat << EOF | sudo tee -a /etc/containerd/config.toml
+
 version = 2
-[plugins.\"io.containerd.runtime.v1.linux\"]
+[plugins."io.containerd.runtime.v1.linux"]
   shim_debug = true
-[plugins.\"io.containerd.grpc.v1.cri\".containerd.runtimes.runc]
-  runtime_type = \"io.containerd.runc.v2\"
-[plugins.\"io.containerd.grpc.v1.cri\".containerd.runtimes.runsc]
-  runtime_type = \"io.containerd.runsc.v1\"
-[plugins.\"io.containerd.grpc.v1.cri\".containerd.runtimes.quark]
-  runtime_type = \"io.containerd.quark.v1\"
-" | sudo tee -a /etc/containerd/config.toml  > /dev/null
+[plugins."io.containerd.grpc.v1.cri".containerd.runtimes.runc]
+  runtime_type = "io.containerd.runc.v2"
+[plugins."io.containerd.grpc.v1.cri".containerd.runtimes.runsc]
+  runtime_type = "io.containerd.runsc.v1"
+[plugins."io.containerd.grpc.v1.cri".containerd.runtimes.quark]
+  runtime_type = "io.containerd.quark.v1"
+EOF
 
    sudo systemctl restart containerd    
 }

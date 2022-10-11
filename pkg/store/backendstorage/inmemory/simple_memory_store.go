@@ -18,7 +18,6 @@ package inmemory
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"math"
 	"reflect"
@@ -131,6 +130,7 @@ func NewMemoryStore(groupResource schema.GroupResource, pagingEnabled bool) *Mem
 func (ms *MemoryStore) Load() error {
 	ms.mu.Lock()
 	defer ms.mu.Unlock()
+	// load data from backend storage for initialized state
 	return nil
 }
 
@@ -138,6 +138,7 @@ func (ms *MemoryStore) Load() error {
 func (ms *MemoryStore) Stop() error {
 	ms.mu.Lock()
 	defer ms.mu.Unlock()
+	// TODO unload data into backend storage
 	return nil
 }
 
@@ -146,6 +147,7 @@ func (ms *MemoryStore) Count(key string) (int64, error) {
 	ms.mu.RLock()
 	defer ms.mu.RUnlock()
 	klog.InfoS("GWJ count object", "key", key, "count", len(ms.kvs))
+	// TODO
 	return 0, nil
 }
 
@@ -160,43 +162,40 @@ func (ms *MemoryStore) Create(ctx context.Context, key string, obj runtime.Objec
 	}
 
 	klog.InfoS("GWJ create object", "key", key)
-	if version, err := ms.versioner.ObjectResourceVersion(obj); err == nil && version != 0 {
-		return errors.New("resourceVersion should not be set on objects to be created")
-	}
 	if err := ms.versioner.PrepareObjectForStorage(obj); err != nil {
 		return fmt.Errorf("PrepareObjectForStorage failed: %v", err)
-	}
-
-	rev := atomic.AddUint64(&_MemoryRev, 1)
-	uindex := uint64(len(ms.klist))
-	ms.versioner.UpdateObject(obj, uint64(rev))
-	objWi := &objWithIndex{
-		key:   key,
-		obj:   obj.DeepCopyObject(),
-		index: uindex,
 	}
 
 	if _, found := ms.kvs[key]; found {
 		return storage.NewKeyExistsError(key, 0)
 	} else {
+		rev := atomic.AddUint64(&_MemoryRev, 1)
+		uindex := uint64(len(ms.klist))
+		ms.versioner.UpdateObject(obj, uint64(rev))
+		objWi := &objWithIndex{
+			key:   key,
+			obj:   obj.DeepCopyObject(),
+			index: uindex,
+		}
+
 		ms.kvs[key] = objWi
 		ms.klist = append(ms.klist, objWi)
 		// sorted klist has empty slots spreaded when items are deleted and updated, if len of klist is more than a threshold longer, we want to shrink array to avoid memory waste
 		if len(ms.klist) > len(ms.kvs)+NilSlotMemoryShrinkThrehold {
 			ms.klist = ms.klist.shrink(len(ms.kvs))
 		}
-	}
 
-	outVal.Set(reflect.ValueOf(obj).Elem())
-	event := &objEvent{
-		key:       key,
-		obj:       obj.DeepCopyObject(),
-		oldObj:    nil,
-		rev:       rev,
-		isDeleted: false,
-		isCreated: true,
+		outVal.Set(reflect.ValueOf(obj).Elem())
+		event := &objEvent{
+			key:       key,
+			obj:       obj.DeepCopyObject(),
+			oldObj:    nil,
+			rev:       rev,
+			isDeleted: false,
+			isCreated: true,
+		}
+		ms.sendEvent(event)
 	}
-	ms.sendEvent(event)
 	return nil
 }
 
@@ -288,7 +287,6 @@ func (ms *MemoryStore) Get(ctx context.Context, key string, opts storage.GetOpti
 
 		outVal.Set(reflect.ValueOf(existingObj.obj).Elem())
 	}
-	klog.InfoS("GWJ get object return", "key", key)
 	return nil
 }
 
@@ -518,7 +516,6 @@ func (ms *MemoryStore) GuaranteedUpdate(ctx context.Context, key string, out run
 		ms.sendEvent(event)
 	}
 
-	klog.InfoS("GWJ done update object", "key", key, "out", out)
 	return nil
 }
 

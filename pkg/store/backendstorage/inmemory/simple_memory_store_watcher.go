@@ -49,7 +49,7 @@ func NewMemoryStoreWatcher(ctx context.Context, key string, recursive, progressN
 		recursive:              recursive,
 		predicate:              predicate,
 		stopChannel:            make(chan bool, 1),
-		incomingChan:           make(chan *objEvent, 100),
+		incomingChan:           make(chan *objEvent, 1000),
 		outgoingChan:           make(chan watch.Event, 1000),
 		outgoingChanWithOldObj: make(chan store.WatchEventWithOldObj, 1000),
 	}

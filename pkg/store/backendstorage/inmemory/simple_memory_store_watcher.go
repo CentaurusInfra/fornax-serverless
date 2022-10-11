@@ -50,8 +50,8 @@ func NewMemoryStoreWatcher(ctx context.Context, key string, recursive, progressN
 		predicate:              predicate,
 		stopChannel:            make(chan bool, 1),
 		incomingChan:           make(chan *objEvent, 100),
-		outgoingChan:           make(chan watch.Event, 100),
-		outgoingChanWithOldObj: make(chan store.WatchEventWithOldObj, 100),
+		outgoingChan:           make(chan watch.Event, 1000),
+		outgoingChanWithOldObj: make(chan store.WatchEventWithOldObj, 1000),
 	}
 	// if predicate.Empty() {
 	//  // The filter doesn't filter out any object.
@@ -122,11 +122,6 @@ func (wc *memoryStoreWatcher) run(rev uint64, existingObjEvents []*objEvent, eve
 			}
 		}
 	}
-}
-
-func (wc *memoryStoreWatcher) Receive(event *objEvent) error {
-	wc.incomingChan <- event
-	return nil
 }
 
 // ResultChan implements watch.Interface

@@ -98,6 +98,7 @@ func initApplicationSessionInformer(ctx context.Context) {
 func onApplicationSessionAddEvent(obj interface{}) {
 	newCopy := obj.(*fornaxv1.ApplicationSession)
 	updateSessionStatus(newCopy)
+	addevents += 1
 }
 
 // callback from Application informer when ApplicationSession is updated
@@ -109,6 +110,7 @@ func onApplicationSessionUpdateEvent(old, cur interface{}) {
 	_ = old.(*fornaxv1.ApplicationSession)
 	newCopy := cur.(*fornaxv1.ApplicationSession)
 	updateSessionStatus(newCopy)
+	updevents += 1
 }
 
 func updateSessionStatus(session *fornaxv1.ApplicationSession) {

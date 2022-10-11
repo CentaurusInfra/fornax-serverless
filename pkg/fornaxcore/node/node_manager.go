@@ -42,8 +42,8 @@ var _ ie.NodeManagerInterface = &nodeManager{}
 
 type nodeManager struct {
 	ctx                context.Context
-	nodeUpdates        chan interface{}
-	watchers           []chan<- interface{}
+	nodeUpdates        chan *ie.NodeEvent
+	watchers           []chan<- *ie.NodeEvent
 	nodes              NodePool
 	nodeAgent          nodeagent.NodeAgentClient
 	podManager         ie.PodManagerInterface
@@ -66,7 +66,7 @@ func (nm *nodeManager) UpdateSessionState(nodeIdentifier string, session *fornax
 }
 
 // WatchNode implements NodeManagerInterface
-func (nm *nodeManager) Watch(watcher chan<- interface{}) {
+func (nm *nodeManager) Watch(watcher chan<- *ie.NodeEvent) {
 	nm.watchers = append(nm.watchers, watcher)
 }
 
@@ -293,8 +293,8 @@ func (nm *nodeManager) PrintNodeSummary() {
 func NewNodeManager(ctx context.Context, checkPeriod time.Duration, nodeAgent nodeagent.NodeAgentClient, podManager ie.PodManagerInterface, sessionManager ie.SessionManagerInterface) *nodeManager {
 	return &nodeManager{
 		ctx:                ctx,
-		nodeUpdates:        make(chan interface{}, 100),
-		watchers:           []chan<- interface{}{},
+		nodeUpdates:        make(chan *ie.NodeEvent, 100),
+		watchers:           []chan<- *ie.NodeEvent{},
 		nodeAgent:          nodeAgent,
 		nodePodCidrManager: NewPodCidrManager(),
 		nodeDaemonManager:  NewNodeDaemonManager(),

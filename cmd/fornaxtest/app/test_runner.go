@@ -39,6 +39,11 @@ import (
 )
 
 var (
+	addevents = 0
+	updevents = 0
+)
+
+var (
 	allTestApps         = TestApplicationArray{}
 	allTestSessions     = TestSessionArray{}
 	appSessionMap       = TestSessionMap{}
@@ -162,6 +167,8 @@ func Run(ctx context.Context, testConfig config.TestConfiguration) {
 
 	et := time.Now().UnixMilli()
 	klog.Infof("--------Test summary ----------\n")
+	fmt.Printf("GWJ received %d add events\n", addevents)
+	fmt.Printf("GWJ received %d upd events\n", updevents)
 	summaryAppTestResult(allTestApps, st, et)
 	summarySessionTestResult(allTestSessions, st, et)
 	os.Exit(0)

@@ -19,7 +19,6 @@ package session
 import (
 	"context"
 	"fmt"
-	"reflect"
 	"sync"
 	"time"
 
@@ -44,7 +43,7 @@ type SessionStatusChangeMap struct {
 type sessionManager struct {
 	ctx             context.Context
 	nodeAgentClient nodeagent.NodeAgentClient
-	watchers        []chan<- interface{}
+	watchers        []chan<- *ie.SessionEvent
 	statusUpdateCh  chan string
 	statusChanges   *SessionStatusChangeMap
 	sessionStore    fornaxstore.FornaxStorageInterface
@@ -157,20 +156,21 @@ func (sm *sessionManager) Run(ctx context.Context) {
 	}()
 }
 
-func (sm *sessionManager) Watch(receiver chan<- interface{}) {
+func (sm *sessionManager) Watch(receiver chan<- *ie.SessionEvent) {
 	sm.watchers = append(sm.watchers, receiver)
 }
 
 // forward to who are interested in session event
 func (sm *sessionManager) ReceiveSessionStatusFromNode(nodeId string, pod *v1.Pod, sessions []*fornaxv1.ApplicationSession) {
 	for _, session := range sessions {
-		for _, v := range sm.watchers {
-			v <- &ie.SessionEvent{
+		for _, watcher := range sm.watchers {
+			watcher <- &ie.SessionEvent{
 				NodeId:  nodeId,
 				Pod:     pod,
 				Session: session,
 				Type:    ie.SessionEventTypeUpdate,
 			}
+			klog.InfoS("Pod report session status", "session", util.Name(session), "queue len", len(watcher))
 		}
 	}
 }
@@ -202,7 +202,11 @@ func (sm *sessionManager) AsyncUpdateSessionStatus(session *fornaxv1.Application
 
 // UpdateApplicationSessionStatus put updated status into a map send singal into a channel to asynchronously update session status
 func (sm *sessionManager) UpdateSessionStatus(session *fornaxv1.ApplicationSession, newStatus *fornaxv1.ApplicationSessionStatus) error {
-	return sm._updateSessionStatus(util.Name(session), newStatus)
+	st := time.Now()
+	e := sm._updateSessionStatus(util.Name(session), newStatus)
+	et := time.Now()
+	klog.Infof("GWJ update session status took %d micro seconds for %s", et.UnixMicro()-st.UnixMicro(), util.Name(session))
+	return e
 }
 
 // attempts to update the Status of the given Application Session name
@@ -211,18 +215,16 @@ func (sm *sessionManager) _updateSessionStatus(sessionName string, newStatus *fo
 	for i := 0; i <= 3; i++ {
 		session, err := storefactory.GetApplicationSessionCache(sm.sessionStore, sessionName)
 		if err != nil {
-			if fornaxstore.IsObjectNotFoundErr(err) {
-				return nil
-			}
 			return err
 		}
-
-		if reflect.DeepEqual(session.Status, *newStatus) {
+		if session == nil {
 			return nil
 		}
 
-		modifiedSession := &fornaxv1.ApplicationSession{}
-		key := fmt.Sprintf("%s/%s", fornaxv1.ApplicationSessionGrvKey, sessionName)
+		// if reflect.DeepEqual(session.Status, *newStatus) {
+		// 	return nil
+		// }
+
 		updatedSession := session.DeepCopy()
 		updatedSession.Status = *newStatus
 		if util.SessionIsOpen(updatedSession) {
@@ -231,7 +233,7 @@ func (sm *sessionManager) _updateSessionStatus(sessionName string, newStatus *fo
 			util.RemoveFinalizer(&updatedSession.ObjectMeta, fornaxv1.FinalizerOpenSession)
 		}
 
-		updateErr = sm.sessionStore.EnsureUpdateOrDelete(sm.ctx, key, true, nil, updatedSession, modifiedSession)
+		_, updateErr = storefactory.UpdateApplicationSession(sm.ctx, sm.sessionStore, updatedSession)
 		if updateErr == nil {
 			break
 		}

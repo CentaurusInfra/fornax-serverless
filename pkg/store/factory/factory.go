@@ -101,22 +101,33 @@ func GetApplicationCache(store fornaxstore.FornaxStorageInterface, applicationLa
 	return out, nil
 }
 
-func CreateApplicationSession(store fornaxstore.FornaxStorageInterface, obj runtime.Object) (*fornaxv1.ApplicationSession, error) {
+func CreateApplicationSession(ctx context.Context, store fornaxstore.FornaxStorageInterface, session *fornaxv1.ApplicationSession) (*fornaxv1.ApplicationSession, error) {
 	out := &fornaxv1.ApplicationSession{}
-	key := fmt.Sprintf("%s/%s", fornaxv1.ApplicationSessionGrvKey, util.Name(obj))
-	err := store.Create(context.Background(), key, obj, out, uint64(0))
+	key := fmt.Sprintf("%s/%s", fornaxv1.ApplicationSessionGrvKey, util.Name(session))
+	err := store.Create(ctx, key, session, out, uint64(0))
 	if err != nil {
 		return nil, err
 	}
 	return out, nil
 }
 
-func CreateApplication(store fornaxstore.FornaxStorageInterface, obj runtime.Object) (*fornaxv1.Application, error) {
+func CreateApplication(ctx context.Context, store fornaxstore.FornaxStorageInterface, application *fornaxv1.Application) (*fornaxv1.Application, error) {
 	out := &fornaxv1.Application{}
-	key := fmt.Sprintf("%s/%s", fornaxv1.ApplicationGrvKey, util.Name(obj))
-	err := store.Create(context.Background(), key, obj, out, uint64(0))
+	key := fmt.Sprintf("%s/%s", fornaxv1.ApplicationGrvKey, util.Name(application))
+	err := store.Create(ctx, key, application, out, uint64(0))
 	if err != nil {
 		return nil, err
 	}
+	return out, nil
+}
+
+func UpdateApplicationSession(ctx context.Context, store fornaxstore.FornaxStorageInterface, session *fornaxv1.ApplicationSession) (*fornaxv1.ApplicationSession, error) {
+	out := &fornaxv1.ApplicationSession{}
+	key := fmt.Sprintf("%s/%s", fornaxv1.ApplicationSessionGrvKey, util.Name(session))
+	err := store.EnsureUpdateOrDelete(ctx, key, true, nil, session, out)
+	if err != nil {
+		return nil, err
+	}
+
 	return out, nil
 }

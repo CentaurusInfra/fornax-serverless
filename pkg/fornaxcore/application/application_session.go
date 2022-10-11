@@ -94,7 +94,7 @@ func (am *ApplicationManager) onSessionEventFromNode(se *ie.SessionEvent) error 
 			// if session already closed, no need to add it, instead of treat it as deleted session
 			am.onApplicationSessionDeleteEvent(session)
 		} else {
-			factory.CreateApplicationSession(am.sessionStore, session)
+			factory.CreateApplicationSession(am.ctx, am.sessionStore, session)
 		}
 	} else {
 		if util.SessionIsOpen(session) && oldCopy.DeletionTimestamp != nil {

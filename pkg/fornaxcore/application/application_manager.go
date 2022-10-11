@@ -73,25 +73,25 @@ func NewApplicationPool(appName string) *ApplicationPool {
 // ApplicationManager is responsible for synchronizing Application objects stored
 // in the system with actual running pods.
 type ApplicationManager struct {
-	mu sync.RWMutex
+	ctx context.Context
+	mu  sync.RWMutex
 
 	appKind          schema.GroupVersionKind
 	appSessionKind   schema.GroupVersionKind
 	applicationQueue workqueue.RateLimitingInterface
 
-	applicationStore       fornaxstore.FornaxStorageInterface
-	appStoreUpdate         <-chan fornaxstore.WatchEventWithOldObj
-	aplicationListerSynced cache.InformerSynced
+	applicationStore fornaxstore.FornaxStorageInterface
+	appStoreUpdate   <-chan fornaxstore.WatchEventWithOldObj
 
-	sessionStore        fornaxstore.FornaxStorageInterface
-	sessionStoreUpdate  <-chan fornaxstore.WatchEventWithOldObj
-	sessionListerSynced cache.InformerSynced
+	sessionStore       fornaxstore.FornaxStorageInterface
+	sessionStoreUpdate <-chan fornaxstore.WatchEventWithOldObj
 
 	// A pool of pods grouped by application key
-	applicationPools map[string]*ApplicationPool
-	updateChannel    chan interface{}
-	podManager       ie.PodManagerInterface
-	sessionManager   ie.SessionManagerInterface
+	applicationPools     map[string]*ApplicationPool
+	podUpdateChannel     chan *ie.PodEvent
+	podManager           ie.PodManagerInterface
+	sessionUpdateChannel chan *ie.SessionEvent
+	sessionManager       ie.SessionManagerInterface
 
 	applicationStatusManager *ApplicationStatusManager
 
@@ -102,16 +102,18 @@ type ApplicationManager struct {
 // and start to listen to pod event from node
 func NewApplicationManager(ctx context.Context, podManager ie.PodManagerInterface, sessionManager ie.SessionManagerInterface, appStore, sessionStore fornaxstore.FornaxStorageInterface) *ApplicationManager {
 	am := &ApplicationManager{
-		applicationQueue: workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "fornaxv1.Application"),
-		applicationPools: map[string]*ApplicationPool{},
-		updateChannel:    make(chan interface{}, 500),
-		podManager:       podManager,
-		sessionManager:   sessionManager,
-		applicationStore: appStore,
-		sessionStore:     sessionStore,
+		ctx:                  ctx,
+		applicationQueue:     workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "fornaxv1.Application"),
+		applicationPools:     map[string]*ApplicationPool{},
+		podUpdateChannel:     make(chan *ie.PodEvent, 500),
+		podManager:           podManager,
+		sessionUpdateChannel: make(chan *ie.SessionEvent, 500),
+		sessionManager:       sessionManager,
+		applicationStore:     appStore,
+		sessionStore:         sessionStore,
 	}
-	am.podManager.Watch(am.updateChannel)
-	am.sessionManager.Watch(am.updateChannel)
+	am.podManager.Watch(am.podUpdateChannel)
+	am.sessionManager.Watch(am.sessionUpdateChannel)
 	am.syncHandler = am.syncApplication
 
 	return am
@@ -217,26 +219,34 @@ func (am *ApplicationManager) Run(ctx context.Context) {
 	klog.Info("Fornaxv1 application manager started")
 
 	go func() {
-		defer utilruntime.HandleCrash()
-		defer am.applicationQueue.ShutDown()
-		defer klog.Info("Shutting down fornaxv1 application manager")
+		defer klog.Info("Shutting down fornaxv1 application pod manager")
 
 		for {
 			select {
 			case <-ctx.Done():
 				break
-			case update := <-am.updateChannel:
-				if pe, ok := update.(*ie.PodEvent); ok {
-					am.onPodEventFromNode(pe)
-				}
-				if se, ok := update.(*ie.SessionEvent); ok {
-					am.onSessionEventFromNode(se)
-				}
+			case update := <-am.podUpdateChannel:
+				am.onPodEventFromNode(update)
 			}
 		}
 	}()
 
 	go func() {
+		defer klog.Info("Shutting down fornaxv1 application session manager")
+
+		for {
+			select {
+			case <-ctx.Done():
+				break
+			case update := <-am.sessionUpdateChannel:
+				am.onSessionEventFromNode(update)
+			}
+		}
+	}()
+
+	go func() {
+		defer utilruntime.HandleCrash()
+		defer am.applicationQueue.ShutDown()
 		ticker := time.NewTicker(HouseKeepingDuration)
 		for {
 			select {

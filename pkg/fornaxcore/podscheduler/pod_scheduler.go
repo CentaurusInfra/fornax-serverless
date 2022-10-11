@@ -89,8 +89,9 @@ type SchedulePolicy struct {
 type podScheduler struct {
 	stop                      bool
 	ctx                       context.Context
-	updateCh                  chan interface{}
-	nodeInfoP                 ie.NodeInfoProvider
+	nodeUpdateCh              chan *ie.NodeEvent
+	podUpdateCh               chan *ie.PodEvent
+	nodeInfoP                 ie.NodeInfoProviderInterface
 	nodeAgentClient           nodeagent.NodeAgentClient
 	scheduleQueue             *PodScheduleQueue
 	nodePool                  *SchedulableNodePool
@@ -312,25 +313,16 @@ func (ps *podScheduler) Run() {
 			case <-ps.ctx.Done():
 				ps.stop = true
 				break
-			case update := <-ps.updateCh:
-				switch t := update.(type) {
-				case *ie.PodEvent:
-					if u, ok := update.(*ie.PodEvent); ok {
-						if len(u.NodeId) != 0 {
-							snode := ps.nodePool.GetNode(u.NodeId)
-							if snode != nil {
-								ps.updatePodOccupiedResourceList(snode, u.Pod, u.Type)
-							}
-						}
+			case update := <-ps.podUpdateCh:
+				if len(update.NodeId) != 0 {
+					snode := ps.nodePool.GetNode(update.NodeId)
+					if snode != nil {
+						ps.updatePodOccupiedResourceList(snode, update.Pod, update.Type)
 					}
-				case *ie.NodeEvent:
-					if u, ok := update.(*ie.NodeEvent); ok {
-						ps.updateNodePool(u.NodeId, u.Node.DeepCopy(), u.Type)
-					}
-					ps.scheduleQueue.ReviveBackoffItem()
-				default:
-					klog.Errorf("unknown node update type %T!\n", t)
 				}
+			case update := <-ps.nodeUpdateCh:
+				ps.updateNodePool(update.NodeId, update.Node.DeepCopy(), update.Type)
+				ps.scheduleQueue.ReviveBackoffItem()
 			case <-ticker.C:
 				ps.printScheduleSummary()
 				// we may use different sorting interval
@@ -345,11 +337,12 @@ func (ps *podScheduler) Run() {
 	}()
 }
 
-func NewPodScheduler(ctx context.Context, nodeAgent nodeagent.NodeAgentClient, nodeInfoP ie.NodeInfoProvider, podInfoP ie.PodInfoProvider, policy *SchedulePolicy) *podScheduler {
+func NewPodScheduler(ctx context.Context, nodeAgent nodeagent.NodeAgentClient, nodeInfoP ie.NodeInfoProviderInterface, podInfoP ie.PodInfoProviderInterface, policy *SchedulePolicy) *podScheduler {
 	ps := &podScheduler{
 		ctx:             ctx,
 		stop:            false,
-		updateCh:        make(chan interface{}, 500),
+		nodeUpdateCh:    make(chan *ie.NodeEvent, 500),
+		podUpdateCh:     make(chan *ie.PodEvent, 500),
 		nodeInfoP:       nodeInfoP,
 		nodeAgentClient: nodeAgent,
 		scheduleQueue:   NewScheduleQueue(),
@@ -365,7 +358,7 @@ func NewPodScheduler(ctx context.Context, nodeAgent nodeagent.NodeAgentClient, n
 		},
 		policy: policy,
 	}
-	nodeInfoP.Watch(ps.updateCh)
-	podInfoP.Watch(ps.updateCh)
+	nodeInfoP.Watch(ps.nodeUpdateCh)
+	podInfoP.Watch(ps.podUpdateCh)
 	return ps
 }

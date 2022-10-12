@@ -216,7 +216,7 @@ func (am *ApplicationManager) onApplicationSessionDeleteEvent(obj interface{}) {
 		session.DeletionTimestamp = util.NewCurrentMetaTime()
 	}
 
-	// as fornaxcore update cache memory before update etcd, if there is no a cached copy, do not need to sync a deleted session, etcd is late
+	klog.InfoS("Application session deleted", "session", util.Name(session), "status", session.Status, "finalizer", session.Finalizers)
 	applicationKey := am.getSessionApplicationKey(session)
 	pool := am.getApplicationPool(applicationKey)
 	if pool == nil {

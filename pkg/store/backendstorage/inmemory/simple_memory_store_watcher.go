@@ -94,10 +94,6 @@ func (wc *memoryStoreWatcher) run(rev uint64, existingObjEvents []*objEvent, eve
 				wc.outgoingChan <- *wcEvent
 			}
 		}
-		// existingObjEvents is supposed to sorted with rev, but do this check anyway
-		if event.rev > startingRev {
-			startingRev = event.rev
-		}
 	}
 
 	for {
@@ -108,7 +104,6 @@ func (wc *memoryStoreWatcher) run(rev uint64, existingObjEvents []*objEvent, eve
 			return
 		case event := <-wc.incomingChan:
 			if event.rev > startingRev {
-				startingRev = event.rev
 				wcEvent := wc.transform(event)
 				if wcEvent != nil {
 					if eventWithOldObj {

@@ -22,6 +22,7 @@ import (
 	"fmt"
 	"path"
 	"reflect"
+	"strconv"
 	"strings"
 
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -41,27 +42,40 @@ type continueToken struct {
 	StartKey        string `json:"start"`
 }
 
+func objectResourceVersion(obj runtime.Object) (uint64, error) {
+	accessor, err := meta.Accessor(obj)
+	if err != nil {
+		return 0, err
+	}
+	version := accessor.GetResourceVersion()
+	if len(version) == 0 {
+		return 0, nil
+	}
+
+	return strconv.ParseUint(version, 10, 64)
+}
+
 func getStateFromObject(versioner apistorage.Versioner, obj runtime.Object) (*objState, error) {
 	state := &objState{
 		obj:  obj,
 		meta: &apistorage.ResponseMeta{},
 	}
 
-	rv, err := versioner.ObjectResourceVersion(obj)
+	rv, err := objectResourceVersion(obj)
 	if err != nil {
 		return nil, fmt.Errorf("couldn't get resource version: %v", err)
 	}
 	state.rev = rv
 	state.meta.ResourceVersion = uint64(state.rev)
 
-	// Compute the serialized form - for that we need to temporarily clean
-	// its resource version field (those are not stored in etcd).
-	if err := versioner.PrepareObjectForStorage(obj); err != nil {
-		return nil, fmt.Errorf("PrepareObjectForStorage failed: %v", err)
-	}
-	if err := versioner.UpdateObject(state.obj, uint64(rv)); err != nil {
-		klog.Errorf("failed to update object version: %v", err)
-	}
+	// // Compute the serialized form - for that we need to temporarily clean
+	// // its resource version field (those are not stored in etcd).
+	// if err := versioner.PrepareObjectForStorage(obj); err != nil {
+	// 	return nil, fmt.Errorf("PrepareObjectForStorage failed: %v", err)
+	// }
+	// if err := versioner.UpdateObject(state.obj, uint64(rv)); err != nil {
+	// 	klog.Errorf("failed to update object version: %v", err)
+	// }
 	return state, nil
 }
 

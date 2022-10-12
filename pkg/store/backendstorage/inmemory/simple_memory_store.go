@@ -39,7 +39,6 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apiserver/pkg/storage"
 	apistorage "k8s.io/apiserver/pkg/storage"
-	"k8s.io/apiserver/pkg/storage/etcd3"
 )
 
 const (
@@ -56,10 +55,9 @@ type objEvent struct {
 }
 
 type objState struct {
-	obj   runtime.Object
-	meta  *storage.ResponseMeta
-	rev   uint64
-	stale bool
+	obj  runtime.Object
+	meta *storage.ResponseMeta
+	rev  uint64
 }
 
 type objWithIndex struct {
@@ -70,7 +68,7 @@ type objWithIndex struct {
 
 type objList []*objWithIndex
 
-func (list objList) shrink(length int) objList {
+func (list objList) shrink(length int64) objList {
 	klog.InfoS("GWJ Shrink memory storage list", "len", len(list), "to", length)
 	newList := make([]*objWithIndex, length)
 	i := uint64(0)
@@ -85,11 +83,204 @@ func (list objList) shrink(length int) objList {
 	return newList
 }
 
+type objMapOrObj struct {
+	obj    *objWithIndex
+	objMap *memoryStoreMap
+}
+
+type memoryStoreMap struct {
+	mu  sync.RWMutex
+	kvs map[string]objMapOrObj
+	num int64
+}
+
+func (mm *memoryStoreMap) count(keys []string) (int64, error) {
+	if len(keys) == 0 {
+		return mm._countItemsInMap(), nil
+	}
+
+	thismm := mm
+	count := int64(0)
+	for i := 0; i < len(keys); i++ {
+		key := keys[i]
+		if o := thismm._get(key); o == nil {
+			continue
+		} else {
+			if i != len(keys)-1 {
+				if o.obj != nil {
+					return 0, fmt.Errorf("%dth middle node of keys %v is not a map", i, keys)
+				} else {
+					thismm = o.objMap
+				}
+			} else {
+				// reach to end of keys, count items from here
+				if o.obj != nil {
+					return 1, nil
+				} else {
+					return o.objMap._countItemsInMap(), nil
+				}
+			}
+		}
+	}
+	return count, nil
+}
+
+func (mm *memoryStoreMap) _countItemsInMap() int64 {
+	mm.mu.RLock()
+	defer mm.mu.RUnlock()
+	count := int64(0)
+	for _, v := range mm.kvs {
+		if v.obj != nil {
+			count += 1
+		} else {
+			count += v.objMap._countItemsInMap()
+		}
+	}
+	return count
+}
+
+func (mm *memoryStoreMap) _get(key string) *objMapOrObj {
+	mm.mu.RLock()
+	defer mm.mu.RUnlock()
+	if o, f := mm.kvs[key]; f {
+		return &o
+	}
+	return nil
+}
+
+func (mm *memoryStoreMap) get(keys []string) *objWithIndex {
+	if len(keys) == 0 {
+		return nil
+	}
+
+	thismm := mm
+	for i := 0; i < len(keys); i++ {
+		if o := thismm._get(keys[i]); o == nil {
+			return nil
+		} else {
+			if o.obj != nil {
+				return o.obj
+			} else if o.objMap != nil {
+				thismm = o.objMap
+			} else {
+				// not supposed to happen,
+				return nil
+			}
+		}
+	}
+	return nil
+}
+
+func (mm *memoryStoreMap) _putObj(key string, obj *objWithIndex, expectedRV uint64) error {
+	mm.mu.Lock()
+	defer mm.mu.Unlock()
+	if o, f := mm.kvs[key]; f {
+		if o.obj != nil {
+			objRv, err := store.ObjectResourceVersion(o.obj.obj)
+			if err != nil {
+				return err
+			}
+			if objRv > expectedRV {
+				return storage.NewTooLargeResourceVersionError(expectedRV, objRv, 0)
+			}
+		} else {
+			// not supposed to happen, for syntax correctness
+			return storage.NewInternalErrorf("tree node with final key %s is not nil, but has nil value", key)
+		}
+	}
+
+	mm.kvs[key] = objMapOrObj{
+		obj:    obj,
+		objMap: nil,
+	}
+	return nil
+}
+
+func (mm *memoryStoreMap) _putObjMap(key string, objMap *memoryStoreMap) {
+	mm.mu.Lock()
+	defer mm.mu.Unlock()
+	mm.kvs[key] = objMapOrObj{
+		obj:    nil,
+		objMap: objMap,
+	}
+}
+
+func (mm *memoryStoreMap) put(keys []string, obj *objWithIndex, expectedRV uint64) error {
+	if len(keys) == 0 {
+		return fmt.Errorf("Empty keys are provided %v", keys)
+	}
+
+	thismm := mm
+	for i := 0; i < len(keys); i++ {
+		if o := thismm._get(keys[i]); o == nil {
+			if i == len(keys)-1 {
+				thismm._putObj(keys[i], obj, expectedRV)
+			} else {
+				// add a map and move to next level
+				newmm := &memoryStoreMap{mu: sync.RWMutex{}, kvs: map[string]objMapOrObj{}}
+				thismm._putObjMap(keys[i], newmm)
+				thismm = newmm
+			}
+		} else {
+			if i == len(keys)-1 {
+				if o.obj != nil {
+					thismm._putObj(keys[i], obj, expectedRV)
+				} else {
+					return fmt.Errorf("leaf node of keys %v is a map, it's supposed to be nil or obj", keys)
+				}
+			} else {
+				if o.objMap == nil {
+					return fmt.Errorf("%dth middle node of keys %v is not a map", i, keys)
+				} else {
+					// continue to search next level
+					thismm = o.objMap
+				}
+			}
+		}
+	}
+	return nil
+}
+
+func (mm *memoryStoreMap) _del(key string) {
+	mm.mu.Lock()
+	defer mm.mu.Unlock()
+	delete(mm.kvs, key)
+}
+
+func (mm *memoryStoreMap) del(keys []string) error {
+	if len(keys) == 0 {
+		return fmt.Errorf("Empty keys are provided %v", keys)
+	}
+
+	thismm := mm
+	for i := 0; i < len(keys); i++ {
+		if o := thismm._get(keys[i]); o == nil {
+			return nil
+		} else {
+			if i == len(keys)-1 {
+				if o.obj != nil {
+					thismm._del(keys[i])
+				} else {
+					return fmt.Errorf("leaf node of keys %v is a map, it's supposed to be nil or obj", keys)
+				}
+			} else {
+				if o.objMap == nil {
+					return fmt.Errorf("%dth middle node of keys %v is not a map", i, keys)
+				} else {
+					// continue to search next level
+					thismm = o.objMap
+				}
+			}
+		}
+	}
+	return nil
+}
+
 type MemoryStore struct {
 	versioner           storage.Versioner
 	mu                  sync.RWMutex
-	kvs                 map[string]*objWithIndex
-	klist               objList
+	kvs                 *memoryStoreMap
+	kvList              objList
 	groupResource       schema.GroupResource
 	groupResourceString string
 	pagingEnabled       bool
@@ -112,10 +303,13 @@ func NewMemoryStore(groupResource schema.GroupResource, pagingEnabled bool) *Mem
 		return si
 	} else {
 		si = &MemoryStore{
-			versioner:           etcd3.APIObjectVersioner{},
-			mu:                  sync.RWMutex{},
-			kvs:                 map[string]*objWithIndex{},
-			klist:               []*objWithIndex{},
+			versioner: store.APIObjectVersioner{},
+			mu:        sync.RWMutex{},
+			kvs: &memoryStoreMap{
+				mu:  sync.RWMutex{},
+				kvs: map[string]objMapOrObj{},
+			},
+			kvList:              []*objWithIndex{},
 			groupResource:       groupResource,
 			groupResourceString: groupResource.String(),
 			pagingEnabled:       pagingEnabled,
@@ -144,51 +338,55 @@ func (ms *MemoryStore) Stop() error {
 
 // Count implements storage.Interface
 func (ms *MemoryStore) Count(key string) (int64, error) {
-	ms.mu.RLock()
-	defer ms.mu.RUnlock()
-	klog.InfoS("GWJ count object", "key", key, "count", len(ms.kvs))
+	count, err := ms.kvs.count(strings.Split(key, "/"))
+	klog.InfoS("GWJ count object", "key", key, "count", count)
 	// TODO
-	return 0, nil
+	return count, err
 }
 
 // Create implements storage.Interface
 func (ms *MemoryStore) Create(ctx context.Context, key string, obj runtime.Object, out runtime.Object, ttl uint64) error {
-	ms.mu.Lock()
-	defer ms.mu.Unlock()
-
+	klog.InfoS("GWJ create object", "key", key)
 	outVal, err := conversion.EnforcePtr(out)
 	if err != nil {
 		return err
 	}
 
-	klog.InfoS("GWJ create object", "key", key)
 	if err := ms.versioner.PrepareObjectForStorage(obj); err != nil {
 		return fmt.Errorf("PrepareObjectForStorage failed: %v", err)
 	}
 
-	if _, found := ms.kvs[key]; found {
+	keys := strings.Split(key, "/")
+	if o := ms.kvs.get(keys); o != nil {
 		return storage.NewKeyExistsError(key, 0)
 	} else {
-		rev := atomic.AddUint64(&_MemoryRev, 1)
-		uindex := uint64(len(ms.klist))
-		ms.versioner.UpdateObject(obj, uint64(rev))
-		objWi := &objWithIndex{
-			key:   key,
-			obj:   obj.DeepCopyObject(),
-			index: uindex,
+		rev, err := func() (uint64, error) {
+			ms.mu.Lock()
+			defer ms.mu.Unlock()
+
+			rev := atomic.AddUint64(&_MemoryRev, 1)
+			uindex := uint64(len(ms.kvList))
+			ms.versioner.UpdateObject(obj, uint64(rev))
+			objWi := &objWithIndex{
+				key:   key,
+				obj:   obj.DeepCopyObject(),
+				index: uindex,
+			}
+			err := ms.kvs.put(keys, objWi, 0)
+			if err != nil {
+				return 0, err
+			}
+			ms.kvList = append(ms.kvList, objWi)
+			outVal.Set(reflect.ValueOf(obj).Elem())
+			return rev, nil
+		}()
+		if err != nil {
+			return err
 		}
 
-		ms.kvs[key] = objWi
-		ms.klist = append(ms.klist, objWi)
-		// sorted klist has empty slots spreaded when items are deleted and updated, if len of klist is more than a threshold longer, we want to shrink array to avoid memory waste
-		if len(ms.klist) > len(ms.kvs)+NilSlotMemoryShrinkThrehold {
-			ms.klist = ms.klist.shrink(len(ms.kvs))
-		}
-
-		outVal.Set(reflect.ValueOf(obj).Elem())
 		event := &objEvent{
 			key:       key,
-			obj:       obj.DeepCopyObject(),
+			obj:       out.DeepCopyObject(),
 			oldObj:    nil,
 			rev:       rev,
 			isDeleted: false,
@@ -203,47 +401,49 @@ func (ms *MemoryStore) Create(ctx context.Context, key string, obj runtime.Objec
 func (ms *MemoryStore) Delete(ctx context.Context, key string, out runtime.Object, preconditions *storage.Preconditions, validateDeletion storage.ValidateObjectFunc, cachedExistingObject runtime.Object) error {
 	klog.InfoS("GWJ delete object", "key", key)
 
-	ms.mu.Lock()
-	defer ms.mu.Unlock()
-
-	if existingObj, found := ms.kvs[key]; !found {
+	keys := strings.Split(key, "/")
+	if existingObj := ms.kvs.get(keys); existingObj == nil {
 		return storage.NewKeyNotFoundError(key, 0)
 	} else {
-		currState, err := getStateFromObject(ms.versioner, existingObj.obj)
+		rev, err := func() (uint64, error) {
+			ms.mu.Lock()
+			defer ms.mu.Unlock()
+			currState, err := getStateFromObject(ms.versioner, existingObj.obj)
+			if err != nil {
+				return 0, err
+			}
+
+			if cachedExistingObject != nil {
+				_, err := getStateFromObject(ms.versioner, cachedExistingObject)
+				if err != nil {
+					return 0, err
+				}
+			} else {
+				_, err := getStateFromObject(ms.versioner, existingObj.obj)
+				if err != nil {
+					return 0, err
+				}
+			}
+
+			if preconditions != nil {
+				if err := preconditions.Check(key, currState.obj); err != nil {
+					return 0, err
+				}
+			}
+
+			if err := validateDeletion(ctx, currState.obj); err != nil {
+				return 0, err
+			}
+
+			rev := atomic.AddUint64(&_MemoryRev, 1)
+			ms.kvs.del(keys)
+			ms.kvList[existingObj.index] = nil
+			out = existingObj.obj.DeepCopyObject()
+			return rev, nil
+		}()
 		if err != nil {
 			return err
 		}
-
-		if cachedExistingObject != nil {
-			_, err := getStateFromObject(ms.versioner, cachedExistingObject)
-			if err != nil {
-				return err
-			}
-		} else {
-			_, err := getStateFromObject(ms.versioner, existingObj.obj)
-			if err != nil {
-				return err
-			}
-		}
-
-		if preconditions != nil {
-			if err := preconditions.Check(key, currState.obj); err != nil {
-				return err
-			}
-		}
-
-		if err := validateDeletion(ctx, currState.obj); err != nil {
-			return err
-		}
-
-		rev := atomic.AddUint64(&_MemoryRev, 1)
-		delete(ms.kvs, key)
-		ms.klist[existingObj.index] = nil
-		// sorted klist has some empty slot, kvs has exact num of obj, if len of klist is a threshold longer, we want to shrink array to avoid memory waste
-		if len(ms.klist) > len(ms.kvs)+NilSlotMemoryShrinkThrehold {
-			ms.klist = ms.klist.shrink(len(ms.kvs))
-		}
-		out = existingObj.obj.DeepCopyObject()
 
 		event := &objEvent{
 			key:       key,
@@ -261,16 +461,14 @@ func (ms *MemoryStore) Delete(ctx context.Context, key string, out runtime.Objec
 
 // Get implements storage.Interface
 func (ms *MemoryStore) Get(ctx context.Context, key string, opts storage.GetOptions, out runtime.Object) error {
-	ms.mu.RLock()
-	defer ms.mu.RUnlock()
-
 	klog.InfoS("GWJ get object", "key", key, "opts", opts)
 	outVal, err := conversion.EnforcePtr(out)
 	if err != nil {
 		return fmt.Errorf("unable to convert output object to pointer: %v", err)
 	}
 
-	if existingObj, found := ms.kvs[key]; !found {
+	keys := strings.Split(key, "/")
+	if existingObj := ms.kvs.get(keys); existingObj == nil {
 		if opts.IgnoreNotFound {
 			return runtime.SetZeroValue(out)
 		}
@@ -281,7 +479,7 @@ func (ms *MemoryStore) Get(ctx context.Context, key string, opts storage.GetOpti
 			return storage.NewInternalError(err.Error())
 		}
 
-		if err := ms.validateMinimumResourceVersion(ms.versioner, opts.ResourceVersion, existingObjState.meta.ResourceVersion); err != nil {
+		if err := ms.validateMinimumResourceVersion(ms.versioner, opts.ResourceVersion, existingObjState.rev); err != nil {
 			return err
 		}
 
@@ -290,16 +488,19 @@ func (ms *MemoryStore) Get(ctx context.Context, key string, opts storage.GetOpti
 	return nil
 }
 
-// GetList implements storage.Interface
-func (ms *MemoryStore) GetList(ctx context.Context, key string, opts storage.ListOptions, listObj runtime.Object) error {
-	ms.mu.RLock()
-	defer ms.mu.RUnlock()
-
-	klog.InfoS("GWJ get list of object", "key", key, "opts", opts)
-	recursive := opts.Recursive
+func (ms *MemoryStore) getSingleObjectAsList(ctx context.Context, key string, opts storage.ListOptions, listObj runtime.Object) error {
 	resourceVersion := opts.ResourceVersion
 	match := opts.ResourceVersionMatch
 	pred := opts.Predicate
+
+	var fromRV *uint64
+	if len(resourceVersion) > 0 {
+		parsedRV, err := ms.versioner.ParseResourceVersion(resourceVersion)
+		if err != nil {
+			return apierrors.NewBadRequest(fmt.Sprintf("invalid resource version: %v", err))
+		}
+		fromRV = &parsedRV
+	}
 
 	listPtr, err := meta.GetItemsPtr(listObj)
 	if err != nil {
@@ -310,11 +511,66 @@ func (ms *MemoryStore) GetList(ctx context.Context, key string, opts storage.Lis
 		return fmt.Errorf("need ptr to slice: %v", err)
 	}
 
+	keys := strings.Split(key, "/")
+	if obj := ms.kvs.get(keys); obj == nil {
+		return ms.versioner.UpdateList(listObj, atomic.LoadUint64(&_MemoryRev), "", nil)
+	} else {
+		rv, err := ms.versioner.ObjectResourceVersion(obj.obj)
+		if err != nil {
+			return err
+		}
+		if fromRV != nil {
+			switch match {
+			case metav1.ResourceVersionMatchNotOlderThan:
+				if rv >= *fromRV {
+					appendListItem(listRetVal, obj.obj, rv, pred, ms.versioner)
+				}
+			case metav1.ResourceVersionMatchExact:
+				if rv == *fromRV {
+					appendListItem(listRetVal, obj.obj, rv, pred, ms.versioner)
+				}
+			case "":
+				if rv > *fromRV {
+					// append
+					appendListItem(listRetVal, obj.obj, rv, pred, ms.versioner)
+				}
+			default:
+				return fmt.Errorf("unknown ResourceVersionMatch value: %v", match)
+			}
+		} else {
+			appendListItem(listRetVal, obj.obj, rv, pred, ms.versioner)
+		}
+		return ms.versioner.UpdateList(listObj, rv, "", nil)
+	}
+}
+
+// GetList implements storage.Interface
+func (ms *MemoryStore) GetList(ctx context.Context, key string, opts storage.ListOptions, listObj runtime.Object) error {
+	klog.InfoS("GWJ get list of object", "key", key, "opts", opts)
+	ms.mu.RLock()
+	defer ms.mu.RUnlock()
+
+	listPtr, err := meta.GetItemsPtr(listObj)
+	if err != nil {
+		return err
+	}
+	listRetVal, err := conversion.EnforcePtr(listPtr)
+	if err != nil || listRetVal.Kind() != reflect.Slice {
+		return fmt.Errorf("need ptr to slice: %v", err)
+	}
+
+	recursive := opts.Recursive
+	if !recursive {
+		return ms.getSingleObjectAsList(ctx, key, opts, listObj)
+	}
 	if recursive && !strings.HasSuffix(key, "/") {
 		key += "/"
 	}
 	keyPrefix := key
 
+	resourceVersion := opts.ResourceVersion
+	match := opts.ResourceVersionMatch
+	pred := opts.Predicate
 	var fromRV *uint64
 	if len(resourceVersion) > 0 {
 		parsedRV, err := ms.versioner.ParseResourceVersion(resourceVersion)
@@ -326,7 +582,7 @@ func (ms *MemoryStore) GetList(ctx context.Context, key string, opts storage.Lis
 
 	returnedRV := uint64(1)
 	withRV := uint64(0)
-	var startingIndex uint64 = 0
+	searchingIndex := uint64(0)
 	var continueKey string
 	switch {
 	case len(pred.Continue) > 0:
@@ -347,45 +603,43 @@ func (ms *MemoryStore) GetList(ctx context.Context, key string, opts storage.Lis
 			return apierrors.NewBadRequest("0 continue resource version is not allowed when using continue")
 		}
 		// use continueKey to find object and check if its rv is same as continue rv, then use this object index to search sorted object list
-		// if object with continueKey is updated since last return, use withRV do a binary search to get a index
-		if obj, found := ms.kvs[continueKey]; found {
+		// if object with continueKey is updated since last return, use continueRV do a binary search to get a index
+		continueKeys := strings.Split(continueKey, "/")
+		if obj := ms.kvs.get(continueKeys); obj != nil {
 			objRV, _ := ms.versioner.ObjectResourceVersion(obj.obj)
-			if objRV == uint64(withRV) {
-				startingIndex = obj.index
+			if objRV == withRV {
+				searchingIndex = obj.index
+			} else {
+				searchingIndex = ms._binarySearchInObjList(withRV)
 			}
 		}
 	default:
+		// no continue key, but with resource version, start to search from provided resource version
 		if fromRV != nil && *fromRV > 0 {
 			withRV = *fromRV
 			returnedRV = *fromRV
+			searchingIndex = ms._binarySearchInObjList(*fromRV)
 		}
 	}
 
-	if startingIndex == 0 {
-		if withRV != 0 {
-			startingIndex = ms.binarySearch(withRV)
-		}
+	// can not find valid searching index from list, return empty list
+	if searchingIndex >= uint64(len(ms.kvList)) {
+		return ms.versioner.UpdateList(listObj, uint64(returnedRV), "", nil)
 	}
 
-	if startingIndex >= uint64(len(ms.klist)) {
-		// object with revsion >= withRV has been deleted
-		resp := ms.versioner.UpdateList(listObj, uint64(returnedRV), "", nil)
-		return resp
-	}
-
-	// loop until we have filled the requested limit from etcd or there are no more results
-	var limit uint64 = math.MaxInt64
+	// range sorted revision list from searching index until meet requested limit or there are no more items
+	limit := int64(math.MaxInt64)
 	if ms.pagingEnabled && pred.Limit > 0 {
-		limit = uint64(pred.Limit)
+		limit = pred.Limit
 	}
 	remainingItemCount := int64(0)
 	hasMore := false
 	lastKey := ""
 	lastRev := withRV
-	listBufferLen := uint64(len(ms.klist))
-	klog.InfoS("GWJ get list ", "withRV", withRV, "index", startingIndex, "list size", listBufferLen)
-	for i := startingIndex; i < listBufferLen; i++ {
-		v := ms.klist[i]
+	listBufferLen := uint64(len(ms.kvList))
+	klog.InfoS("GWJ get list ", "withRV", withRV, "index", searchingIndex, "list size", listBufferLen)
+	for i := searchingIndex; i < listBufferLen; i++ {
+		v := ms.kvList[i]
 		if v != nil {
 			rv, _ := ms.versioner.ObjectResourceVersion(v.obj)
 			lastKey = v.key
@@ -395,15 +649,15 @@ func (ms *MemoryStore) GetList(ctx context.Context, key string, opts storage.Lis
 			}
 			switch match {
 			case metav1.ResourceVersionMatchNotOlderThan:
-				if rv >= uint64(withRV) {
+				if rv >= withRV {
 					appendListItem(listRetVal, v.obj, rv, pred, ms.versioner)
 				}
 			case metav1.ResourceVersionMatchExact:
-				if rv > uint64(withRV) {
+				if rv > withRV {
 					appendListItem(listRetVal, v.obj, rv, pred, ms.versioner)
 				}
 			case "":
-				if rv > uint64(withRV) {
+				if rv > withRV {
 					// append
 					appendListItem(listRetVal, v.obj, rv, pred, ms.versioner)
 				}
@@ -412,7 +666,7 @@ func (ms *MemoryStore) GetList(ctx context.Context, key string, opts storage.Lis
 			}
 		}
 		// have got enough items, check if there are still items in list
-		if uint64(listRetVal.Len()) == limit {
+		if int64(listRetVal.Len()) == limit {
 			if i < listBufferLen-1 {
 				remainingItemCount = int64(listBufferLen - 1 - i)
 				hasMore = true
@@ -423,28 +677,23 @@ func (ms *MemoryStore) GetList(ctx context.Context, key string, opts storage.Lis
 
 	klog.InfoS("GWJ get list return a list", "len", listRetVal.Len(), "lastkey", lastKey, "last rev", lastRev, "hasMore", hasMore)
 	if hasMore {
-		next, err := encodeContinue(lastKey, keyPrefix, lastRev)
+		continueToken, err := encodeContinue(lastKey, keyPrefix, lastRev)
 		if err != nil {
 			return err
 		}
 		if pred.Empty() {
-			return ms.versioner.UpdateList(listObj, returnedRV, next, &remainingItemCount)
+			return ms.versioner.UpdateList(listObj, returnedRV, continueToken, &remainingItemCount)
 		} else {
-			return ms.versioner.UpdateList(listObj, returnedRV, next, nil)
+			return ms.versioner.UpdateList(listObj, returnedRV, continueToken, nil)
 		}
 	}
 
-	// no continuation
-	resp := ms.versioner.UpdateList(listObj, returnedRV, "", nil)
-	return resp
+	// no more items, use empty string as continue token
+	return ms.versioner.UpdateList(listObj, returnedRV, "", nil)
 }
 
 // GuaranteedUpdate implements storage.Interface
 func (ms *MemoryStore) GuaranteedUpdate(ctx context.Context, key string, out runtime.Object, ignoreNotFound bool, preconditions *storage.Preconditions, tryUpdate storage.UpdateFunc, cachedExistingObject runtime.Object) error {
-	klog.InfoS("GWJ update object", "key", key, "existing obj", cachedExistingObject)
-
-	ms.mu.Lock()
-	defer ms.mu.Unlock()
 	klog.InfoS("GWJ update object", "key", key, "existing obj", cachedExistingObject)
 
 	outVal, err := conversion.EnforcePtr(out)
@@ -452,14 +701,15 @@ func (ms *MemoryStore) GuaranteedUpdate(ctx context.Context, key string, out run
 		return fmt.Errorf("unable to convert output object to pointer: %v", err)
 	}
 
-	if oldObjWi, found := ms.kvs[key]; !found {
+	keys := strings.Split(key, "/")
+	if curObjWi := ms.kvs.get(keys); curObjWi == nil {
 		if ignoreNotFound {
 			return runtime.SetZeroValue(out)
 		}
 		return storage.NewKeyNotFoundError(key, 0)
 	} else {
-		oldObj := oldObjWi.obj.DeepCopyObject()
-		currState, err := getStateFromObject(ms.versioner, oldObjWi.obj)
+		curObj := curObjWi.obj.DeepCopyObject()
+		currState, err := getStateFromObject(ms.versioner, curObjWi.obj)
 		if err != nil {
 			return err
 		}
@@ -484,22 +734,29 @@ func (ms *MemoryStore) GuaranteedUpdate(ctx context.Context, key string, out run
 		if err != nil {
 			return err
 		}
-		rev := atomic.AddUint64(&_MemoryRev, 1)
-		ms.versioner.UpdateObject(ret, uint64(rev))
 
-		uindex := uint64(len(ms.klist))
-		newObjWi := &objWithIndex{
-			key:   key,
-			obj:   ret.DeepCopyObject(),
-			index: uindex,
-		}
-		ms.kvs[key] = newObjWi
-		ms.klist[oldObjWi.index] = nil
-		ms.klist = append(ms.klist, newObjWi)
-		if len(ms.klist) > len(ms.kvs)+NilSlotMemoryShrinkThrehold {
-			ms.klist = ms.klist.shrink(len(ms.kvs))
-		}
+		rev, err := func() (uint64, error) {
+			ms.mu.Lock()
+			defer ms.mu.Unlock()
 
+			rev := atomic.AddUint64(&_MemoryRev, 1)
+			if err := ms.versioner.UpdateObject(ret, uint64(rev)); err != nil {
+				return 0, err
+			}
+			uindex := uint64(len(ms.kvList))
+			newObjWi := &objWithIndex{
+				key:   key,
+				obj:   ret.DeepCopyObject(),
+				index: uindex,
+			}
+			err := ms.kvs.put(keys, newObjWi, currState.rev)
+			if err != nil {
+				return 0, err
+			}
+			ms.kvList[curObjWi.index] = nil
+			ms.kvList = append(ms.kvList, newObjWi)
+			return rev, nil
+		}()
 		if err != nil {
 			return err
 		}
@@ -508,7 +765,7 @@ func (ms *MemoryStore) GuaranteedUpdate(ctx context.Context, key string, out run
 		event := &objEvent{
 			key:       key,
 			obj:       ret.DeepCopyObject(),
-			oldObj:    oldObj,
+			oldObj:    curObj,
 			rev:       rev,
 			isDeleted: false,
 			isCreated: false,
@@ -602,9 +859,9 @@ func (ms *MemoryStore) getObjEventsAfterRev(key string, rev uint64, opts storage
 	}
 
 	objEvents := []*objEvent{}
-	uindex := ms.binarySearch(rev)
-	for i := uindex; i < uint64(len(ms.klist)); i++ {
-		v := ms.klist[i]
+	uindex := ms._binarySearchInObjList(rev)
+	for i := uindex; i < uint64(len(ms.kvList)); i++ {
+		v := ms.kvList[i]
 		if v == nil || !strings.HasPrefix(v.key, prefix) {
 			continue
 		}
@@ -639,16 +896,16 @@ func (ms *MemoryStore) getObjEventsAfterRev(key string, rev uint64, opts storage
 	return objEvents, nil
 }
 
-func (ms *MemoryStore) binarySearch(rv uint64) uint64 {
+func (ms *MemoryStore) _binarySearchInObjList(rv uint64) uint64 {
 	f := func(i int) bool {
-		obj := ms.klist[(i)%len(ms.klist)]
+		obj := ms.kvList[(i)%len(ms.kvList)]
 		if obj == nil {
 			return false
 		}
 		objRV, _ := getStateFromObject(ms.versioner, obj.obj)
 		return objRV.rev >= rv
 	}
-	index := uint64(sort.Search(len(ms.klist), f))
+	index := uint64(sort.Search(len(ms.kvList), f))
 	return index
 }
 
@@ -662,6 +919,16 @@ func (ms *MemoryStore) sendEvent(event *objEvent) {
 		}
 	}
 	ms.watchers = watchers
+}
+
+// sorted klist has empty slots spreaded when items are deleted and updated, if len of klist is more than a threshold longer, we want to shrink array to avoid memory waste
+func (ms *MemoryStore) _shrink() {
+	ms.mu.Lock()
+	defer ms.mu.Unlock()
+	c, _ := ms.kvs.count([]string{})
+	if int64(len(ms.kvList)) > c+NilSlotMemoryShrinkThrehold {
+		ms.kvList = ms.kvList.shrink(c)
+	}
 }
 
 var _ apistorage.Interface = &MemoryStore{}

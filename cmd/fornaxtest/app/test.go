@@ -24,6 +24,7 @@ import (
 
 	"centaurusinfra.io/fornax-serverless/cmd/fornaxtest/config"
 	fornaxv1 "centaurusinfra.io/fornax-serverless/pkg/apis/core/v1"
+	fornaxclient "centaurusinfra.io/fornax-serverless/pkg/client/clientset/versioned/typed/core/v1"
 	"centaurusinfra.io/fornax-serverless/pkg/client/informers/externalversions"
 	"centaurusinfra.io/fornax-serverless/pkg/util"
 
@@ -254,11 +255,13 @@ func (sn TestSessionArray) Swap(i, j int) {
 }
 
 func createAndWaitForSessionSetup(application *fornaxv1.Application, namespace, appName, sessionBaseName string, testConfig config.TestConfiguration) []*TestSession {
+	client := util.GetFornaxCoreApiClient(kubeConfig)
+	appClient := client.CoreV1().ApplicationSessions(namespace)
 	numOfSession := testConfig.NumOfSessionPerApp
 	sessions := []*TestSession{}
 	for i := 0; i < numOfSession; i++ {
 		sessName := fmt.Sprintf("%s-%s-session-%d", appName, sessionBaseName, i)
-		ts, err := createSession(namespace, sessName, appName, SessionWrapperEchoServerSessionSpec)
+		ts, err := createSession(appClient, namespace, sessName, appName, SessionWrapperEchoServerSessionSpec)
 		if err == nil && ts != nil {
 			sessions = append(sessions, ts)
 		}
@@ -367,9 +370,7 @@ func createApplication(namespace, name string, appSpec *fornaxv1.ApplicationSpec
 	return appClient.Create(context.Background(), application, metav1.CreateOptions{})
 }
 
-func createSession(namespace, name, applicationName string, sessionSpec *fornaxv1.ApplicationSessionSpec) (*TestSession, error) {
-	client := util.GetFornaxCoreApiClient(kubeConfig)
-	appClient := client.CoreV1().ApplicationSessions(namespace)
+func createSession(sessionClient fornaxclient.ApplicationSessionInterface, namespace, name, applicationName string, sessionSpec *fornaxv1.ApplicationSessionSpec) (*TestSession, error) {
 	spec := *sessionSpec.DeepCopy()
 	spec.ApplicationName = applicationName
 	session := &fornaxv1.ApplicationSession{
@@ -393,7 +394,7 @@ func createSession(namespace, name, applicationName string, sessionSpec *fornaxv
 	appSessionMap[ts.session.Name] = ts
 	appSessionMapLock.Unlock()
 	ts.creationTimeMilli = time.Now().UnixMilli()
-	session, err := appClient.Create(context.Background(), session, metav1.CreateOptions{})
+	session, err := sessionClient.Create(context.Background(), session, metav1.CreateOptions{})
 	if err != nil {
 		appSessionMapLock.Lock()
 		delete(appSessionMap, ts.session.Name)
@@ -482,7 +483,7 @@ func summarySessionTestResult(sessions TestSessionArray, st, et int64) {
 	p99 := sessions[len(sessions)*99/100]
 	p90 := sessions[len(sessions)*90/100]
 	p50 := sessions[len(sessions)*50/100]
-	klog.Infof("Session setup time: p99 %d milli seconds, %v", p99.availableTimeMilli-p99.creationTimeMilli, p99, util.Name(p99.session))
+	klog.Infof("Session setup time: p99 %d milli seconds, %v", p99.availableTimeMilli-p99.creationTimeMilli, time.UnixMilli(p99.creationTimeMilli).String(), time.UnixMilli(p99.availableTimeMilli).String(), util.Name(p99.session))
 	klog.Infof("Session setup time: p90 %d milli seconds", p90.availableTimeMilli-p90.creationTimeMilli)
 	klog.Infof("Session setup time: p50 %d milli seconds", p50.availableTimeMilli-p50.creationTimeMilli)
 

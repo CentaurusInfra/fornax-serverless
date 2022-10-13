@@ -24,7 +24,6 @@ import (
 
 	"centaurusinfra.io/fornax-serverless/cmd/fornaxtest/config"
 	fornaxv1 "centaurusinfra.io/fornax-serverless/pkg/apis/core/v1"
-	fornaxclient "centaurusinfra.io/fornax-serverless/pkg/client/clientset/versioned/typed/core/v1"
 	"centaurusinfra.io/fornax-serverless/pkg/client/informers/externalversions"
 	"centaurusinfra.io/fornax-serverless/pkg/util"
 
@@ -98,7 +97,7 @@ func initApplicationSessionInformer(ctx context.Context) {
 
 func onApplicationSessionAddEvent(obj interface{}) {
 	newCopy := obj.(*fornaxv1.ApplicationSession)
-	updateSessionStatus(newCopy)
+	go updateSessionStatus(newCopy, time.Now())
 	addevents += 1
 }
 
@@ -110,22 +109,26 @@ func onApplicationSessionAddEvent(obj interface{}) {
 func onApplicationSessionUpdateEvent(old, cur interface{}) {
 	_ = old.(*fornaxv1.ApplicationSession)
 	newCopy := cur.(*fornaxv1.ApplicationSession)
-	updateSessionStatus(newCopy)
+	go updateSessionStatus(newCopy, time.Now())
 	updevents += 1
 }
 
-func updateSessionStatus(session *fornaxv1.ApplicationSession) {
+func updateSessionStatus(session *fornaxv1.ApplicationSession, revTime time.Time) {
 	appSessionMapLock.Lock()
 	defer appSessionMapLock.Unlock()
-	availableTimeMilli := time.Now().UnixMilli()
-	// availableTimeMilli := session.Status.AvailableTimeMicro / 1000
+	tms := revTime.UnixMilli()
 	if ts, found := appSessionMap[session.Name]; found {
 		if ts.status == fornaxv1.SessionStatusPending &&
 			(session.Status.SessionStatus == fornaxv1.SessionStatusAvailable ||
 				session.Status.SessionStatus == fornaxv1.SessionStatusClosed ||
 				session.Status.SessionStatus == fornaxv1.SessionStatusTimeout) {
 			ts.status = session.Status.SessionStatus
-			ts.availableTimeMilli = availableTimeMilli
+			ts.watchAvailableTimeMilli = tms
+			ts.internalAvailableTimeMilli = session.Status.AvailableTimeMicro / 1000
+		}
+
+		if ts.status == fornaxv1.SessionStatusPending || ts.status == fornaxv1.SessionStatusUnspecified {
+			ts.watchCreationTimeMilli = tms
 		}
 	}
 }
@@ -216,10 +219,12 @@ type TestApplication struct {
 }
 
 type TestSession struct {
-	session            *fornaxv1.ApplicationSession
-	creationTimeMilli  int64
-	availableTimeMilli int64
-	status             fornaxv1.SessionStatus
+	session                    *fornaxv1.ApplicationSession
+	apiCreationTimeMilli       int64
+	watchCreationTimeMilli     int64
+	internalAvailableTimeMilli int64
+	watchAvailableTimeMilli    int64
+	status                     fornaxv1.SessionStatus
 }
 
 type TestApplicationArray []*TestApplication
@@ -247,7 +252,7 @@ func (sn TestSessionArray) Len() int {
 
 //so, sort latency from smaller to lager value
 func (sn TestSessionArray) Less(i, j int) bool {
-	return sn[i].availableTimeMilli-sn[i].creationTimeMilli < sn[j].availableTimeMilli-sn[j].creationTimeMilli
+	return sn[i].watchAvailableTimeMilli-sn[i].apiCreationTimeMilli < sn[j].watchAvailableTimeMilli-sn[j].apiCreationTimeMilli
 }
 
 func (sn TestSessionArray) Swap(i, j int) {
@@ -255,13 +260,11 @@ func (sn TestSessionArray) Swap(i, j int) {
 }
 
 func createAndWaitForSessionSetup(application *fornaxv1.Application, namespace, appName, sessionBaseName string, testConfig config.TestConfiguration) []*TestSession {
-	client := util.GetFornaxCoreApiClient(kubeConfig)
-	appClient := client.CoreV1().ApplicationSessions(namespace)
 	numOfSession := testConfig.NumOfSessionPerApp
 	sessions := []*TestSession{}
 	for i := 0; i < numOfSession; i++ {
 		sessName := fmt.Sprintf("%s-%s-session-%d", appName, sessionBaseName, i)
-		ts, err := createSession(appClient, namespace, sessName, appName, SessionWrapperEchoServerSessionSpec)
+		ts, err := createSession(namespace, sessName, appName, SessionWrapperEchoServerSessionSpec)
 		if err == nil && ts != nil {
 			sessions = append(sessions, ts)
 		}
@@ -370,7 +373,9 @@ func createApplication(namespace, name string, appSpec *fornaxv1.ApplicationSpec
 	return appClient.Create(context.Background(), application, metav1.CreateOptions{})
 }
 
-func createSession(sessionClient fornaxclient.ApplicationSessionInterface, namespace, name, applicationName string, sessionSpec *fornaxv1.ApplicationSessionSpec) (*TestSession, error) {
+func createSession(namespace, name, applicationName string, sessionSpec *fornaxv1.ApplicationSessionSpec) (*TestSession, error) {
+	client := util.GetFornaxCoreApiClient(kubeConfig)
+	sessionClient := client.CoreV1().ApplicationSessions(namespace)
 	spec := *sessionSpec.DeepCopy()
 	spec.ApplicationName = applicationName
 	session := &fornaxv1.ApplicationSession{
@@ -393,7 +398,7 @@ func createSession(sessionClient fornaxclient.ApplicationSessionInterface, names
 	appSessionMapLock.Lock()
 	appSessionMap[ts.session.Name] = ts
 	appSessionMapLock.Unlock()
-	ts.creationTimeMilli = time.Now().UnixMilli()
+	ts.apiCreationTimeMilli = time.Now().UnixMilli()
 	session, err := sessionClient.Create(context.Background(), session, metav1.CreateOptions{})
 	if err != nil {
 		appSessionMapLock.Lock()
@@ -483,9 +488,14 @@ func summarySessionTestResult(sessions TestSessionArray, st, et int64) {
 	p99 := sessions[len(sessions)*99/100]
 	p90 := sessions[len(sessions)*90/100]
 	p50 := sessions[len(sessions)*50/100]
-	klog.Infof("Session setup time: p99 %d milli seconds, %v", p99.availableTimeMilli-p99.creationTimeMilli, time.UnixMilli(p99.creationTimeMilli).String(), time.UnixMilli(p99.availableTimeMilli).String(), util.Name(p99.session))
-	klog.Infof("Session setup time: p90 %d milli seconds", p90.availableTimeMilli-p90.creationTimeMilli)
-	klog.Infof("Session setup time: p50 %d milli seconds", p50.availableTimeMilli-p50.creationTimeMilli)
+	klog.Infof("Session setup time: p99 %d ms, st: %s, et: %s, iet: %s, %s",
+		p99.watchAvailableTimeMilli-p99.apiCreationTimeMilli,
+		time.UnixMilli(p99.apiCreationTimeMilli).String(),
+		time.UnixMilli(p99.watchAvailableTimeMilli).String(),
+		time.UnixMilli(p99.internalAvailableTimeMilli).String(),
+		util.Name(p99.session))
+	klog.Infof("Session setup time: p90 %d ms", p90.watchAvailableTimeMilli-p90.apiCreationTimeMilli)
+	klog.Infof("Session setup time: p50 %d ms", p50.watchAvailableTimeMilli-p50.apiCreationTimeMilli)
 
 	klog.Infof("-------- sessions rate counters--------")
 	for _, v := range testSessionCounters {

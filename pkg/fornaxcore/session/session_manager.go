@@ -161,7 +161,7 @@ func (sm *sessionManager) Watch(receiver chan<- *ie.SessionEvent) {
 }
 
 // forward to who are interested in session event
-func (sm *sessionManager) ReceiveSessionStatusFromNode(nodeId string, pod *v1.Pod, sessions []*fornaxv1.ApplicationSession) {
+func (sm *sessionManager) NotifySessionStatusFromNode(nodeId string, pod *v1.Pod, sessions []*fornaxv1.ApplicationSession) {
 	for _, session := range sessions {
 		for _, watcher := range sm.watchers {
 			watcher <- &ie.SessionEvent{
@@ -170,7 +170,6 @@ func (sm *sessionManager) ReceiveSessionStatusFromNode(nodeId string, pod *v1.Po
 				Session: session,
 				Type:    ie.SessionEventTypeUpdate,
 			}
-			klog.InfoS("Pod report session status", "session", util.Name(session), "queue len", len(watcher))
 		}
 	}
 }
@@ -202,10 +201,10 @@ func (sm *sessionManager) AsyncUpdateSessionStatus(session *fornaxv1.Application
 
 // UpdateApplicationSessionStatus put updated status into a map send singal into a channel to asynchronously update session status
 func (sm *sessionManager) UpdateSessionStatus(session *fornaxv1.ApplicationSession, newStatus *fornaxv1.ApplicationSessionStatus) error {
-	st := time.Now()
+	st := time.Now().UnixMicro()
 	e := sm._updateSessionStatus(util.Name(session), newStatus)
-	et := time.Now()
-	klog.Infof("GWJ update session status took %d micro seconds for %s", et.UnixMicro()-st.UnixMicro(), util.Name(session))
+	et := time.Now().UnixMicro()
+	klog.Infof("GWJ update session status took %d micro seconds for %s", et-st, util.Name(session))
 	return e
 }
 
@@ -220,10 +219,6 @@ func (sm *sessionManager) _updateSessionStatus(sessionName string, newStatus *fo
 		if session == nil {
 			return nil
 		}
-
-		// if reflect.DeepEqual(session.Status, *newStatus) {
-		// 	return nil
-		// }
 
 		updatedSession := session.DeepCopy()
 		updatedSession.Status = *newStatus

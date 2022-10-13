@@ -124,7 +124,7 @@ func CreateApplication(ctx context.Context, store fornaxstore.FornaxStorageInter
 func UpdateApplicationSession(ctx context.Context, store fornaxstore.FornaxStorageInterface, session *fornaxv1.ApplicationSession) (*fornaxv1.ApplicationSession, error) {
 	out := &fornaxv1.ApplicationSession{}
 	key := fmt.Sprintf("%s/%s", fornaxv1.ApplicationSessionGrvKey, util.Name(session))
-	err := store.EnsureUpdateOrDelete(ctx, key, true, nil, session, out)
+	err := store.EnsureUpdateAndDelete(ctx, key, true, nil, session, out)
 	if err != nil {
 		return nil, err
 	}

@@ -18,6 +18,7 @@ package inmemory
 
 import (
 	"context"
+	"runtime/debug"
 	"strings"
 
 	"centaurusinfra.io/fornax-serverless/pkg/store"
@@ -121,6 +122,7 @@ func (wc *memoryStoreWatcher) run(rev uint64, existingObjEvents []*objEvent, eve
 
 // ResultChan implements watch.Interface
 func (wc *memoryStoreWatcher) ResultChan() <-chan watch.Event {
+	debug.PrintStack()
 	return wc.outgoingChan
 }
 

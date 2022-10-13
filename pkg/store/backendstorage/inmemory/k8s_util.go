@@ -14,6 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
+// Most of code is a COPY from k8s.io/apiserver/pkg/storage/etcd3/api_object_versioner.go
 package inmemory
 
 import (
@@ -57,25 +58,17 @@ func objectResourceVersion(obj runtime.Object) (uint64, error) {
 
 func getStateFromObject(versioner apistorage.Versioner, obj runtime.Object) (*objState, error) {
 	state := &objState{
-		obj:  obj,
+		obj:  obj.DeepCopyObject(), // deep copy to avoid obj changed by other routine, state should be a snapshot
 		meta: &apistorage.ResponseMeta{},
 	}
 
-	rv, err := objectResourceVersion(obj)
+	rv, err := objectResourceVersion(state.obj)
 	if err != nil {
 		return nil, fmt.Errorf("couldn't get resource version: %v", err)
 	}
 	state.rev = rv
 	state.meta.ResourceVersion = uint64(state.rev)
 
-	// // Compute the serialized form - for that we need to temporarily clean
-	// // its resource version field (those are not stored in etcd).
-	// if err := versioner.PrepareObjectForStorage(obj); err != nil {
-	// 	return nil, fmt.Errorf("PrepareObjectForStorage failed: %v", err)
-	// }
-	// if err := versioner.UpdateObject(state.obj, uint64(rv)); err != nil {
-	// 	klog.Errorf("failed to update object version: %v", err)
-	// }
 	return state, nil
 }
 

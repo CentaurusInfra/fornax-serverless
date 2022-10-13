@@ -325,16 +325,14 @@ func (am *ApplicationManager) processNextWorkItem(ctx context.Context) bool {
 }
 
 func (am *ApplicationManager) cleanupDeletedApplication(pool *ApplicationPool) error {
-	klog.InfoS("Cleanup a deleting Application, remove all session then pod", "application", pool.appName)
+	klog.InfoS("Cleanup a deleting Application, close all remaining session then deleting pod", "application", pool.appName)
 	numOfSession := pool.sessionLength()
 	if numOfSession > 0 {
-		klog.Infof("Delete remaining %d sessions of application %s", numOfSession, pool.appName)
 		err := am.cleanupSessionOfApplication(pool)
 		if err != nil {
 			return err
 		}
 	} else {
-		klog.Infof("Cleanup all pods of application %s", pool.appName)
 		err := am.cleanupPodOfApplication(pool)
 		if err != nil {
 			return err
@@ -343,8 +341,6 @@ func (am *ApplicationManager) cleanupDeletedApplication(pool *ApplicationPool) e
 
 	// if a application does not have any pod or session, remove it from application pool to save memory
 	if pool.podLength() == 0 && pool.sessionLength() == 0 {
-		klog.InfoS("Application pool is empty, remove", "application", pool.appName)
-		// remove this application from pool
 		am.deleteApplicationPool(pool.appName)
 	}
 	return nil
@@ -566,10 +562,6 @@ func (am *ApplicationManager) calculateStatus(application *fornaxv1.Application,
 	// }
 
 	return newStatus
-}
-
-func (am *ApplicationManager) printAppSummary() {
-	klog.InfoS("app summary:", "#app", len(am.applicationPools), "application update queue", am.applicationQueue.Len())
 }
 
 func (am *ApplicationManager) HouseKeeping() error {

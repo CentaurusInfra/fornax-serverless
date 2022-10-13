@@ -188,7 +188,7 @@ func (asm *ApplicationStatusManager) _updateApplicationStatus(applicationKey str
 			util.AddFinalizer(&updatedApplication.ObjectMeta, fornaxv1.FinalizerApplicationPod)
 		}
 
-		updateErr = asm.applicationStore.EnsureUpdateOrDelete(asm.ctx, key, true, nil, updatedApplication, modifiedApplication)
+		updateErr = asm.applicationStore.EnsureUpdateAndDelete(asm.ctx, key, true, nil, updatedApplication, modifiedApplication)
 		if updateErr == nil {
 			// if version conflict, has to get new version and update again
 			break

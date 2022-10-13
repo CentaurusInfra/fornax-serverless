@@ -58,7 +58,7 @@ func (nm *nodeManager) UpdateSessionState(nodeIdentifier string, session *fornax
 	podName := session.Status.PodReference.Name
 	pod := nm.podManager.FindPod(podName)
 	if pod != nil {
-		nm.sessionManager.ReceiveSessionStatusFromNode(nodeIdentifier, pod, []*fornaxv1.ApplicationSession{session})
+		nm.sessionManager.NotifySessionStatusFromNode(nodeIdentifier, pod, []*fornaxv1.ApplicationSession{session})
 	} else {
 		klog.InfoS("Pod does not exist in pod manager, can not update session info", "session", util.Name(session), "pod", podName)
 	}
@@ -89,7 +89,7 @@ func (nm *nodeManager) UpdatePodState(nodeId string, pod *v1.Pod, sessions []*fo
 	if nodeWS := nm.nodes.get(nodeId); nodeWS != nil {
 		nodeWS.LastSeen = time.Now()
 		nm.handleAPodState(nodeId, nodeWS, pod)
-		nm.sessionManager.ReceiveSessionStatusFromNode(nodeId, pod, sessions)
+		nm.sessionManager.NotifySessionStatusFromNode(nodeId, pod, sessions)
 	} else {
 		// TODO, node supposed to exist
 		klog.InfoS("Node does not exist, ask node full sync", "node", nodeId)
@@ -290,7 +290,7 @@ func (nm *nodeManager) PrintNodeSummary() {
 	}
 }
 
-func NewNodeManager(ctx context.Context, checkPeriod time.Duration, nodeAgent nodeagent.NodeAgentClient, podManager ie.PodManagerInterface, sessionManager ie.SessionManagerInterface) *nodeManager {
+func NewNodeManager(ctx context.Context, nodeAgent nodeagent.NodeAgentClient, podManager ie.PodManagerInterface, sessionManager ie.SessionManagerInterface) *nodeManager {
 	return &nodeManager{
 		ctx:                ctx,
 		nodeUpdates:        make(chan *ie.NodeEvent, 100),
@@ -298,7 +298,7 @@ func NewNodeManager(ctx context.Context, checkPeriod time.Duration, nodeAgent no
 		nodeAgent:          nodeAgent,
 		nodePodCidrManager: NewPodCidrManager(),
 		nodeDaemonManager:  NewNodeDaemonManager(),
-		houseKeepingTicker: time.NewTicker(checkPeriod),
+		houseKeepingTicker: time.NewTicker(DefaultStaleNodeTimeout),
 		podManager:         podManager,
 		sessionManager:     sessionManager,
 		nodes: NodePool{

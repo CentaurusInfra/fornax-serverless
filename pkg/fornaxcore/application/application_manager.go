@@ -106,10 +106,11 @@ type ApplicationManager struct {
 	applicationSessionIndexer     cache.Indexer
 
 	// A pool of pods grouped by application key
-	applicationPools map[string]*ApplicationPool
-	updateChannel    chan interface{}
-	podManager       ie.PodManagerInterface
-	sessionManager   ie.SessionManagerInterface
+	applicationPools     map[string]*ApplicationPool
+	podUpdateChannel     chan *ie.PodEvent
+	podManager           ie.PodManagerInterface
+	sessionManager       ie.SessionManagerInterface
+	sessionUpdateChannel chan *ie.SessionEvent
 
 	applicationStatusManager *ApplicationStatusManager
 
@@ -120,14 +121,15 @@ type ApplicationManager struct {
 // and start to listen to pod event from node
 func NewApplicationManager(ctx context.Context, podManager ie.PodManagerInterface, sessionManager ie.SessionManagerInterface) *ApplicationManager {
 	am := &ApplicationManager{
-		applicationQueue: workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "fornaxv1.Application"),
-		applicationPools: map[string]*ApplicationPool{},
-		updateChannel:    make(chan interface{}, 500),
-		podManager:       podManager,
-		sessionManager:   sessionManager,
+		applicationQueue:     workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "fornaxv1.Application"),
+		applicationPools:     map[string]*ApplicationPool{},
+		podUpdateChannel:     make(chan *ie.PodEvent, 500),
+		sessionUpdateChannel: make(chan *ie.SessionEvent, 500),
+		podManager:           podManager,
+		sessionManager:       sessionManager,
 	}
-	am.podManager.Watch(am.updateChannel)
-	am.sessionManager.Watch(am.updateChannel)
+	am.podManager.Watch(am.podUpdateChannel)
+	am.sessionManager.Watch(am.sessionUpdateChannel)
 	am.syncHandler = am.syncApplication
 
 	return am
@@ -252,13 +254,10 @@ func (am *ApplicationManager) Run(ctx context.Context) {
 			select {
 			case <-ctx.Done():
 				break
-			case update := <-am.updateChannel:
-				if pe, ok := update.(*ie.PodEvent); ok {
-					am.onPodEventFromNode(pe)
-				}
-				if se, ok := update.(*ie.SessionEvent); ok {
-					am.onSessionEventFromNode(se)
-				}
+			case update := <-am.podUpdateChannel:
+				am.onPodEventFromNode(update)
+			case update := <-am.sessionUpdateChannel:
+				am.onSessionEventFromNode(update)
 			}
 		}
 	}()

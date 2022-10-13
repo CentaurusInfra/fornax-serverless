@@ -47,7 +47,7 @@ type sessionManager struct {
 	ctx             context.Context
 	nodeAgentClient nodeagent.NodeAgentClient
 	podManager      ie.PodManagerInterface
-	watchers        []chan<- interface{}
+	watchers        []chan<- *ie.SessionEvent
 	statusUpdateCh  chan string
 	statusChanges   *SessionStatusChangeMap
 	kubeConfig      *rest.Config
@@ -161,7 +161,7 @@ func (sm *sessionManager) Run(ctx context.Context) {
 	}()
 }
 
-func (sm *sessionManager) Watch(receiver chan<- interface{}) {
+func (sm *sessionManager) Watch(receiver chan<- *ie.SessionEvent) {
 	sm.watchers = append(sm.watchers, receiver)
 }
 

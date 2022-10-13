@@ -44,7 +44,7 @@ func PodName(pj interface{}) string {
 
 // A schedulePriorityQueue implements heap.Interface and holds Items.
 type schedulePriorityQueue struct {
-	mu    sync.Mutex
+	mu    sync.RWMutex
 	queue *collection.PriorityQueue
 }
 
@@ -74,8 +74,8 @@ func (pq *schedulePriorityQueue) RemovePod(v1pod *v1.Pod) *v1.Pod {
 }
 
 func (pq *schedulePriorityQueue) GetPod(name string) *v1.Pod {
-	pq.mu.Lock()
-	defer pq.mu.Unlock()
+	pq.mu.RLock()
+	defer pq.mu.RUnlock()
 	if _, item := pq.queue.Get(name); item != nil {
 		return item.(*PodScheduleItem).pod
 	} else {
@@ -84,8 +84,8 @@ func (pq *schedulePriorityQueue) GetPod(name string) *v1.Pod {
 }
 
 func (pq *schedulePriorityQueue) PeakPod() *v1.Pod {
-	pq.mu.Lock()
-	defer pq.mu.Unlock()
+	pq.mu.RLock()
+	defer pq.mu.RUnlock()
 	ob := pq.queue.Peak()
 	if ob == nil {
 		return nil
@@ -157,7 +157,11 @@ func (ps *PodScheduleQueue) ReviveBackoffItem() {
 	}
 }
 
-// NextPod read a pod from scheduleQueue's active queue, it block until it get a pod or schedule queue shutdown
+func (q *PodScheduleQueue) HasMore() bool {
+	return q.activeQueue.PeakPod() != nil
+}
+
+// NextPod remove a pod from scheduleQueue's active queue, it block until it get a pod or schedule queue shutdown
 func (q *PodScheduleQueue) NextPod() (pod *v1.Pod) {
 	q.c.L.Lock()
 	for {
@@ -211,7 +215,7 @@ func (q *PodScheduleQueue) RemovePod(v1pod *v1.Pod) *v1.Pod {
 
 func newSchedulePriorityQueue() *schedulePriorityQueue {
 	return &schedulePriorityQueue{
-		mu:    sync.Mutex{},
+		mu:    sync.RWMutex{},
 		queue: collection.NewPriorityQueue(PodRequestTimeLess, PodName),
 	}
 }

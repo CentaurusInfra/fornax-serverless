@@ -110,7 +110,7 @@ func (pool *PodStatePool) addPod(p *PodWithFornaxNodeState) {
 type podManager struct {
 	ctx             context.Context
 	podUpdates      chan *ie.PodEvent
-	watchers        []chan<- interface{}
+	watchers        []chan<- *ie.PodEvent
 	podStatePool    *PodStatePool
 	podScheduler    podscheduler.PodScheduler
 	nodeAgentClient nodeagent.NodeAgentClient
@@ -126,7 +126,7 @@ func (pm *podManager) FindPod(identifier string) *v1.Pod {
 	return nil
 }
 
-func (pm *podManager) Watch(watcher chan<- interface{}) {
+func (pm *podManager) Watch(watcher chan<- *ie.PodEvent) {
 	pm.watchers = append(pm.watchers, watcher)
 }
 
@@ -334,7 +334,7 @@ func NewPodManager(ctx context.Context, nodeAgentProxy nodeagent.NodeAgentClient
 	return &podManager{
 		ctx:        ctx,
 		podUpdates: make(chan *ie.PodEvent, 100),
-		watchers:   []chan<- interface{}{},
+		watchers:   []chan<- *ie.PodEvent{},
 		podStatePool: &PodStatePool{
 			pods: PodPool{pods: map[string]*PodWithFornaxNodeState{}}},
 		nodeAgentClient: nodeAgentProxy,

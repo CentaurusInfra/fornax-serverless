@@ -85,10 +85,10 @@ func (wc *memoryStoreWatcher) run(rev uint64, existingObjEvents []*objEvent, eve
 
 	startingRev := rev
 	for _, event := range existingObjEvents {
-		wcEvent := wc.transform(event)
+		wcEvent := wc.transformToWatchEvent(event)
 		if wcEvent != nil {
 			if eventWithOldObj {
-				if e := wc.transformToEventWithOldObj(wcEvent, event.oldObj); e != nil {
+				if e := wc.transformToWatchEventWithOldObj(wcEvent, event.oldObj); e != nil {
 					wc.outgoingChanWithOldObj <- *e
 				}
 			} else {
@@ -103,12 +103,15 @@ func (wc *memoryStoreWatcher) run(rev uint64, existingObjEvents []*objEvent, eve
 			return
 		case <-wc.stopChannel:
 			return
-		case event := <-wc.incomingChan:
+		case event, ok := <-wc.incomingChan:
+			if !ok {
+				return
+			}
 			if event.rev > startingRev {
-				wcEvent := wc.transform(event)
+				wcEvent := wc.transformToWatchEvent(event)
 				if wcEvent != nil {
 					if eventWithOldObj {
-						if e := wc.transformToEventWithOldObj(wcEvent, event.oldObj); e != nil {
+						if e := wc.transformToWatchEventWithOldObj(wcEvent, event.oldObj); e != nil {
 							wc.outgoingChanWithOldObj <- *e
 						}
 					} else {
@@ -136,7 +139,7 @@ func (wc *memoryStoreWatcher) Stop() {
 	wc.stopChannel <- true
 }
 
-func (wc *memoryStoreWatcher) transform(e *objEvent) (res *watch.Event) {
+func (wc *memoryStoreWatcher) transformToWatchEvent(e *objEvent) (res *watch.Event) {
 	if wc.recursive {
 		if !strings.HasPrefix(e.key, wc.keyPrefix) {
 			return nil
@@ -202,7 +205,7 @@ func (wc *memoryStoreWatcher) transform(e *objEvent) (res *watch.Event) {
 	return res
 }
 
-func (wc *memoryStoreWatcher) transformToEventWithOldObj(e *watch.Event, oldObj runtime.Object) (res *store.WatchEventWithOldObj) {
+func (wc *memoryStoreWatcher) transformToWatchEventWithOldObj(e *watch.Event, oldObj runtime.Object) (res *store.WatchEventWithOldObj) {
 	switch e.Type {
 	case watch.Added:
 		return &store.WatchEventWithOldObj{

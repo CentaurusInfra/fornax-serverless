@@ -128,15 +128,7 @@ func (ms *MemoryStore) Create(ctx context.Context, key string, obj runtime.Objec
 	if o := ms.kvs.get(keys); o != nil {
 		return storage.NewKeyExistsError(key, 0)
 	} else {
-		// occupy a revision number and a position in sorted resource version list
-		rev, index, err := func() (uint64, uint64, error) {
-			ms.revmu.Lock()
-			defer ms.revmu.Unlock()
-			rev := atomic.AddUint64(&_MemoryRev, 1)
-			uindex := uint64(len(ms.kvList))
-			ms.kvList = append(ms.kvList, nil)
-			return rev, uindex, nil
-		}()
+		rev, index, err := ms.reserveRevAndSlot()
 		if err != nil {
 			return err
 		}
@@ -266,63 +258,7 @@ func (ms *MemoryStore) Get(ctx context.Context, key string, opts storage.GetOpti
 	return nil
 }
 
-func (ms *MemoryStore) getSingleObjectAsList(ctx context.Context, key string, opts storage.ListOptions, listObj runtime.Object) error {
-	resourceVersion := opts.ResourceVersion
-	match := opts.ResourceVersionMatch
-	pred := opts.Predicate
-
-	var fromRV *uint64
-	if len(resourceVersion) > 0 {
-		parsedRV, err := ms.versioner.ParseResourceVersion(resourceVersion)
-		if err != nil {
-			return apierrors.NewBadRequest(fmt.Sprintf("invalid resource version: %v", err))
-		}
-		fromRV = &parsedRV
-	}
-
-	listPtr, err := meta.GetItemsPtr(listObj)
-	if err != nil {
-		return err
-	}
-	listRetVal, err := conversion.EnforcePtr(listPtr)
-	if err != nil || listRetVal.Kind() != reflect.Slice {
-		return fmt.Errorf("need ptr to slice: %v", err)
-	}
-
-	keys := strings.Split(key, "/")
-	if obj := ms.kvs.get(keys); obj == nil {
-		return ms.versioner.UpdateList(listObj, atomic.LoadUint64(&_MemoryRev), "", nil)
-	} else {
-		rv, err := ms.versioner.ObjectResourceVersion(obj.obj)
-		if err != nil {
-			return err
-		}
-		if fromRV != nil {
-			switch match {
-			case metav1.ResourceVersionMatchNotOlderThan:
-				if rv >= *fromRV {
-					appendListItem(listRetVal, obj.obj, rv, pred, ms.versioner)
-				}
-			case metav1.ResourceVersionMatchExact:
-				if rv == *fromRV {
-					appendListItem(listRetVal, obj.obj, rv, pred, ms.versioner)
-				}
-			case "":
-				if rv > *fromRV {
-					// append
-					appendListItem(listRetVal, obj.obj, rv, pred, ms.versioner)
-				}
-			default:
-				return fmt.Errorf("unknown ResourceVersionMatch value: %v", match)
-			}
-		} else {
-			appendListItem(listRetVal, obj.obj, rv, pred, ms.versioner)
-		}
-		return ms.versioner.UpdateList(listObj, rv, "", nil)
-	}
-}
-
-// GetList implements storage.Interface
+// GetList implements k8s storage.Interface
 func (ms *MemoryStore) GetList(ctx context.Context, key string, opts storage.ListOptions, listObj runtime.Object) error {
 	// klog.InfoS("GWJ get list of object", "key", key, "opts", opts)
 	ms.freezeworld.RLock()
@@ -470,7 +406,7 @@ func (ms *MemoryStore) GetList(ctx context.Context, key string, opts storage.Lis
 	return ms.versioner.UpdateList(listObj, returnedRV, "", nil)
 }
 
-// GuaranteedUpdate implements storage.Interface
+// GuaranteedUpdate implements k8s storage.Interface
 func (ms *MemoryStore) GuaranteedUpdate(ctx context.Context, key string, out runtime.Object, ignoreNotFound bool, preconditions *storage.Preconditions, tryUpdate storage.UpdateFunc, cachedExistingObject runtime.Object) error {
 	klog.InfoS("GWJ update object", "key", key)
 	ms.freezeworld.RLock()
@@ -513,15 +449,8 @@ func (ms *MemoryStore) GuaranteedUpdate(ctx context.Context, key string, out run
 		if err != nil {
 			return err
 		}
-		// occupy a revision number and a position in sorted resource version list
-		rev, index, err := func() (uint64, uint64, error) {
-			ms.revmu.Lock()
-			defer ms.revmu.Unlock()
-			rev := atomic.AddUint64(&_MemoryRev, 1)
-			uindex := uint64(len(ms.kvList))
-			ms.kvList = append(ms.kvList, nil)
-			return rev, uindex, nil
-		}()
+
+		rev, index, err := ms.reserveRevAndSlot()
 		if err != nil {
 			return err
 		}
@@ -556,12 +485,12 @@ func (ms *MemoryStore) GuaranteedUpdate(ctx context.Context, key string, out run
 	return nil
 }
 
-// Versioner implements storage.Interface
+// Versioner implements k8s storage.Interface
 func (ms *MemoryStore) Versioner() storage.Versioner {
 	return ms.versioner
 }
 
-// Watch implements storage.Interface
+// Watch implements k8s storage.Interface
 func (ms *MemoryStore) Watch(ctx context.Context, key string, opts storage.ListOptions) (watch.Interface, error) {
 	return ms.watch(ctx, key, opts, false)
 }
@@ -571,7 +500,7 @@ func (ms *MemoryStore) WatchWithOldObj(ctx context.Context, key string, opts sto
 	return ms.watch(ctx, key, opts, true)
 }
 
-// EnsureUpdateAndDelete implements FornaxStorage, if object has delete timestamp and empty finalizer, delete it
+// EnsureUpdateAndDelete implements FornaxStorage, it update object and delete it if object has delete timestamp and empty finalizer, delete it
 func (ms *MemoryStore) EnsureUpdateAndDelete(ctx context.Context, key string, ignoreNotFound bool, preconditions *storage.Preconditions, updatedObj runtime.Object, output runtime.Object) error {
 	err := ms.GuaranteedUpdate(ctx, key, output, ignoreNotFound, preconditions, ms.getTryUpdateFunc(updatedObj), nil)
 	if err != nil {
@@ -710,6 +639,72 @@ func (ms *MemoryStore) shrink() {
 	c, _ := ms.kvs.count([]string{})
 	if int64(len(ms.kvList)) > c+NilSlotMemoryShrinkThrehold {
 		ms.kvList = ms.kvList.shrink(c)
+	}
+}
+
+// occupy a revision number and a position in sorted resource version list
+func (ms *MemoryStore) reserveRevAndSlot() (uint64, uint64, error) {
+	ms.revmu.Lock()
+	defer ms.revmu.Unlock()
+	rev := atomic.AddUint64(&_MemoryRev, 1)
+	uindex := uint64(len(ms.kvList))
+	ms.kvList = append(ms.kvList, nil)
+	return rev, uindex, nil
+}
+
+func (ms *MemoryStore) getSingleObjectAsList(ctx context.Context, key string, opts storage.ListOptions, listObj runtime.Object) error {
+	resourceVersion := opts.ResourceVersion
+	match := opts.ResourceVersionMatch
+	pred := opts.Predicate
+
+	var fromRV *uint64
+	if len(resourceVersion) > 0 {
+		parsedRV, err := ms.versioner.ParseResourceVersion(resourceVersion)
+		if err != nil {
+			return apierrors.NewBadRequest(fmt.Sprintf("invalid resource version: %v", err))
+		}
+		fromRV = &parsedRV
+	}
+
+	listPtr, err := meta.GetItemsPtr(listObj)
+	if err != nil {
+		return err
+	}
+	listRetVal, err := conversion.EnforcePtr(listPtr)
+	if err != nil || listRetVal.Kind() != reflect.Slice {
+		return fmt.Errorf("need ptr to slice: %v", err)
+	}
+
+	keys := strings.Split(key, "/")
+	if obj := ms.kvs.get(keys); obj == nil {
+		return ms.versioner.UpdateList(listObj, atomic.LoadUint64(&_MemoryRev), "", nil)
+	} else {
+		rv, err := ms.versioner.ObjectResourceVersion(obj.obj)
+		if err != nil {
+			return err
+		}
+		if fromRV != nil {
+			switch match {
+			case metav1.ResourceVersionMatchNotOlderThan:
+				if rv >= *fromRV {
+					appendListItem(listRetVal, obj.obj, rv, pred, ms.versioner)
+				}
+			case metav1.ResourceVersionMatchExact:
+				if rv == *fromRV {
+					appendListItem(listRetVal, obj.obj, rv, pred, ms.versioner)
+				}
+			case "":
+				if rv > *fromRV {
+					// append
+					appendListItem(listRetVal, obj.obj, rv, pred, ms.versioner)
+				}
+			default:
+				return fmt.Errorf("unknown ResourceVersionMatch value: %v", match)
+			}
+		} else {
+			appendListItem(listRetVal, obj.obj, rv, pred, ms.versioner)
+		}
+		return ms.versioner.UpdateList(listObj, rv, "", nil)
 	}
 }
 

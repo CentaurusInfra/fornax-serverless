@@ -39,8 +39,8 @@ import (
 )
 
 var (
-	addevents = 0
-	updevents = 0
+	addevents = int32(0)
+	updevents = int32(0)
 )
 
 var (
@@ -167,8 +167,8 @@ func Run(ctx context.Context, testConfig config.TestConfiguration) {
 
 	et := time.Now().UnixMilli()
 	klog.Infof("--------Test summary ----------\n")
-	fmt.Printf("GWJ received %d add events\n", addevents)
-	fmt.Printf("GWJ received %d upd events\n", updevents)
+	fmt.Printf("Received %d add watch events\n", addevents)
+	fmt.Printf("Received %d upd watch events\n", updevents)
 	summaryAppTestResult(allTestApps, st, et)
 	summarySessionTestResult(allTestSessions, st, et)
 	os.Exit(0)

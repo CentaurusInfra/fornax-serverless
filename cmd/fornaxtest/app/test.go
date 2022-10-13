@@ -20,6 +20,7 @@ import (
 	"context"
 	"fmt"
 	"sort"
+	"sync/atomic"
 	"time"
 
 	"centaurusinfra.io/fornax-serverless/cmd/fornaxtest/config"
@@ -83,7 +84,7 @@ var (
 )
 
 func initApplicationSessionInformer(ctx context.Context) {
-	sessionInformerFactory := externalversions.NewSharedInformerFactory(util.GetFornaxCoreApiClient(util.GetFornaxCoreKubeConfig()), 10*time.Minute)
+	sessionInformerFactory := externalversions.NewSharedInformerFactory(util.GetFornaxCoreApiClient(util.GetFornaxCoreKubeConfig()), 0*time.Minute)
 	applicationSessionInformer := sessionInformerFactory.Core().V1().ApplicationSessions()
 	applicationSessionInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc:    onApplicationSessionAddEvent,
@@ -98,7 +99,7 @@ func initApplicationSessionInformer(ctx context.Context) {
 func onApplicationSessionAddEvent(obj interface{}) {
 	newCopy := obj.(*fornaxv1.ApplicationSession)
 	go updateSessionStatus(newCopy, time.Now())
-	addevents += 1
+	atomic.AddInt32(&addevents, 1)
 }
 
 // callback from Application informer when ApplicationSession is updated
@@ -110,7 +111,7 @@ func onApplicationSessionUpdateEvent(old, cur interface{}) {
 	_ = old.(*fornaxv1.ApplicationSession)
 	newCopy := cur.(*fornaxv1.ApplicationSession)
 	go updateSessionStatus(newCopy, time.Now())
-	updevents += 1
+	atomic.AddInt32(&updevents, 1)
 }
 
 func updateSessionStatus(session *fornaxv1.ApplicationSession, revTime time.Time) {

@@ -47,6 +47,9 @@ runtimes_setup(){
     cni_config
     runsc_install
     kata_install
+
+    systemctl restart docker
+    sleep 5
 }
 
 daemon_install() {
@@ -73,7 +76,8 @@ cat << EOF | sudo tee /etc/docker/daemon.json
 }
 EOF
 
-    sudo systemctl restart containerd
+    # sudo systemctl restart containerd
+    sleep 2
 }
 
 config_runtimes(){
@@ -83,8 +87,12 @@ config_runtimes(){
 	   sudo touch /etc/containerd/config.toml
 	fi
 	
-    sudo chmod 777 /etc/containerd/config.toml
-    sed -i 's+disable_plugins+#disable_plugins+g' /etc/containerd/config.toml   
+  sudo chmod 777 /etc/containerd/config.toml
+  if grep -q "disabled_plugins" "/etc/containerd/config.toml"; then
+	   sudo sed -i 's/disabled_plugins/#disabled_plugins/' /etc/containerd/config.toml
+  fi
+
+if ! grep -q "version = 2" "/etc/containerd/config.toml"; then
 cat << EOF | sudo tee -a /etc/containerd/config.toml
 
 version = 2
@@ -97,8 +105,10 @@ version = 2
 [plugins."io.containerd.grpc.v1.cri".containerd.runtimes.quark]
   runtime_type = "io.containerd.quark.v1"
 EOF
+fi
 
-   sudo systemctl restart containerd    
+  sudo systemctl restart containerd 
+  sleep 3   
 }
 
 crictl_install(){
@@ -159,7 +169,8 @@ cat << EOF | sudo tee /etc/cni/net.d/10-containerd-net.conflist
 }
 EOF
 
-    sudo systemctl restart containerd    
+    sudo systemctl restart containerd
+    sleep 3    
 }
 
 runsc_install() {
@@ -179,62 +190,84 @@ runsc_install() {
 	# To install gVisor as a Containerd runtime, run the following commands:
 	# /usr/local/bin/runsc install
 	sudo systemctl restart containerd
+  sleep 3
 }
 
 kata_install(){
+  echo -e "## Install kata.\n"
 	ARCH=$(arch)
 	BRANCH="${BRANCH:-master}"
 	sudo sh -c "echo 'deb http://download.opensuse.org/repositories/home:/katacontainers:/releases:/${ARCH}:/${BRANCH}/xUbuntu_$(lsb_release -rs)/ /' > /etc/apt/sources.list.d/kata-containers.list"
 	curl -sL  http://download.opensuse.org/repositories/home:/katacontainers:/releases:/${ARCH}:/${BRANCH}/xUbuntu_$(lsb_release -rs)/Release.key | sudo apt-key add -
 	sudo -E apt-get update
 	sudo -E apt-get -y install kata-runtime kata-proxy kata-shim
+  echo -e "## kata done.\n"
+  sleep 3
 }
 
 
 golang_tools(){
    if [ "$(go version)" != "go version go1.18.7 linux/amd64" ] > /dev/null 2>&1
     then
-       echo -e "## INSTALLING GOLANG TOOLS FOR FORNAXCORE AND NODEAGENT"
-       sudo apt -y install make gcc jq > /dev/null 2>&1
-	   echo "Install golang."
-       wget https://dl.google.com/go/go${GO_VERSION}.linux-amd64.tar.gz -P /tmp
-       sudo tar -C /usr/local -xzf /tmp/go${GO_VERSION}.linux-amd64.tar.gz
-       # echo -e 'export PATH=$PATH:/usr/local/go/bin\nexport GOPATH=/usr/local/go/bin\nexport KUBECONFIG=/etc/kubernetes/admin.conf' |cat >> ~/.bashrc
-	   mkdir ~/go
-	   echo -e '\n' >> ~/.bashrc
-	   echo export GOROOT=\"/usr/local/go\" >> ~/.bashrc
-	   echo export GOPATH=\"\$HOME/go\" >> ~/.bashrc
-	   echo export GOBIN=\"\$HOME/go/bin\" >> ~/.bashrc
-	   echo export PATH=\"/usr/local/go/bin:\$HOME/go/bin:\$PATH\" >> ~/.bashrc
-       source $HOME/.bashrc
-       echo -e "## DONE\n"
+      echo -e "## INSTALLING GOLANG TOOLS FOR FORNAXCORE AND NODEAGENT"
+      sudo apt -y install make gcc jq > /dev/null 2>&1
+	    echo "Install golang."
+      wget https://dl.google.com/go/go${GO_VERSION}.linux-amd64.tar.gz -P /tmp
+      sudo tar -C /usr/local -xzf /tmp/go${GO_VERSION}.linux-amd64.tar.gz
+      # echo -e 'export PATH=$PATH:/usr/local/go/bin\nexport GOPATH=/usr/local/go/bin\nexport KUBECONFIG=/etc/kubernetes/admin.conf' |cat >> ~/.bashrc
+	    echo -e '\n' >> ~/.bashrc
+	    echo export GOROOT=\"/usr/local/go\" >> ~/.bashrc
+	    echo export GOPATH=\"\$HOME/go\" >> ~/.bashrc
+	    echo export GOBIN=\"\$HOME/go/bin\" >> ~/.bashrc
+	    echo -e 'export PATH=$PATH:/usr/local/go/bin:$HOME/go/bin' | cat >> ~/.bashrc
+      source $HOME/.bashrc
+      echo -e "## DONE\n"
+      export PATH=$PATH:/usr/local/go/bin
     else
-       echo -e "## go${GO_VERSION} already installed\n "
+      echo -e "## go${GO_VERSION} already installed\n "
+      export PATH=$PATH:/usr/local/go/bin
    fi
 }
 
 
 nodeagent_build(){
     echo -e "## CLONE FORNAXCORE SOURCE CODE"
+    mkdir -p ~/go
     cd go
-	mkdir -p bin src pkg
-	cd src
-	mkdir -p centaurusinfra.io
-	cd centaurusinfra.io
-	# pushd $HOME/go/src/centaurusinfra.io
+	  mkdir -p bin src pkg
+	  cd src
+	  mkdir -p centaurusinfra.io
+	  cd centaurusinfra.io
+	  # pushd $HOME/go/src/centaurusinfra.io
     sudo git clone https://github.com/CentaurusInfra/fornax-serverless.git
     # pushd $HOME/go/src/centaurusinfra.io/fornax-serverless
-	cd fornax-serverless
-	sudo chown -R $USER: .
+	  cd fornax-serverless
+	  sudo chown -R $USER: .
     make all
-	echo '## RUN FORNAXCORE'
-	# following line command, put nodeagent run at background
-	# nohup sudo ./bin/nodeagent --fornaxcore-url 127.0.0.1:18001 --disable-swap=false >> nodeagent.logs 2>&1 &
-	sudo ./bin/nodeagent --fornaxcore-url 127.0.0.1:18001 --disable-swap=false
+    echo "## Build session-wrapper docker image\n"
+    image_build
+	  echo '## RUN NODEAGENT To Connect to FORNAXCORE'
+    echo '# Get Fornaxcore IP'
+    fornaxcoreip=`gcloud compute instances list --format='table(INTERNAL_IP)' --filter="name=davidzhu-fornaxcore" | awk '{if(NR==2) print $1}'`
+    echo "Fornaxcore IP is: $fornaxcoreip"
+    sleep 3
+	  # following line command, put nodeagent run at background
+	  # nohup sudo ./bin/nodeagent --fornaxcore-url 127.0.0.1:18001 --disable-swap=false >> nodeagent.logs 2>&1 &
+	  # sudo ./bin/nodeagent --fornaxcore-url 127.0.0.1:18001 --disable-swap=false
+    # sudo ./bin/nodeagent --fornaxcore-url 10.128.0.14:18001 --disable-swap=false
+    sudo ./bin/nodeagent --fornaxcore-url $fornaxcoreip:18001 --disable-swap=false
     echo -e "## DONE\n"
 }
 
-
+image_build() {
+  echo -e "## Start to build session-wrapper docker image\n"
+  make docker-build
+  make
+  sudo sed -i "s/@sudo crictl rmi/#@sudo crictl rmi/" ./Makefile
+  make containerd-local-push
+  sudo sed -i "s/#@sudo crictl rmi/@sudo crictl rmi/" ./Makefile
+  echo -e "## Build session-wrapper docker image finished and deployed\n"
+}
 
 basic_install
 
@@ -244,6 +277,6 @@ runtimes_setup
 
 golang_tools
 
-nodeagen_build
+nodeagent_build
 
 echo -e "## Nodeagent SETUP SUCCESSSFUL\n"

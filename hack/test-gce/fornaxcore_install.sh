@@ -44,7 +44,7 @@ etcd_install(){
     else
        echo -e "##INSTALLING ETCD"
        sudo apt-get -y install etcd > /dev/null 2>&1
-       echo -e "## DOCKER INSTALLED\n"
+       echo -e "## ETCD INSTALLED\n"
    fi
 }
 
@@ -57,13 +57,13 @@ golang_tools(){
        wget https://dl.google.com/go/go${GO_VERSION}.linux-amd64.tar.gz -P /tmp
        sudo tar -C /usr/local -xzf /tmp/go${GO_VERSION}.linux-amd64.tar.gz
        # echo -e 'export PATH=$PATH:/usr/local/go/bin\nexport GOPATH=/usr/local/go/bin\nexport KUBECONFIG=/etc/kubernetes/admin.conf' |cat >> ~/.bashrc
-	   mkdir ~/go
 	   echo -e '\n' >> ~/.bashrc
 	   echo export GOROOT=\"/usr/local/go\" >> ~/.bashrc
 	   echo export GOPATH=\"\$HOME/go\" >> ~/.bashrc
 	   echo export GOBIN=\"\$HOME/go/bin\" >> ~/.bashrc
-	   echo export PATH=\"/usr/local/go/bin:\$HOME/go/bin:\$PATH\" >> ~/.bashrc
+	   echo -e 'export PATH=$PATH:/usr/local/go/bin:$HOME/go/bin' | cat >> ~/.bashrc
        source $HOME/.bashrc
+       export PATH=$PATH:/usr/local/go/bin
        echo -e "## DONE\n"
     else
        echo -e "## go${GO_VERSION} already installed\n "
@@ -73,6 +73,7 @@ golang_tools(){
 
 fornaxcore_build(){
     echo -e "## CLONE FORNAXCORE SOURCE CODE"
+    mkdir ~/go
     cd go
 	mkdir -p bin src pkg
 	cd src
@@ -86,8 +87,8 @@ fornaxcore_build(){
     make all
 	echo '## RUN FORNAXCORE'
     # run fornaxcore on the background
-	nohup ./bin/fornaxcore --etcd-servers=http://127.0.0.1:2379 --secure-port=9443 --standalone-debug-mode --bind-address=127.0.0.1 >> fornaxcore.logs 2>&1 &
-	#./bin/fornaxcore --etcd-servers=http://127.0.0.1:2379 --secure-port=9443 --standalone-debug-mode --bind-address=127.0.0.1 
+	# nohup ./bin/fornaxcore --etcd-servers=http://127.0.0.1:2379 --secure-port=9443 --standalone-debug-mode --bind-address=127.0.0.1 >> fornaxcore.logs 2>&1 &
+	./bin/fornaxcore --etcd-servers=http://127.0.0.1:2379 --secure-port=9443 --standalone-debug-mode --bind-address=127.0.0.1 
     echo -e "## DONE\n"
 }
 

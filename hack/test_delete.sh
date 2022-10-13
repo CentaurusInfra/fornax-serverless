@@ -23,7 +23,7 @@ delete_app_session_by_name() {
   names=`sudo kubectl --kubeconfig kubeconfig get applicationsession --all-namespaces | awk '{print $2}'`
   for name in $names
   do
-    if [ $name -eq "NAME" ]; then
+    if [ $name == "NAME" ]; then
         continue
     fi
 

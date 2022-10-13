@@ -31,7 +31,7 @@ type PodManagerInterface interface {
 	DeletePod(nodeId string, pod *v1.Pod) (*v1.Pod, error)
 	TerminatePod(podName string) error
 	FindPod(podName string) *v1.Pod
-	Watch(watcher chan<- interface{})
+	Watch(watcher chan<- *PodEvent)
 }
 
 type NodeWorkingState string
@@ -52,7 +52,7 @@ type FornaxNodeWithState struct {
 }
 
 type NodeManagerInterface interface {
-	NodeInfoProvider
+	NodeInfoProviderInterface
 	UpdateSessionState(nodeId string, session *fornaxv1.ApplicationSession) error
 	UpdatePodState(nodeId string, pod *v1.Pod, sessions []*fornaxv1.ApplicationSession) error
 	SyncNodePodStates(nodeId string, podStates []*grpc.PodState)
@@ -71,18 +71,18 @@ type SessionManagerInterface interface {
 	ReceiveSessionStatusFromNode(nodeId string, pod *v1.Pod, sessions []*fornaxv1.ApplicationSession)
 	OpenSession(pod *v1.Pod, session *fornaxv1.ApplicationSession) error
 	CloseSession(pod *v1.Pod, session *fornaxv1.ApplicationSession) error
-	Watch(watcher chan<- interface{})
+	Watch(watcher chan<- *SessionEvent)
 }
 
-// NodeInfoProvider provide method to watch and list NodeEvent
-type NodeInfoProvider interface {
+// NodeInfoProviderInterface provide method to watch and list NodeEvent
+type NodeInfoProviderInterface interface {
 	List() []*NodeEvent
-	Watch(watcher chan<- interface{})
+	Watch(watcher chan<- *NodeEvent)
 }
 
-// PodInfoProvider provide method to watch and list PodEvent
-type PodInfoProvider interface {
-	Watch(watcher chan<- interface{})
+// PodInfoProviderInterface provide method to watch and list PodEvent
+type PodInfoProviderInterface interface {
+	Watch(watcher chan<- *PodEvent)
 }
 
 // NodeMonitorInterface handle message sent by node agent

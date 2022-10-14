@@ -227,6 +227,8 @@ func (am *ApplicationManager) Run(ctx context.Context) {
 				break
 			case update := <-am.podUpdateChannel:
 				am.onPodEventFromNode(update)
+			case update := <-am.sessionUpdateChannel:
+				am.onSessionEventFromNode(update)
 			}
 		}
 	}()

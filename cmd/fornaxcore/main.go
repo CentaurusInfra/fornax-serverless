@@ -64,7 +64,7 @@ func main() {
 	nodeManager := node.NewNodeManager(context.Background(), grpcServer, podManager, sessionManager)
 	podScheduler := podscheduler.NewPodScheduler(context.Background(), grpcServer, nodeManager, podManager,
 		&podscheduler.SchedulePolicy{
-			NumOfEvaluatedNodes: 200,
+			NumOfEvaluatedNodes: 100,
 			BackoffDuration:     10 * time.Second,
 			NodeSortingMethod:   podscheduler.NodeSortingMethodMoreMemory,
 		})

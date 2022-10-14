@@ -11,10 +11,10 @@ sudo swapoff -a
 
 basic_install() {
     echo -e "## INSTALL BASIC TOOL"
-    sudo apt-get update
-    sudo apt install build-essential
-    sudo snap install curl  # version 7.81.0
-    sudo apt-get install vim
+    sudo apt-get update -y
+    sudo apt install build-essential -y
+    sudo apt install curl -y
+    sudo apt-get install vim -y
     echo -e "## DONE BASIC TOOL\n"
 }
 
@@ -84,7 +84,8 @@ daemon_install() {
     echo -e "## Write daeman.json File.\n"
     sudo touch /etc/docker/daemon.json
     sudo chmod 777 /etc/docker/daemon.json
-    echo "{
+cat << EOF | sudo tee /etc/docker/daemon.json
+{
     "runtimes": {
         "quark": {
             "path": "/usr/local/bin/quark"
@@ -99,16 +100,18 @@ daemon_install() {
             "path": "/usr/bin/kata-runtime"
         }
     }
-}" | sudo tee /etc/docker/daemon.json  > /dev/null
+}
+EOF
 
-    sudo systemctl restart conatainerd
+    sudo systemctl restart containerd
 }
 
 config_runtimes(){
     echo -e "## Append Text To config.toml File.\n"
     sudo chmod 777 /etc/containerd/config.toml
     sed -i 's+disable_plugins+#disable_plugins+g' /etc/containerd/config.toml   
-    echo "
+cat << EOF | sudo tee -a /etc/containerd/config.toml
+
 version = 2
 [plugins."io.containerd.runtime.v1.linux"]
   shim_debug = true
@@ -118,7 +121,7 @@ version = 2
   runtime_type = "io.containerd.runsc.v1"
 [plugins."io.containerd.grpc.v1.cri".containerd.runtimes.quark]
   runtime_type = "io.containerd.quark.v1"
-" | sudo tee -a /etc/containerd/config.toml  > /dev/null
+EOF
 
    sudo systemctl restart containerd    
 }
@@ -151,7 +154,8 @@ cni_config(){
     sudo mkdir -p /etc/cni/net.d
     sudo touch /etc/cni/net.d/10-containerd-net.conflist
     sudo chmod a+x /etc/cni/net.d/10-containerd-net.conflist
-    echo "{
+cat << EOF | sudo tee /etc/cni/net.d/10-containerd-net.conflist
+{
   "cniVersion": "0.4.0",
     "name": "containerd-net",
     "plugins": [
@@ -181,9 +185,10 @@ cni_config(){
       "capabilities": {"portMappings": true}
     }
   ]
-}" | sudo tee /etc/cni/net.d/10-containerd-net.conflist  > /dev/null
+}
+EOF
 
-    sudo systemctl restart conatainerd    
+    sudo systemctl restart containerd    
 }
 
 

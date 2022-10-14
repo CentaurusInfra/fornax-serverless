@@ -42,15 +42,15 @@ import (
 )
 
 type MemoryStore struct {
-	versioner           storage.Versioner
-	revmu               sync.RWMutex
-	freezeworld         sync.RWMutex
-	kvs                 *memoryStoreMap
-	kvList              objList
-	groupResource       schema.GroupResource
-	groupResourceString string
-	pagingEnabled       bool
-	watchers            []*memoryStoreWatcher
+	watchEventCache *watchCache
+	versioner       storage.Versioner
+	revmu           sync.RWMutex
+	freezeWorld     sync.RWMutex
+	kvs             *memoryStoreMap
+	kvList          objList
+	groupResource   schema.GroupResource
+	pagingEnabled   bool
+	watchers        []*memoryStoreWatcher
 }
 
 var (
@@ -69,18 +69,19 @@ func NewMemoryStore(groupResource schema.GroupResource, pagingEnabled bool) *Mem
 		return si
 	} else {
 		si = &MemoryStore{
-			versioner:   store.APIObjectVersioner{},
-			revmu:       sync.RWMutex{},
-			freezeworld: sync.RWMutex{},
-			kvs: &memoryStoreMap{
-				mu:  sync.RWMutex{},
-				kvs: map[string]objMapOrObj{},
+			watchEventCache: &watchCache{
+				size:    10000,
+				events:  []*objEvent{},
+				cacheMu: sync.RWMutex{},
 			},
-			kvList:              []*objWithIndex{},
-			groupResource:       groupResource,
-			groupResourceString: groupResource.String(),
-			pagingEnabled:       pagingEnabled,
-			watchers:            []*memoryStoreWatcher{},
+			versioner:     store.APIObjectVersioner{},
+			revmu:         sync.RWMutex{},
+			freezeWorld:   sync.RWMutex{},
+			kvs:           &memoryStoreMap{mu: sync.RWMutex{}, kvs: map[string]objMapOrObj{}},
+			kvList:        []*objWithIndex{},
+			groupResource: groupResource,
+			pagingEnabled: pagingEnabled,
+			watchers:      []*memoryStoreWatcher{},
 		}
 		_InMemoryStores[key] = si
 		return si
@@ -89,16 +90,16 @@ func NewMemoryStore(groupResource schema.GroupResource, pagingEnabled bool) *Mem
 
 // Load initialize memory and load persisted data
 func (ms *MemoryStore) Load() error {
-	ms.freezeworld.Lock()
-	defer ms.freezeworld.Unlock()
+	ms.freezeWorld.Lock()
+	defer ms.freezeWorld.Unlock()
 	// load data from backend storage for initialized state
 	return nil
 }
 
 // Stop cleanup memory
 func (ms *MemoryStore) Stop() error {
-	ms.freezeworld.Lock()
-	defer ms.freezeworld.Unlock()
+	ms.freezeWorld.Lock()
+	defer ms.freezeWorld.Unlock()
 	// TODO unload data into backend storage
 	return nil
 }
@@ -113,8 +114,8 @@ func (ms *MemoryStore) Count(key string) (int64, error) {
 // Create implements storage.Interface
 func (ms *MemoryStore) Create(ctx context.Context, key string, obj runtime.Object, out runtime.Object, ttl uint64) error {
 	klog.InfoS("GWJ create object", "key", key)
-	ms.freezeworld.RLock()
-	defer ms.freezeworld.RUnlock()
+	ms.freezeWorld.RLock()
+	defer ms.freezeWorld.RUnlock()
 	outVal, err := conversion.EnforcePtr(out)
 	if err != nil {
 		return err
@@ -162,8 +163,8 @@ func (ms *MemoryStore) Create(ctx context.Context, key string, obj runtime.Objec
 // Delete implements storage.Interface
 func (ms *MemoryStore) Delete(ctx context.Context, key string, out runtime.Object, preconditions *storage.Preconditions, validateDeletion storage.ValidateObjectFunc, cachedExistingObject runtime.Object) error {
 	klog.InfoS("GWJ delete object", "key", key)
-	ms.freezeworld.RLock()
-	defer ms.freezeworld.RUnlock()
+	ms.freezeWorld.RLock()
+	defer ms.freezeWorld.RUnlock()
 
 	keys := strings.Split(key, "/")
 	if existingObj := ms.kvs.get(keys); existingObj == nil {
@@ -230,8 +231,8 @@ func (ms *MemoryStore) Delete(ctx context.Context, key string, out runtime.Objec
 // Get implements storage.Interface
 func (ms *MemoryStore) Get(ctx context.Context, key string, opts storage.GetOptions, out runtime.Object) error {
 	// klog.InfoS("GWJ get object", "key", key, "opts", opts)
-	ms.freezeworld.RLock()
-	defer ms.freezeworld.RUnlock()
+	ms.freezeWorld.RLock()
+	defer ms.freezeWorld.RUnlock()
 	outVal, err := conversion.EnforcePtr(out)
 	if err != nil {
 		return fmt.Errorf("unable to convert output object to pointer: %v", err)
@@ -261,8 +262,8 @@ func (ms *MemoryStore) Get(ctx context.Context, key string, opts storage.GetOpti
 // GetList implements k8s storage.Interface
 func (ms *MemoryStore) GetList(ctx context.Context, key string, opts storage.ListOptions, listObj runtime.Object) error {
 	// klog.InfoS("GWJ get list of object", "key", key, "opts", opts)
-	ms.freezeworld.RLock()
-	defer ms.freezeworld.RUnlock()
+	ms.freezeWorld.RLock()
+	defer ms.freezeWorld.RUnlock()
 
 	listPtr, err := meta.GetItemsPtr(listObj)
 	if err != nil {
@@ -409,8 +410,8 @@ func (ms *MemoryStore) GetList(ctx context.Context, key string, opts storage.Lis
 // GuaranteedUpdate implements k8s storage.Interface
 func (ms *MemoryStore) GuaranteedUpdate(ctx context.Context, key string, out runtime.Object, ignoreNotFound bool, preconditions *storage.Preconditions, tryUpdate storage.UpdateFunc, cachedExistingObject runtime.Object) error {
 	klog.InfoS("GWJ update object", "key", key)
-	ms.freezeworld.RLock()
-	defer ms.freezeworld.RUnlock()
+	ms.freezeWorld.RLock()
+	defer ms.freezeWorld.RUnlock()
 	outVal, err := conversion.EnforcePtr(out)
 	if err != nil {
 		return fmt.Errorf("unable to convert output object to pointer: %v", err)
@@ -529,14 +530,14 @@ func (ms *MemoryStore) getTryUpdateFunc(updating runtime.Object) apistorage.Upda
 }
 
 func (ms *MemoryStore) watch(ctx context.Context, key string, opts storage.ListOptions, withOldObj bool) (*memoryStoreWatcher, error) {
-	klog.InfoS("GWJ watch object", "key", key, "ops", opts, "resource", ms.groupResourceString)
+	klog.InfoS("GWJ watch object", "key", key, "ops", opts, "resource", ms.groupResource.String())
 	rev, err := ms.versioner.ParseResourceVersion(opts.ResourceVersion)
 	if err != nil {
 		return nil, err
 	}
 
 	// start to watch new events
-	watcher := NewMemoryStoreWatcher(ctx, key, opts.Recursive, opts.ProgressNotify, opts.Predicate)
+	watcher := NewMemoryStoreWatcher(ctx, key, opts)
 	ms.watchers = append(ms.watchers, watcher)
 
 	objEvents := []*objEvent{}
@@ -554,8 +555,8 @@ func (ms *MemoryStore) watch(ctx context.Context, key string, opts storage.ListO
 }
 
 func (ms *MemoryStore) getObjEventsAfterRev(key string, rev uint64, opts storage.ListOptions) ([]*objEvent, error) {
-	ms.freezeworld.RLock()
-	defer ms.freezeworld.RUnlock()
+	ms.freezeWorld.RLock()
+	defer ms.freezeWorld.RUnlock()
 
 	prefix := key
 	if opts.Recursive && !strings.HasSuffix(key, "/") {
@@ -606,8 +607,8 @@ func (ms *MemoryStore) getObjEventsAfterRev(key string, rev uint64, opts storage
 }
 
 func (ms *MemoryStore) binarySearchInObjList(rv uint64) uint64 {
-	ms.freezeworld.RLock()
-	defer ms.freezeworld.RUnlock()
+	ms.freezeWorld.RLock()
+	defer ms.freezeWorld.RUnlock()
 	f := func(i int) bool {
 		obj := ms.kvList[(i)%len(ms.kvList)]
 		if obj == nil {
@@ -622,6 +623,8 @@ func (ms *MemoryStore) binarySearchInObjList(rv uint64) uint64 {
 
 // send objEvent to watchers and remove watcher who has failure to receive event
 func (ms *MemoryStore) sendEvent(event *objEvent) {
+	ms.watchEventCache.addObjEvents(event)
+
 	watchers := []*memoryStoreWatcher{}
 	for _, v := range ms.watchers {
 		if !v.stopped {
@@ -630,12 +633,13 @@ func (ms *MemoryStore) sendEvent(event *objEvent) {
 		}
 	}
 	ms.watchers = watchers
+	ms.watchEventCache.shrink()
 }
 
 // sorted klist has empty slots spreaded when items are deleted and updated, if len of klist is more than a threshold longer, we want to shrink array to avoid memory waste
 func (ms *MemoryStore) shrink() {
-	ms.freezeworld.Lock()
-	defer ms.freezeworld.Unlock()
+	ms.freezeWorld.Lock()
+	defer ms.freezeWorld.Unlock()
 	c, _ := ms.kvs.count([]string{})
 	if int64(len(ms.kvList)) > c+NilSlotMemoryShrinkThrehold {
 		ms.kvList = ms.kvList.shrink(c)

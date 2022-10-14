@@ -173,11 +173,9 @@ func (pool *SchedulableNodePool) GetNodes() []*SchedulableNode {
 }
 
 func (pool *SchedulableNodePool) SortNodes() {
-	klog.InfoS("Resort Scheduleable Node")
 	pool.mu.Lock()
 	defer pool.mu.Unlock()
 	pool.sort()
-	klog.InfoS("Done Resort Scheduleable Node")
 }
 
 // use copy on write to build pool.sortedNodes to avoid concurrent map iteration and modification,

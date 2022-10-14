@@ -24,6 +24,7 @@ import (
 	"centaurusinfra.io/fornax-serverless/pkg/store"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/watch"
+	"k8s.io/apiserver/pkg/storage"
 	apistorage "k8s.io/apiserver/pkg/storage"
 )
 
@@ -39,16 +40,16 @@ type memoryStoreWatcher struct {
 	predicate              apistorage.SelectionPredicate
 }
 
-func NewMemoryStoreWatcher(ctx context.Context, key string, recursive, progressNotify bool, predicate apistorage.SelectionPredicate) *memoryStoreWatcher {
-	if recursive && !strings.HasSuffix(key, "/") {
+func NewMemoryStoreWatcher(ctx context.Context, key string, opts storage.ListOptions) *memoryStoreWatcher {
+	if opts.Recursive && !strings.HasSuffix(key, "/") {
 		key += "/"
 	}
 	watcher := &memoryStoreWatcher{
 		ctx:                    ctx,
 		stopped:                false,
 		keyPrefix:              key,
-		recursive:              recursive,
-		predicate:              predicate,
+		recursive:              opts.Recursive,
+		predicate:              opts.Predicate,
 		stopChannel:            make(chan bool, 1),
 		incomingChan:           make(chan *objEvent, 1000),
 		outgoingChan:           make(chan watch.Event, 1000),

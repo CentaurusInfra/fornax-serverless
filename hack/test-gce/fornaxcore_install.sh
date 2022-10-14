@@ -6,8 +6,8 @@ set -e
 GO_VERSION=${GO_VERSION:-"1.18.7"}
 
 pushd $HOME
-echo -e "## SETTING UP THE HOSTNAME FORNAXCORE-A\n"
-sudo hostnamectl set-hostname fornaxcore-a
+# echo -e "## SETTING UP THE HOSTNAME FORNAXCORE-A\n"
+# sudo hostnamectl set-hostname fornaxcore-a
 echo -e "## DISABLING FIREWALL\n"
 sudo ufw disable
 sudo swapoff -a
@@ -19,20 +19,6 @@ basic_install() {
     sudo apt -y install curl
     sudo apt-get -y install vim
     echo -e "## DONE BASIC TOOL\n"
-}
-
-
-docker_install(){
-   sudo apt-get update -y > /dev/null 2>&1
-   if [ "$(which docker)" != "" ] > /dev/null 2>&1
-    then
-       echo -e "## DOCKER IS ALREADY INSTALLED\n"
-    else
-       echo -e "##INSTALLING DOCKER"
-       sudo curl -fsSL https://get.docker.com -o get-docker.sh
-       sudo sh get-docker.sh > /dev/null 2>&1
-       echo -e "## DOCKER INSTALLED\n"
-   fi
 }
 
 

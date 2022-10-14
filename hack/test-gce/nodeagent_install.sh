@@ -6,8 +6,8 @@ set -e
 GO_VERSION=${GO_VERSION:-"1.18.7"}
 
 pushd $HOME
-echo -e "## SETTING UP THE HOSTNAME NODEAGENT-A\n"
-sudo hostnamectl set-hostname nodeagent-a
+# echo -e "## SETTING UP THE HOSTNAME NODEAGENT-A\n"
+# sudo hostnamectl set-hostname nodeagent-a
 echo -e "## DISABLING FIREWALL\n"
 sudo ufw disable
 sudo swapoff -a

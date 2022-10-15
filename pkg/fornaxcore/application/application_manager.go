@@ -53,7 +53,7 @@ type ApplicationPool struct {
 	appName  string
 	mu       sync.RWMutex
 	pods     map[ApplicationPodState]map[string]*ApplicationPod
-	sessions map[string]*fornaxv1.ApplicationSession
+	sessions map[ApplicationSessionState]map[string]*ApplicationSession
 }
 
 func NewApplicationPool(appName string) *ApplicationPool {
@@ -66,7 +66,12 @@ func NewApplicationPool(appName string) *ApplicationPool {
 			PodStateAllocated: {},
 			PodStateDeleting:  {},
 		},
-		sessions: map[string]*fornaxv1.ApplicationSession{},
+		sessions: map[ApplicationSessionState]map[string]*ApplicationSession{
+			SessionStatePending:  {},
+			SessionStateStarting: {},
+			SessionStateRunning:  {},
+			SessionStateDeleting: {},
+		},
 	}
 }
 
@@ -384,10 +389,11 @@ func (am *ApplicationManager) syncApplication(ctx context.Context, applicationKe
 
 			// 2, determine how many more pods required for remaining pending sessions
 			if syncErr == nil {
+				sessionSummary := pool.summarySession()
 				// get length in one method to make sure it has snapshot image at a moment, method is locking write operation
 				numOfOccupiedPod, numOfPendingPod, numOfIdlePod := pool.activeApplicationPodLength()
 				numOfUnoccupiedPod := numOfPendingPod + numOfIdlePod
-				_, numOfPendingSession := pool.getTotalAndPendingSessionNum()
+				numOfPendingSession := sessionSummary.pendingCount
 				numOfDesiredUnoccupiedPod := am.calculateDesiredIdlePods(application, numOfOccupiedPod, numOfUnoccupiedPod, numOfPendingSession)
 				numOfDesiredPod = numOfOccupiedPod + numOfDesiredUnoccupiedPod
 				klog.InfoS("Syncing application pod", "application", applicationKey, "pending-sessions", numOfPendingSession, "active-pods", numOfOccupiedPod+numOfUnoccupiedPod, "pending-pods", numOfPendingPod, "idle-pods", numOfIdlePod, "desired-pending+idle-pods", numOfDesiredUnoccupiedPod)

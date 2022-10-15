@@ -111,10 +111,9 @@ func NewCommand() *cobra.Command {
 func Run(ctx context.Context, testConfig config.TestConfiguration) {
 	initApplicationSessionInformer(ctx)
 
-	RunTest := func(appName string) {
+	RunTest := func(appName, randAppName string) {
 		klog.Infof("--------App %s Test begin--------\n", appName)
 		namespace := "fornaxtest"
-		randAppName := rand.String(16)
 		for i := 1; i <= testConfig.NumOfTestCycle; i++ {
 			sessions := []*TestSession{}
 			cycleName := fmt.Sprintf("%s-cycle-%d", randAppName, i)
@@ -152,13 +151,14 @@ func Run(ctx context.Context, testConfig config.TestConfiguration) {
 		}
 	}()
 
+	randAppName := rand.String(16)
 	wg := sync.WaitGroup{}
 	for i := 0; i < testConfig.NumOfApps; i++ {
 		wg.Add(1)
 		appName := fmt.Sprintf("echoserver%d", i)
 		klog.Infof("Run test app %s", appName)
 		go func(app string) {
-			RunTest(app)
+			RunTest(app, randAppName)
 			wg.Done()
 		}(appName)
 	}

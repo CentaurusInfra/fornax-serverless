@@ -200,7 +200,7 @@ func (ps *podScheduler) schedulePod(pod *v1.Pod, candidateNodes []*SchedulableNo
 		for _, cond := range conditions {
 			goodNode = goodNode && cond.Apply(node, &allocatedResources)
 			if !goodNode {
-				klog.InfoS("Schedule condition does not meet", "condition", cond, "pod", util.Name(pod))
+				klog.InfoS("Node does not meet pod condition", "condition", cond, "pod", util.Name(pod), "node", node.NodeId)
 				break
 			}
 		}

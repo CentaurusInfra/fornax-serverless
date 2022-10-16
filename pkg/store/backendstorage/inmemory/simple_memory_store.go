@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"math"
 	"reflect"
+	"runtime/debug"
 	"sort"
 	"strings"
 	"sync"
@@ -409,6 +410,7 @@ func (ms *MemoryStore) GetList(ctx context.Context, key string, opts storage.Lis
 
 // GuaranteedUpdate implements k8s storage.Interface
 func (ms *MemoryStore) GuaranteedUpdate(ctx context.Context, key string, out runtime.Object, ignoreNotFound bool, preconditions *storage.Preconditions, tryUpdate storage.UpdateFunc, cachedExistingObject runtime.Object) error {
+	debug.PrintStack()
 	klog.InfoS("GWJ update object", "key", key)
 	ms.freezeWorld.RLock()
 	defer ms.freezeWorld.RUnlock()

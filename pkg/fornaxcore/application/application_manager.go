@@ -85,10 +85,10 @@ type ApplicationManager struct {
 	appSessionKind   schema.GroupVersionKind
 	applicationQueue workqueue.RateLimitingInterface
 
-	applicationStore fornaxstore.FornaxStorageInterface
+	applicationStore fornaxstore.ApiStorageInterface
 	appStoreUpdate   <-chan fornaxstore.WatchEventWithOldObj
 
-	sessionStore       fornaxstore.FornaxStorageInterface
+	sessionStore       fornaxstore.ApiStorageInterface
 	sessionStoreUpdate <-chan fornaxstore.WatchEventWithOldObj
 
 	// A pool of pods grouped by application key
@@ -105,7 +105,7 @@ type ApplicationManager struct {
 
 // NewApplicationManager init ApplicationInformer and ApplicationSessionInformer,
 // and start to listen to pod event from node
-func NewApplicationManager(ctx context.Context, podManager ie.PodManagerInterface, sessionManager ie.SessionManagerInterface, appStore, sessionStore fornaxstore.FornaxStorageInterface) *ApplicationManager {
+func NewApplicationManager(ctx context.Context, podManager ie.PodManagerInterface, sessionManager ie.SessionManagerInterface, appStore, sessionStore fornaxstore.ApiStorageInterface) *ApplicationManager {
 	am := &ApplicationManager{
 		ctx:                  ctx,
 		applicationQueue:     workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "fornaxv1.Application"),

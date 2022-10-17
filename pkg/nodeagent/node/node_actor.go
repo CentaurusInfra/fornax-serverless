@@ -402,7 +402,7 @@ func (n *FornaxNodeActor) cleanupPodAndActor(fppod *types.FornaxPod) error {
 		n.node.Pods.Del(fppod.Identifier)
 	}
 	n.nodePortManager.DeallocatePodPortMapping(n.node.V1Node, fppod.Pod)
-	return n.node.Dependencies.PodStore.DelObject(fppod.Identifier)
+	return n.node.Dependencies.PodStore.DelObject(fppod.Identifier, 0)
 }
 
 // find pod actor and send a message to it, if pod actor does not exist, create one

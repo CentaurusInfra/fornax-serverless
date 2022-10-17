@@ -26,18 +26,17 @@ import (
 )
 
 type WatchEventWithOldObj struct {
-	Type watch.EventType
-
+	Type      watch.EventType
 	Object    runtime.Object
 	OldObject runtime.Object
 }
+
 type WatchWithOldObjInterface interface {
 	Stop()
-
 	ResultChanWithPrevobj() <-chan WatchEventWithOldObj
 }
 
-type FornaxStorageInterface interface {
+type ApiStorageInterface interface {
 	apistorage.Interface
 	WatchWithOldObj(ctx context.Context, key string, opts storage.ListOptions) (WatchWithOldObjInterface, error)
 	EnsureUpdateAndDelete(ctx context.Context, key string, ignoreNotFound bool, preconditions *storage.Preconditions, updatedObj runtime.Object, output runtime.Object) error
@@ -46,7 +45,6 @@ type FornaxStorageInterface interface {
 func IsObjectNotFoundErr(err error) bool {
 	if serr, ok := err.(*apistorage.StorageError); ok && serr.Code == apistorage.ErrCodeKeyNotFound {
 		return true
-
 	}
 	return false
 }

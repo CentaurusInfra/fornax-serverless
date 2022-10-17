@@ -74,13 +74,13 @@ func (ascm *ApplicationStatusChangeMap) getAndRemoveStatusChangeSnapshot() map[s
 
 type ApplicationStatusManager struct {
 	ctx              context.Context
-	applicationStore fornaxstore.FornaxStorageInterface
+	applicationStore fornaxstore.ApiStorageInterface
 	statusUpdateCh   chan string
 	statusChanges    *ApplicationStatusChangeMap
 	kubeConfig       *rest.Config
 }
 
-func NewApplicationStatusManager(appStore fornaxstore.FornaxStorageInterface) *ApplicationStatusManager {
+func NewApplicationStatusManager(appStore fornaxstore.ApiStorageInterface) *ApplicationStatusManager {
 	return &ApplicationStatusManager{
 		applicationStore: appStore,
 		statusUpdateCh:   make(chan string, 500),

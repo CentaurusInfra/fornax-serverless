@@ -30,7 +30,7 @@ import (
 
 	fornaxv1 "centaurusinfra.io/fornax-serverless/pkg/apis/core/v1"
 	fornaxstore "centaurusinfra.io/fornax-serverless/pkg/store"
-	"centaurusinfra.io/fornax-serverless/pkg/store/backendstorage/inmemory"
+	"centaurusinfra.io/fornax-serverless/pkg/store/inmemory"
 	"centaurusinfra.io/fornax-serverless/pkg/util"
 )
 
@@ -76,7 +76,7 @@ func FornaxStorageFunc(
 	return storage, destroyFunc, nil
 }
 
-func GetApplicationSessionCache(store fornaxstore.FornaxStorageInterface, sessionLabel string) (*fornaxv1.ApplicationSession, error) {
+func GetApplicationSessionCache(store fornaxstore.ApiStorageInterface, sessionLabel string) (*fornaxv1.ApplicationSession, error) {
 	out := &fornaxv1.ApplicationSession{}
 	key := fmt.Sprintf("%s/%s", fornaxv1.ApplicationSessionGrvKey, sessionLabel)
 	err := store.Get(context.Background(), key, apistorage.GetOptions{IgnoreNotFound: false}, out)
@@ -88,7 +88,7 @@ func GetApplicationSessionCache(store fornaxstore.FornaxStorageInterface, sessio
 	return out, nil
 }
 
-func GetApplicationCache(store fornaxstore.FornaxStorageInterface, applicationLabel string) (*fornaxv1.Application, error) {
+func GetApplicationCache(store fornaxstore.ApiStorageInterface, applicationLabel string) (*fornaxv1.Application, error) {
 	out := &fornaxv1.Application{}
 	key := fmt.Sprintf("%s/%s", fornaxv1.ApplicationGrvKey, applicationLabel)
 	err := store.Get(context.Background(), key, apistorage.GetOptions{IgnoreNotFound: false}, out)
@@ -101,7 +101,7 @@ func GetApplicationCache(store fornaxstore.FornaxStorageInterface, applicationLa
 	return out, nil
 }
 
-func CreateApplicationSession(ctx context.Context, store fornaxstore.FornaxStorageInterface, session *fornaxv1.ApplicationSession) (*fornaxv1.ApplicationSession, error) {
+func CreateApplicationSession(ctx context.Context, store fornaxstore.ApiStorageInterface, session *fornaxv1.ApplicationSession) (*fornaxv1.ApplicationSession, error) {
 	out := &fornaxv1.ApplicationSession{}
 	key := fmt.Sprintf("%s/%s", fornaxv1.ApplicationSessionGrvKey, util.Name(session))
 	err := store.Create(ctx, key, session, out, uint64(0))
@@ -111,7 +111,7 @@ func CreateApplicationSession(ctx context.Context, store fornaxstore.FornaxStora
 	return out, nil
 }
 
-func CreateApplication(ctx context.Context, store fornaxstore.FornaxStorageInterface, application *fornaxv1.Application) (*fornaxv1.Application, error) {
+func CreateApplication(ctx context.Context, store fornaxstore.ApiStorageInterface, application *fornaxv1.Application) (*fornaxv1.Application, error) {
 	out := &fornaxv1.Application{}
 	key := fmt.Sprintf("%s/%s", fornaxv1.ApplicationGrvKey, util.Name(application))
 	err := store.Create(ctx, key, application, out, uint64(0))
@@ -121,7 +121,7 @@ func CreateApplication(ctx context.Context, store fornaxstore.FornaxStorageInter
 	return out, nil
 }
 
-func UpdateApplicationSession(ctx context.Context, store fornaxstore.FornaxStorageInterface, session *fornaxv1.ApplicationSession) (*fornaxv1.ApplicationSession, error) {
+func UpdateApplicationSession(ctx context.Context, store fornaxstore.ApiStorageInterface, session *fornaxv1.ApplicationSession) (*fornaxv1.ApplicationSession, error) {
 	out := &fornaxv1.ApplicationSession{}
 	key := fmt.Sprintf("%s/%s", fornaxv1.ApplicationSessionGrvKey, util.Name(session))
 	err := store.EnsureUpdateAndDelete(ctx, key, true, nil, session, out)

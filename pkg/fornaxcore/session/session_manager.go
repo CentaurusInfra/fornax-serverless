@@ -46,7 +46,7 @@ type sessionManager struct {
 	watchers        []chan<- *ie.SessionEvent
 	statusUpdateCh  chan string
 	statusChanges   *SessionStatusChangeMap
-	sessionStore    fornaxstore.FornaxStorageInterface
+	sessionStore    fornaxstore.ApiStorageInterface
 }
 
 func (sscm *SessionStatusChangeMap) addSessionStatusChange(name string, status *fornaxv1.ApplicationSessionStatus, replace bool) {
@@ -75,7 +75,7 @@ func (sscm *SessionStatusChangeMap) getAndRemoveStatusChangeSnapshot() map[strin
 	return updatedSessions
 }
 
-func NewSessionManager(ctx context.Context, nodeAgentProxy nodeagent.NodeAgentClient, sessionStore fornaxstore.FornaxStorageInterface) *sessionManager {
+func NewSessionManager(ctx context.Context, nodeAgentProxy nodeagent.NodeAgentClient, sessionStore fornaxstore.ApiStorageInterface) *sessionManager {
 	mgr := &sessionManager{
 		ctx:             ctx,
 		nodeAgentClient: nodeAgentProxy,

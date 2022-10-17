@@ -31,8 +31,8 @@ import (
 	"centaurusinfra.io/fornax-serverless/pkg/nodeagent/runtime"
 	"centaurusinfra.io/fornax-serverless/pkg/nodeagent/session"
 	"centaurusinfra.io/fornax-serverless/pkg/nodeagent/store"
-	"centaurusinfra.io/fornax-serverless/pkg/nodeagent/store/factory"
 	fornaxtypes "centaurusinfra.io/fornax-serverless/pkg/nodeagent/types"
+	"centaurusinfra.io/fornax-serverless/pkg/store/storage"
 	"centaurusinfra.io/fornax-serverless/pkg/util"
 
 	v1 "k8s.io/api/core/v1"
@@ -173,7 +173,7 @@ type ContainerWorldSummary struct {
 	terminatedPods []*fornaxtypes.FornaxPod
 }
 
-func LoadPodsFromContainerRuntime(runtimeService runtime.RuntimeService, db *factory.PodStore) (ContainerWorldSummary, error) {
+func LoadPodsFromContainerRuntime(runtimeService runtime.RuntimeService, db *store.PodStore) (ContainerWorldSummary, error) {
 	world := ContainerWorldSummary{
 		runningPods:    []*fornaxtypes.FornaxPod{},
 		terminatedPods: []*fornaxtypes.FornaxPod{},
@@ -331,7 +331,7 @@ func NewFornaxNode(nodeConfig config.NodeConfiguration, dependencies *dependency
 	}
 	nodeWithRevision, err := dependencies.NodeStore.GetNode(util.Name(v1node))
 	if err != nil {
-		if err != store.StoreObjectNotFound {
+		if err != storage.ObjectNotFound {
 			return nil, err
 		}
 	} else {

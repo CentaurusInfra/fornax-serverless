@@ -27,17 +27,17 @@ import (
 	"sync"
 	"sync/atomic"
 
-	"centaurusinfra.io/fornax-serverless/pkg/store"
-	apierrors "k8s.io/apimachinery/pkg/api/errors"
-	"k8s.io/apimachinery/pkg/api/meta"
-	"k8s.io/apimachinery/pkg/conversion"
 	"k8s.io/klog/v2"
 
+	"centaurusinfra.io/fornax-serverless/pkg/store"
+
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/conversion"
+	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/watch"
-
-	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apiserver/pkg/storage"
 	apistorage "k8s.io/apiserver/pkg/storage"
 )
@@ -262,7 +262,7 @@ func (ms *MemoryStore) Get(ctx context.Context, key string, opts storage.GetOpti
 
 // GetList implements k8s storage.Interface
 func (ms *MemoryStore) GetList(ctx context.Context, key string, opts storage.ListOptions, listObj runtime.Object) error {
-	// klog.InfoS("GWJ get list of object", "key", key, "opts", opts)
+	klog.InfoS("GWJ get list of object", "key", key, "opts", opts)
 	ms.freezeWorld.RLock()
 	defer ms.freezeWorld.RUnlock()
 

@@ -21,15 +21,14 @@ import (
 	"errors"
 	"fmt"
 
-	"centaurusinfra.io/fornax-serverless/pkg/nodeagent/store"
+	"centaurusinfra.io/fornax-serverless/pkg/store/storage"
 	_ "github.com/mattn/go-sqlite3"
-	klog "k8s.io/klog/v2"
 )
 
 type TextFromObjectFunc func(interface{}) (string, error)
 type TextToObjectFunc func(string) (interface{}, error)
 
-var _ store.Store = &sqLiteStore{}
+var _ storage.Store = &sqLiteStore{}
 
 type sqLiteStore struct {
 	options            *SQLiteStoreOptions
@@ -39,7 +38,6 @@ type sqLiteStore struct {
 	TextFromObjectFunc TextFromObjectFunc
 }
 
-// ListObject implements store.Store
 func (s *sqLiteStore) ListObject() ([]interface{}, error) {
 	row, err := s.DB.Query(fmt.Sprintf("select identifier, content from %s", s.Table))
 	if err != nil {
@@ -67,8 +65,7 @@ func (s *sqLiteStore) ListObject() ([]interface{}, error) {
 	return objs, nil
 }
 
-// DelObject implements store.Store
-func (s *sqLiteStore) DelObject(identifier string) error {
+func (s *sqLiteStore) DelObject(identifier string, rev int64) error {
 	tx, err := s.DB.Begin()
 	if err != nil {
 		return err
@@ -88,7 +85,7 @@ func (s *sqLiteStore) DelObject(identifier string) error {
 	return nil
 }
 
-func (s *sqLiteStore) PutObject(identifier string, obj interface{}) error {
+func (s *sqLiteStore) PutObject(identifier string, obj interface{}, rev int64) error {
 	var sqlobjtext string
 	var err error
 	if sqlobjtext, err = s.TextFromObjectFunc(obj); err != nil {
@@ -137,7 +134,7 @@ func (s *sqLiteStore) GetObject(identifier string) (interface{}, error) {
 		}
 	}
 	if numOfRow == 0 {
-		return nil, store.StoreObjectNotFound
+		return nil, storage.ObjectNotFound
 	}
 
 	var obj interface{}
@@ -154,8 +151,7 @@ type SQLiteStoreOptions struct {
 func (s *sqLiteStore) connect() error {
 	db, err := sql.Open("sqlite3", s.options.ConnUrl)
 	if err != nil {
-		klog.ErrorS(err, "connect sqlite failed")
-		return err
+		return fmt.Errorf("Failed to Connect sqlite %s, cause %v", s.options.ConnUrl, err)
 	}
 	s.DB = db
 	return nil
@@ -169,8 +165,7 @@ func (s *sqLiteStore) initTable() error {
 	sqlStmt := fmt.Sprintf("create table if not exists %s (identifier varchar(36) primary key, content text)", s.Table)
 	_, err := s.DB.Exec(sqlStmt)
 	if err != nil {
-		klog.ErrorS(err, "failed to create table", "table", s.Table)
-		return err
+		return fmt.Errorf("Failed to create sqlite table %s, cause %v", s.Table, err)
 	}
 
 	return nil

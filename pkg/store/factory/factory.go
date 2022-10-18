@@ -18,7 +18,9 @@ package factory
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"sync"
 
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
@@ -31,7 +33,14 @@ import (
 	fornaxv1 "centaurusinfra.io/fornax-serverless/pkg/apis/core/v1"
 	fornaxstore "centaurusinfra.io/fornax-serverless/pkg/store"
 	"centaurusinfra.io/fornax-serverless/pkg/store/inmemory"
+	"centaurusinfra.io/fornax-serverless/pkg/store/storage"
+	"centaurusinfra.io/fornax-serverless/pkg/store/storage/etcd"
 	"centaurusinfra.io/fornax-serverless/pkg/util"
+)
+
+var (
+	_InMemoryStoresMutex = &sync.RWMutex{}
+	_InMemoryStores      = map[string]*inmemory.MemoryStore{}
 )
 
 type FornaxRestOptionsFactory struct {
@@ -47,10 +56,63 @@ func (f *FornaxRestOptionsFactory) GetRESTOptions(resource schema.GroupResource)
 	return options, nil
 }
 
-func NewFornaxStorage(groupResource schema.GroupResource, pagingEnabled bool) *inmemory.MemoryStore {
-	return inmemory.NewMemoryStore(groupResource, pagingEnabled)
+var (
+	RegisteredBackEndStorage = map[string]storage.Store{}
+)
+
+// use json to store node agent store object for now, consider using protobuf if meet performance issue
+func JsonToApplication(text []byte) (interface{}, error) {
+	res := &fornaxv1.Application{}
+	if err := json.Unmarshal([]byte(text), res); err != nil {
+		return nil, err
+	}
+	return res, nil
 }
 
+func JsonFromApplication(obj interface{}) ([]byte, error) {
+	if _, ok := obj.(*fornaxv1.Application); !ok {
+		return nil, storage.InvalidObjectType
+	}
+
+	var bytes []byte
+	var err error
+	if bytes, err = json.Marshal(obj); err != nil {
+		return nil, err
+	}
+	return bytes, nil
+}
+
+func NewApplicationEtcdStore(ctx context.Context, etcdEndPoints []string) (storage.StoreWithRevision, error) {
+	backend, err := etcd.NewEtcdStore(ctx, etcdEndPoints, fornaxv1.ApplicationGrvKey, JsonToApplication, JsonFromApplication)
+	if err != nil {
+		return nil, err
+	}
+	return backend, nil
+}
+
+func NewFornaxApplicationStorage(backend storage.StoreWithRevision) *inmemory.MemoryStore {
+	a := &fornaxv1.Application{}
+	return NewFornaxStorage(fornaxv1.ApplicationGrv.GroupResource(), fornaxv1.ApplicationGrvKey, a.New, a.NewList, backend)
+}
+
+func NewFornaxApplicationSessionStorage() *inmemory.MemoryStore {
+	return NewFornaxStorage(fornaxv1.ApplicationSessionGrv.GroupResource(), fornaxv1.ApplicationSessionGrvKey, nil, nil, nil)
+}
+
+func NewFornaxStorage(groupResource schema.GroupResource, grvKey string, newFunc func() runtime.Object, newListFunc func() runtime.Object, backendStore storage.StoreWithRevision) *inmemory.MemoryStore {
+	_InMemoryStoresMutex.Lock()
+	defer _InMemoryStoresMutex.Unlock()
+	key := groupResource.String()
+	if si, found := _InMemoryStores[key]; found {
+		return si
+	} else {
+		si = inmemory.NewMemoryStore(groupResource, grvKey, newFunc, newListFunc, backendStore)
+		_InMemoryStores[key] = si
+		return si
+	}
+}
+
+// this function is provided to k8s api server to get resource storage.Interface
 func FornaxStorageFunc(
 	storageConfig *storagebackend.ConfigForResource,
 	resourcePrefix string,
@@ -66,8 +128,17 @@ func FornaxStorageFunc(
 		return s, d, err
 	}
 
-	storage := inmemory.NewMemoryStore(storageConfig.GroupResource, storageConfig.Paging)
+	var storage *inmemory.MemoryStore
+	_InMemoryStoresMutex.Lock()
+	key := storageConfig.GroupResource.String()
+	defer _InMemoryStoresMutex.Unlock()
+	if b, f := _InMemoryStores[key]; !f {
+		return nil, nil, fmt.Errorf("Can not find a regisgered store for %s", key)
+	} else {
+		storage = b
+	}
 
+	storage.CompleteWithFunctions(keyFunc, newFunc, newListFunc, getAttrsFunc, triggerFuncs, indexers)
 	destroyFunc := func() {
 		d()
 		storage.Stop()

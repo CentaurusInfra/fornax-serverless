@@ -25,17 +25,12 @@ import (
 	_ "github.com/mattn/go-sqlite3"
 )
 
-type TextFromObjectFunc func(interface{}) (string, error)
-type TextToObjectFunc func(string) (interface{}, error)
-
-var _ storage.Store = &sqLiteStore{}
-
 type sqLiteStore struct {
 	options            *SQLiteStoreOptions
 	DB                 *sql.DB
 	Table              string
-	TextToObjectFunc   TextToObjectFunc
-	TextFromObjectFunc TextFromObjectFunc
+	TextToObjectFunc   storage.TextToObjectFunc
+	TextFromObjectFunc storage.TextFromObjectFunc
 }
 
 func (s *sqLiteStore) ListObject() ([]interface{}, error) {
@@ -56,7 +51,7 @@ func (s *sqLiteStore) ListObject() ([]interface{}, error) {
 		}
 
 		var obj interface{}
-		if obj, err = s.TextToObjectFunc(text); err != nil {
+		if obj, err = s.TextToObjectFunc([]byte(text)); err != nil {
 			return nil, err
 		} else {
 			objs = append(objs, obj)
@@ -65,7 +60,7 @@ func (s *sqLiteStore) ListObject() ([]interface{}, error) {
 	return objs, nil
 }
 
-func (s *sqLiteStore) DelObject(identifier string, rev int64) error {
+func (s *sqLiteStore) DelObject(identifier string) error {
 	tx, err := s.DB.Begin()
 	if err != nil {
 		return err
@@ -85,8 +80,8 @@ func (s *sqLiteStore) DelObject(identifier string, rev int64) error {
 	return nil
 }
 
-func (s *sqLiteStore) PutObject(identifier string, obj interface{}, rev int64) error {
-	var sqlobjtext string
+func (s *sqLiteStore) PutObject(identifier string, obj interface{}) error {
+	var sqlobjtext []byte
 	var err error
 	if sqlobjtext, err = s.TextFromObjectFunc(obj); err != nil {
 		return err
@@ -138,7 +133,7 @@ func (s *sqLiteStore) GetObject(identifier string) (interface{}, error) {
 	}
 
 	var obj interface{}
-	if obj, err = s.TextToObjectFunc(text); err != nil {
+	if obj, err = s.TextToObjectFunc([]byte(text)); err != nil {
 		return nil, err
 	}
 	return obj, nil
@@ -171,7 +166,7 @@ func (s *sqLiteStore) initTable() error {
 	return nil
 }
 
-func NewSqliteStore(table string, options *SQLiteStoreOptions, toObjectFunc TextToObjectFunc, fromObjectFunc TextFromObjectFunc) (*sqLiteStore, error) {
+func NewSqliteStore(table string, options *SQLiteStoreOptions, toObjectFunc storage.TextToObjectFunc, fromObjectFunc storage.TextFromObjectFunc) (*sqLiteStore, error) {
 	store := &sqLiteStore{
 		options: options,
 	}
@@ -198,3 +193,5 @@ func NewSqliteStore(table string, options *SQLiteStoreOptions, toObjectFunc Text
 	}
 	return store, nil
 }
+
+var _ storage.Store = &sqLiteStore{}

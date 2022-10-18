@@ -19,7 +19,6 @@ package store
 import (
 	"encoding/json"
 	"fmt"
-	"strconv"
 
 	"centaurusinfra.io/fornax-serverless/pkg/nodeagent/types"
 	"centaurusinfra.io/fornax-serverless/pkg/store/storage"
@@ -40,8 +39,8 @@ type SessionStore struct {
 
 func NewNodeSqliteStore(options *sqlite.SQLiteStoreOptions) (*NodeStore, error) {
 	if store, err := sqlite.NewSqliteStore("Node", options,
-		func(text string) (interface{}, error) { return JsonToNode(text) },
-		func(obj interface{}) (string, error) { return JsonFromNode(obj.(*types.FornaxNodeWithRevision)) }); err != nil {
+		func(text []byte) (interface{}, error) { return JsonToNode(text) },
+		func(obj interface{}) ([]byte, error) { return JsonFromNode(obj.(*types.FornaxNodeWithRevision)) }); err != nil {
 		return nil, err
 	} else {
 		return &NodeStore{store}, nil
@@ -64,7 +63,7 @@ func (s *NodeStore) PutNode(node *types.FornaxNodeWithRevision) error {
 	if node == nil {
 		return fmt.Errorf("nil node is passed")
 	}
-	err := s.PutObject(string(node.Identifier), node, node.Revision)
+	err := s.PutObject(string(node.Identifier), node)
 	if err != nil {
 		return err
 	}
@@ -73,8 +72,8 @@ func (s *NodeStore) PutNode(node *types.FornaxNodeWithRevision) error {
 
 func NewPodSqliteStore(options *sqlite.SQLiteStoreOptions) (*PodStore, error) {
 	if store, err := sqlite.NewSqliteStore("Pod", options,
-		func(text string) (interface{}, error) { return JsonToPod(text) },
-		func(obj interface{}) (string, error) { return JsonFromPod(obj.(*types.FornaxPod)) }); err != nil {
+		func(text []byte) (interface{}, error) { return JsonToPod(text) },
+		func(obj interface{}) ([]byte, error) { return JsonFromPod(obj.(*types.FornaxPod)) }); err != nil {
 		return nil, err
 	} else {
 		return &PodStore{store}, nil
@@ -97,11 +96,7 @@ func (s *PodStore) PutPod(pod *types.FornaxPod) error {
 	if pod == nil {
 		return fmt.Errorf("nil pod is passed")
 	}
-	rev, err := strconv.Atoi(pod.Pod.ResourceVersion)
-	if err != nil {
-		return err
-	}
-	err = s.PutObject(string(pod.Identifier), pod, int64(rev))
+	err := s.PutObject(string(pod.Identifier), pod)
 	if err != nil {
 		return err
 	}
@@ -110,8 +105,8 @@ func (s *PodStore) PutPod(pod *types.FornaxPod) error {
 
 func NewSessionSqliteStore(options *sqlite.SQLiteStoreOptions) (*SessionStore, error) {
 	if store, err := sqlite.NewSqliteStore("Session", options,
-		func(text string) (interface{}, error) { return JsonToSession(text) },
-		func(obj interface{}) (string, error) { return JsonFromSession(obj.(*types.FornaxSession)) }); err != nil {
+		func(text []byte) (interface{}, error) { return JsonToSession(text) },
+		func(obj interface{}) ([]byte, error) { return JsonFromSession(obj.(*types.FornaxSession)) }); err != nil {
 		return nil, err
 	} else {
 		return &SessionStore{store}, nil
@@ -134,11 +129,7 @@ func (s *SessionStore) PutSession(session *types.FornaxSession) error {
 	if session == nil {
 		return fmt.Errorf("nil session is passed")
 	}
-	rev, err := strconv.Atoi(session.Session.ResourceVersion)
-	if err != nil {
-		return err
-	}
-	err = s.PutObject(session.Identifier, session, int64(rev))
+	err := s.PutObject(session.Identifier, session)
 	if err != nil {
 		return err
 	}
@@ -146,54 +137,54 @@ func (s *SessionStore) PutSession(session *types.FornaxSession) error {
 }
 
 // use json to store node agent store object for now, consider using protobuf if meet performance issue
-func JsonToPod(str string) (*types.FornaxPod, error) {
+func JsonToPod(data []byte) (*types.FornaxPod, error) {
 	res := types.FornaxPod{}
-	if err := json.Unmarshal([]byte(str), &res); err != nil {
+	if err := json.Unmarshal([]byte(data), &res); err != nil {
 		return nil, err
 	}
 	return &res, nil
 }
 
-func JsonFromPod(obj *types.FornaxPod) (string, error) {
+func JsonFromPod(obj *types.FornaxPod) ([]byte, error) {
 	var bytes []byte
 	var err error
 	if bytes, err = json.Marshal(obj); err != nil {
-		return "", err
+		return nil, err
 	}
-	return string(bytes), nil
+	return bytes, nil
 }
 
 // use json to store node agent store object for now, consider using protobuf if meet performance issue
-func JsonToNode(str string) (*types.FornaxNodeWithRevision, error) {
+func JsonToNode(text []byte) (*types.FornaxNodeWithRevision, error) {
 	res := types.FornaxNodeWithRevision{}
-	if err := json.Unmarshal([]byte(str), &res); err != nil {
+	if err := json.Unmarshal([]byte(text), &res); err != nil {
 		return nil, err
 	}
 	return &res, nil
 }
 
-func JsonFromNode(obj *types.FornaxNodeWithRevision) (string, error) {
+func JsonFromNode(obj *types.FornaxNodeWithRevision) ([]byte, error) {
 	var bytes []byte
 	var err error
 	if bytes, err = json.Marshal(obj); err != nil {
-		return "", err
+		return nil, err
 	}
-	return string(bytes), nil
+	return bytes, nil
 }
 
-func JsonToSession(str string) (*types.FornaxSession, error) {
+func JsonToSession(text []byte) (*types.FornaxSession, error) {
 	res := types.FornaxSession{}
-	if err := json.Unmarshal([]byte(str), &res); err != nil {
+	if err := json.Unmarshal([]byte(text), &res); err != nil {
 		return nil, err
 	}
 	return &res, nil
 }
 
-func JsonFromSession(obj *types.FornaxSession) (string, error) {
+func JsonFromSession(obj *types.FornaxSession) ([]byte, error) {
 	var bytes []byte
 	var err error
 	if bytes, err = json.Marshal(obj); err != nil {
-		return "", err
+		return nil, err
 	}
-	return string(bytes), nil
+	return bytes, nil
 }

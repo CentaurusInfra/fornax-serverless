@@ -56,20 +56,7 @@ func objectResourceVersion(obj runtime.Object) (uint64, error) {
 	return strconv.ParseUint(version, 10, 64)
 }
 
-func getStateFromObject(versioner apistorage.Versioner, obj runtime.Object) (*objState, error) {
-	state := &objState{
-		obj:  obj.DeepCopyObject(), // deep copy to avoid obj changed by other routine, state should be a snapshot
-		meta: &apistorage.ResponseMeta{},
-	}
-
-	rv, err := objectResourceVersion(state.obj)
-	if err != nil {
-		return nil, fmt.Errorf("couldn't get resource version: %v", err)
-	}
-	state.rev = rv
-	state.meta.ResourceVersion = uint64(state.rev)
-
-	return state, nil
+func getStateFromObject(obj runtime.Object) (*objState, error) {
 }
 
 // validateMinimumResourceVersion returns a 'too large resource' version error when the provided minimumResourceVersion is
@@ -133,8 +120,17 @@ func appendListItem(v reflect.Value, obj runtime.Object, rev uint64, pred apisto
 	return nil
 }
 
-func updateState(versioner apistorage.Versioner, st *objState, userUpdate apistorage.UpdateFunc) (runtime.Object, uint64, error) {
-	ret, ttlPtr, err := userUpdate(st.obj, *st.meta)
+func updateState(versioner apistorage.Versioner, existintObj runtime.Object, userUpdate apistorage.UpdateFunc) (runtime.Object, uint64, error) {
+	obj := existintObj.DeepCopyObject() // deep copy to avoid obj changed by other routine, state should be a snapshot
+	meta := apistorage.ResponseMeta{}
+
+	rv, err := objectResourceVersion(obj)
+	if err != nil {
+		return nil, 0, fmt.Errorf("couldn't get resource version: %v", err)
+	}
+	meta.ResourceVersion = uint64(rv)
+
+	ret, ttlPtr, err := userUpdate(obj, meta)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -147,7 +143,7 @@ func updateState(versioner apistorage.Versioner, st *objState, userUpdate apisto
 		ttl = *ttlPtr
 	}
 	return ret, ttl, nil
-} // parseFrom transforms an encoded predicate from into a versioned struct.
+}
 
 // TODO: return a typed error that instructs clients that they must relist
 func decodeContinue(continueValue, keyPrefix string) (fromKey string, rv int64, err error) {

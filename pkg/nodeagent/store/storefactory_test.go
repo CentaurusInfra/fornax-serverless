@@ -33,7 +33,21 @@ func NewATestSession(id string) *fornaxtypes.FornaxSession {
 	testSession := fornaxtypes.FornaxSession{
 		Identifier:    id,
 		PodIdentifier: id,
-		Session:       &fornaxv1.ApplicationSession{},
+		Session: &fornaxv1.ApplicationSession{
+			TypeMeta: metav1.TypeMeta{
+				Kind:       "ApplicationSession",
+				APIVersion: "centaurusinfra.io/fornax-serverless/core/v1",
+			},
+			ObjectMeta: metav1.ObjectMeta{
+				Name:            id,
+				GenerateName:    id,
+				Namespace:       "test",
+				ResourceVersion: "123",
+				Generation:      0,
+			},
+			Spec:   fornaxv1.ApplicationSessionSpec{},
+			Status: fornaxv1.ApplicationSessionStatus{},
+		},
 	}
 	return &testSession
 }
@@ -41,16 +55,21 @@ func NewATestSession(id string) *fornaxtypes.FornaxSession {
 func NewATestPod(id string) *fornaxtypes.FornaxPod {
 	testPod := fornaxtypes.FornaxPod{
 		Identifier:     id,
-		ApplicationId:  "applicationId",
 		FornaxPodState: "PodStateCreated",
 		Pod: &v1.Pod{
 			TypeMeta: metav1.TypeMeta{
 				Kind:       "Pod",
 				APIVersion: "k8s.io/core/v1",
 			},
-			ObjectMeta: metav1.ObjectMeta{},
-			Spec:       v1.PodSpec{},
-			Status:     v1.PodStatus{},
+			ObjectMeta: metav1.ObjectMeta{
+				Name:            id,
+				Namespace:       "test",
+				GenerateName:    id,
+				ResourceVersion: "123",
+				Generation:      0,
+			},
+			Spec:   v1.PodSpec{},
+			Status: v1.PodStatus{},
 		},
 		ConfigMap:  &v1.ConfigMap{},
 		RuntimePod: &runtime.Pod{},

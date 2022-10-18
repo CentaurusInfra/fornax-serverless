@@ -89,9 +89,9 @@ func NewSessionManager(ctx context.Context, nodeAgentProxy nodeagent.NodeAgentCl
 	return mgr
 }
 
-// Run receive session status signal from channel and grab a snapshot of session status change from session statua map, and update api server,
+// AsyncSessionStatusUpdateRun receive session status signal from channel and grab a snapshot of session status change from session statua map, and update api server,
 // snap shot is removed from session status change map, if any session status update failed, put it back if there is no new status
-func (sm *sessionManager) Run(ctx context.Context) {
+func (sm *sessionManager) AsyncSessionStatusUpdateRun(ctx context.Context) {
 	klog.Info("Starting fornaxv1 session status manager")
 
 	go func() {

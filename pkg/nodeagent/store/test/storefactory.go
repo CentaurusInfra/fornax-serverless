@@ -55,8 +55,8 @@ func main() {
 
 		fmt.Println("delete all object")
 		for i := 0; i <= count; i++ {
-			podstore.DelObject(fmt.Sprint(i), 0)
-			sessionstore.DelObject(fmt.Sprint(i), 0)
+			podstore.DelObject(fmt.Sprint(i))
+			sessionstore.DelObject(fmt.Sprint(i))
 		}
 
 		fmt.Println(sessionstore.GetSession("99"))

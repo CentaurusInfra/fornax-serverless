@@ -23,7 +23,6 @@ import (
 	fornaxv1 "centaurusinfra.io/fornax-serverless/pkg/apis/core/v1"
 	"centaurusinfra.io/fornax-serverless/pkg/nodeagent/runtime"
 	v1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/types"
 )
 
 // +enum
@@ -75,7 +74,6 @@ type FornaxNodeWithRevision struct {
 
 type FornaxPod struct {
 	Identifier              string                      `json:"identifier,omitempty"`
-	ApplicationId           types.UID                   `json:"applicationId,omitempty"`
 	FornaxPodState          PodState                    `json:"fornaxPodState,omitempty"`
 	Daemon                  bool                        `json:"daemon,omitempty"`
 	Pod                     *v1.Pod                     `json:"pod,omitempty"`

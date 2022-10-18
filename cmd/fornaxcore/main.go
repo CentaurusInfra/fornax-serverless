@@ -48,49 +48,64 @@ func init() {
 }
 
 func main() {
-	// initialize fornax in memory store
-	appStore := factory.NewFornaxStorage(fornaxv1.ApplicationGrv.GroupResource(), true)
-	appStore.Load()
-	appSessionStore := factory.NewFornaxStorage(fornaxv1.ApplicationSessionGrv.GroupResource(), true)
-	appSessionStore.Load()
+	// initialize fornax resource store
+	ctx := context.Background()
+	backend, err := factory.NewApplicationEtcdStore(ctx, []string{"http://127.0.0.1:2379"})
+	if err != nil {
+		klog.Fatal(err)
+		os.Exit(-1)
+	}
+	appStore := factory.NewFornaxApplicationStorage(backend)
+	err = appStore.Load(ctx)
+	if err != nil {
+		klog.Fatal(err)
+		os.Exit(-1)
+	}
+	appSessionStore := factory.NewFornaxApplicationSessionStorage()
+	err = appSessionStore.Load(ctx)
+	if err != nil {
+		klog.Fatal(err)
+		os.Exit(-1)
+	}
 
 	// new fornaxcore grpc grpcServer which implement node agent proxy
 	grpcServer := grpc_server.NewGrpcServer()
 
-	// start node and pod manager
-	podManager := pod.NewPodManager(context.Background(), grpcServer)
-	sessionManager := session.NewSessionManager(context.Background(), grpcServer, appSessionStore)
-	sessionManager.Run(context.Background())
-	nodeManager := node.NewNodeManager(context.Background(), grpcServer, podManager, sessionManager)
-	podScheduler := podscheduler.NewPodScheduler(context.Background(), grpcServer, nodeManager, podManager,
+	// start internal managers and pod scheduler
+	podManager := pod.NewPodManager(ctx, grpcServer)
+	sessionManager := session.NewSessionManager(ctx, grpcServer, appSessionStore)
+	nodeManager := node.NewNodeManager(ctx, grpcServer, podManager, sessionManager)
+	podScheduler := podscheduler.NewPodScheduler(ctx, grpcServer, nodeManager, podManager,
 		&podscheduler.SchedulePolicy{
 			NumOfEvaluatedNodes: 100,
 			BackoffDuration:     10 * time.Second,
 			NodeSortingMethod:   podscheduler.NodeSortingMethodMoreMemory,
 		})
-	podManager.Run(podScheduler)
 	podScheduler.Run()
+	podManager.Run(podScheduler)
 	nodeManager.Run()
 
 	// start application manager at last as it require api server
 	klog.Info("starting application manager")
-	appManager := application.NewApplicationManager(context.Background(), podManager, sessionManager, appStore, appSessionStore)
-	go appManager.Run(context.Background())
+	appManager := application.NewApplicationManager(ctx, podManager, sessionManager, appStore, appSessionStore)
+	appManager.Run(ctx)
 
 	// start fornaxcore grpc server to listen nodes
 	klog.Info("starting fornaxcore grpc node agent server")
 	port := 18001
 	// we are using k8s api server, command line flags are only parsed when apiserver started
-	// TODO, parse flags out of api server or start api server earlier and get certificates from command line flags,
+	// TODO, parse flags before start api server and get certificates from command line flags,
 	certFile := ""
 	keyFile := ""
-	err := grpcServer.RunGrpcServer(context.Background(), nodemonitor.NewNodeMonitor(nodeManager), port, certFile, keyFile)
+	err = grpcServer.RunGrpcServer(ctx, nodemonitor.NewNodeMonitor(nodeManager), port, certFile, keyFile)
 	if err != nil {
 		klog.Fatal(err)
 	}
 	klog.Info("Fornaxcore grpc server started")
 
-	// start api server
+	// TODO, wait for all known nodes are registered
+
+	// start api server to listen to clients
 	klog.Info("starting fornaxcore rest api server")
 	// +kubebuilder:scaffold:resource-register
 	apiserver := builder.APIServer.

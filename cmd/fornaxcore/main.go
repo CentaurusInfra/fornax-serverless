@@ -48,25 +48,10 @@ func init() {
 }
 
 func main() {
-	// initialize fornax resource store
+	// initialize fornax resource memory store
 	ctx := context.Background()
-	backend, err := factory.NewApplicationEtcdStore(ctx, []string{"http://127.0.0.1:2379"})
-	if err != nil {
-		klog.Fatal(err)
-		os.Exit(-1)
-	}
-	appStore := factory.NewFornaxApplicationStorage(backend)
-	err = appStore.Load(ctx)
-	if err != nil {
-		klog.Fatal(err)
-		os.Exit(-1)
-	}
+	appStatusStore := factory.NewFornaxApplicationStatusStorage()
 	appSessionStore := factory.NewFornaxApplicationSessionStorage()
-	err = appSessionStore.Load(ctx)
-	if err != nil {
-		klog.Fatal(err)
-		os.Exit(-1)
-	}
 
 	// new fornaxcore grpc grpcServer which implement node agent proxy
 	grpcServer := grpc_server.NewGrpcServer()
@@ -87,7 +72,7 @@ func main() {
 
 	// start application manager at last as it require api server
 	klog.Info("starting application manager")
-	appManager := application.NewApplicationManager(ctx, podManager, sessionManager, appStore, appSessionStore)
+	appManager := application.NewApplicationManager(ctx, podManager, sessionManager, appStatusStore, appSessionStore)
 	appManager.Run(ctx)
 
 	// start fornaxcore grpc server to listen nodes
@@ -97,7 +82,7 @@ func main() {
 	// TODO, parse flags before start api server and get certificates from command line flags,
 	certFile := ""
 	keyFile := ""
-	err = grpcServer.RunGrpcServer(ctx, nodemonitor.NewNodeMonitor(nodeManager), port, certFile, keyFile)
+	err := grpcServer.RunGrpcServer(ctx, nodemonitor.NewNodeMonitor(nodeManager), port, certFile, keyFile)
 	if err != nil {
 		klog.Fatal(err)
 	}

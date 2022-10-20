@@ -98,7 +98,6 @@ func ObjectResourceVersion(obj runtime.Object) (uint64, error) {
 	if len(version) == 0 {
 		return 0, nil
 	}
-
 	return strconv.ParseUint(version, 10, 64)
 }
 

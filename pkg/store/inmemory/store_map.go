@@ -47,10 +47,9 @@ type objState struct {
 }
 
 type objWithIndex struct {
-	key        string
-	obj        runtime.Object
-	index      uint64
-	storageRev int64
+	key   string
+	obj   runtime.Object
+	index uint64
 }
 
 type objList []*objWithIndex

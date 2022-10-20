@@ -32,15 +32,17 @@ import (
 
 	fornaxv1 "centaurusinfra.io/fornax-serverless/pkg/apis/core/v1"
 	fornaxstore "centaurusinfra.io/fornax-serverless/pkg/store"
+	"centaurusinfra.io/fornax-serverless/pkg/store/composite"
 	"centaurusinfra.io/fornax-serverless/pkg/store/inmemory"
 	"centaurusinfra.io/fornax-serverless/pkg/store/storage"
-	"centaurusinfra.io/fornax-serverless/pkg/store/storage/etcd"
 	"centaurusinfra.io/fornax-serverless/pkg/util"
 )
 
 var (
-	_InMemoryStoresMutex = &sync.RWMutex{}
-	_InMemoryStores      = map[string]*inmemory.MemoryStore{}
+	_FornaxInMemoryStoresMutex  = &sync.RWMutex{}
+	_InMemoryResourceStores     = map[string]*inmemory.MemoryStore{}
+	_FornaxCompositeStoresMutex = &sync.RWMutex{}
+	_CompositedResourceStores   = map[string]*composite.CompositeStore{}
 )
 
 type FornaxRestOptionsFactory struct {
@@ -49,7 +51,13 @@ type FornaxRestOptionsFactory struct {
 
 func (f *FornaxRestOptionsFactory) GetRESTOptions(resource schema.GroupResource) (generic.RESTOptions, error) {
 	options, err := f.OptionsGetter.GetRESTOptions(resource)
-	options.Decorator = FornaxStorageFunc
+	if resource == fornaxv1.ApplicationGrv.GroupResource() {
+		options.Decorator = CompositedFornaxApplicationStorageFunc
+	} else if resource == fornaxv1.ApplicationSessionGrv.GroupResource() {
+		options.Decorator = FornaxApplicationSessionStorageFunc
+	} else {
+		return options, fmt.Errorf("unknown resource %v", resource)
+	}
 	if err != nil {
 		return options, err
 	}
@@ -82,38 +90,29 @@ func JsonFromApplication(obj interface{}) ([]byte, error) {
 	return bytes, nil
 }
 
-func NewApplicationEtcdStore(ctx context.Context, etcdEndPoints []string) (storage.StoreWithRevision, error) {
-	backend, err := etcd.NewEtcdStore(ctx, etcdEndPoints, fornaxv1.ApplicationGrvKey, JsonToApplication, JsonFromApplication)
-	if err != nil {
-		return nil, err
-	}
-	return backend, nil
-}
-
-func NewFornaxApplicationStorage(backend storage.StoreWithRevision) *inmemory.MemoryStore {
-	a := &fornaxv1.Application{}
-	return NewFornaxStorage(fornaxv1.ApplicationGrv.GroupResource(), fornaxv1.ApplicationGrvKey, a.New, a.NewList, backend)
+func NewFornaxApplicationStatusStorage() *inmemory.MemoryStore {
+	return newFornaxStorage(fornaxv1.ApplicationGrv.GroupResource(), fornaxv1.ApplicationGrvKey, nil, nil)
 }
 
 func NewFornaxApplicationSessionStorage() *inmemory.MemoryStore {
-	return NewFornaxStorage(fornaxv1.ApplicationSessionGrv.GroupResource(), fornaxv1.ApplicationSessionGrvKey, nil, nil, nil)
+	return newFornaxStorage(fornaxv1.ApplicationSessionGrv.GroupResource(), fornaxv1.ApplicationSessionGrvKey, nil, nil)
 }
 
-func NewFornaxStorage(groupResource schema.GroupResource, grvKey string, newFunc func() runtime.Object, newListFunc func() runtime.Object, backendStore storage.StoreWithRevision) *inmemory.MemoryStore {
-	_InMemoryStoresMutex.Lock()
-	defer _InMemoryStoresMutex.Unlock()
+func newFornaxStorage(groupResource schema.GroupResource, grvKey string, newFunc func() runtime.Object, newListFunc func() runtime.Object) *inmemory.MemoryStore {
+	_FornaxInMemoryStoresMutex.Lock()
+	defer _FornaxInMemoryStoresMutex.Unlock()
 	key := groupResource.String()
-	if si, found := _InMemoryStores[key]; found {
+	if si, found := _InMemoryResourceStores[key]; found {
 		return si
 	} else {
-		si = inmemory.NewMemoryStore(groupResource, grvKey, newFunc, newListFunc, backendStore)
-		_InMemoryStores[key] = si
+		si = inmemory.NewMemoryStore(groupResource, grvKey, newFunc, newListFunc)
+		_InMemoryResourceStores[key] = si
 		return si
 	}
 }
 
 // this function is provided to k8s api server to get resource storage.Interface
-func FornaxStorageFunc(
+func CompositedFornaxApplicationStorageFunc(
 	storageConfig *storagebackend.ConfigForResource,
 	resourcePrefix string,
 	keyFunc func(obj runtime.Object) (string, error),
@@ -123,16 +122,75 @@ func FornaxStorageFunc(
 	triggerFuncs apistorage.IndexerFuncs,
 	indexers *cache.Indexers) (apistorage.Interface, factory.DestroyFunc, error) {
 
-	s, d, err := factory.Create(*storageConfig, newFunc)
-	if err != nil {
-		return s, d, err
+	key := storageConfig.GroupResource.String()
+	_FornaxCompositeStoresMutex.Lock()
+	defer _FornaxCompositeStoresMutex.Unlock()
+	if s, f := _CompositedResourceStores[key]; f {
+		return s, s.DestroyFunc, nil
 	}
 
+	specStore, persistStoreDestroyFunc, err := factory.Create(*storageConfig, newFunc)
+	if err != nil {
+		return specStore, persistStoreDestroyFunc, err
+	}
+	statusStore := NewFornaxApplicationStatusStorage()
+	statusStore.CompleteWithFunctions(keyFunc, newFunc, newListFunc, getAttrsFunc, triggerFuncs, indexers)
+	destroyFunc := func() {
+		persistStoreDestroyFunc()
+		statusStore.Stop()
+	}
+	cStore := composite.NewCompositeStore(storageConfig.GroupResource, specStore, statusStore, applicationStatusAndRevisionMerge, newFunc, newListFunc, keyFunc, destroyFunc)
+	cStore.Run(context.Background())
+	_CompositedResourceStores[key] = cStore
+	return cStore, destroyFunc, nil
+}
+
+func applicationKeyFunc(o runtime.Object) (string, error) {
+	if obj, ok := o.(*fornaxv1.Application); ok {
+		return fmt.Sprintf("%s/%s", fornaxv1.ApplicationGrvKey, util.Name(obj)), nil
+	} else {
+		return "", fmt.Errorf("not a valid fornax Application")
+	}
+}
+
+func applicationStatusAndRevisionMerge(from runtime.Object, to runtime.Object) error {
+	fromApp, ok := from.(*fornaxv1.Application)
+	if !ok {
+		return fmt.Errorf("from object is not a valid fornax Application runtime object")
+	}
+	toApp, ok := to.(*fornaxv1.Application)
+	if !ok {
+		return fmt.Errorf("from object is not a valid fornax Application runtime object")
+	}
+
+	status := fromApp.Status.DeepCopy()
+	toApp.Status = *status
+	if status.TotalInstances == 0 {
+		util.RemoveFinalizer(&toApp.ObjectMeta, fornaxv1.FinalizerApplicationPod)
+	} else {
+		util.AddFinalizer(&toApp.ObjectMeta, fornaxv1.FinalizerApplicationPod)
+	}
+	toApp.ResourceVersion = fromApp.ResourceVersion
+
+	return nil
+}
+
+// this function is provided to k8s api server to get resource storage.Interface
+func FornaxApplicationSessionStorageFunc(
+	storageConfig *storagebackend.ConfigForResource,
+	resourcePrefix string,
+	keyFunc func(obj runtime.Object) (string, error),
+	newFunc func() runtime.Object,
+	newListFunc func() runtime.Object,
+	getAttrsFunc apistorage.AttrFunc,
+	triggerFuncs apistorage.IndexerFuncs,
+	indexers *cache.Indexers) (apistorage.Interface, factory.DestroyFunc, error) {
+
 	var storage *inmemory.MemoryStore
-	_InMemoryStoresMutex.Lock()
+	_FornaxInMemoryStoresMutex.Lock()
 	key := storageConfig.GroupResource.String()
-	defer _InMemoryStoresMutex.Unlock()
-	if b, f := _InMemoryStores[key]; !f {
+	defer _FornaxInMemoryStoresMutex.Unlock()
+	if b, f := _InMemoryResourceStores[key]; !f {
 		return nil, nil, fmt.Errorf("Can not find a regisgered store for %s", key)
 	} else {
 		storage = b
@@ -140,7 +198,6 @@ func FornaxStorageFunc(
 
 	storage.CompleteWithFunctions(keyFunc, newFunc, newListFunc, getAttrsFunc, triggerFuncs, indexers)
 	destroyFunc := func() {
-		d()
 		storage.Stop()
 	}
 

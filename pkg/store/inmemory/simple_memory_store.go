@@ -25,12 +25,12 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/klog/v2"
 
 	"centaurusinfra.io/fornax-serverless/pkg/store"
-	"centaurusinfra.io/fornax-serverless/pkg/store/storage"
 	"centaurusinfra.io/fornax-serverless/pkg/util"
 
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -53,7 +53,6 @@ type MemoryStore struct {
 	groupResource   schema.GroupResource
 	grvKeyPrefix    string
 	watchers        []*memoryStoreWatcher
-	backendStorage  storage.StoreWithRevision
 
 	keyFunc      func(obj runtime.Object) (string, error)
 	newFunc      func() runtime.Object
@@ -63,12 +62,13 @@ type MemoryStore struct {
 	indexers     *cache.Indexers
 }
 
+// a workgroud to make sure memory revision will not move back, if machine clock does not rewind
 var (
-	_MemoryRev = uint64(1)
+	_MemoryRev = uint64(2<<61) + uint64(time.Now().UnixMicro())
 )
 
 // NewMemoryStore return a singleton storage.Interface for a groupResource
-func NewMemoryStore(groupResource schema.GroupResource, grvKeyPrefix string, newFunc func() runtime.Object, newListFunc func() runtime.Object, backendStorage storage.StoreWithRevision) *MemoryStore {
+func NewMemoryStore(groupResource schema.GroupResource, grvKeyPrefix string, newFunc func() runtime.Object, newListFunc func() runtime.Object) *MemoryStore {
 	key := groupResource.String()
 	klog.InfoS("New or Get a in memory store for", "resource", key)
 	si := &MemoryStore{
@@ -83,7 +83,6 @@ func NewMemoryStore(groupResource schema.GroupResource, grvKeyPrefix string, new
 		grvKeyPrefix:    grvKeyPrefix,
 		groupResource:   groupResource,
 		watchers:        []*memoryStoreWatcher{},
-		backendStorage:  backendStorage,
 	}
 	return si
 }
@@ -106,87 +105,6 @@ func (ms *MemoryStore) CompleteWithFunctions(
 	return nil
 }
 
-// load data from backend storage to a initialized state
-// it build inmemory storage using object from backend storage, and watch backend storage for updates
-func (ms *MemoryStore) Load(ctx context.Context) error {
-	ms.freezeWorld.Lock()
-	defer ms.freezeWorld.Unlock()
-	if ms.backendStorage != nil {
-		rev := int64(0)
-		for {
-			objs, err := ms.backendStorage.ListObject(0)
-			if err != nil {
-				return err
-			}
-			for _, v := range objs {
-				if robj, ok := v.Obj.(runtime.Object); !ok {
-					return fmt.Errorf("%v not a runtime.Object ", v)
-				} else {
-					key, err := ms.getKey(robj)
-					if err != nil {
-						return err
-					}
-					existObj := ms.newFunc()
-					err = ms.Get(ctx, key, apistorage.GetOptions{}, existObj)
-					if err == nil {
-						existRv, err := objectResourceVersion(existObj)
-						if err != nil {
-							klog.ErrorS(err, "Unexpected inmemory storage error", "key", key)
-							return apistorage.NewInternalError(err.Error())
-						}
-						if existRv < uint64(v.Revision) {
-							err = ms.GuaranteedUpdate(ctx, key, ms.newFunc(), true, nil, ms.getTryUpdateFunc(robj), nil)
-							if err != nil {
-								klog.ErrorS(err, "Unexpected inmemory storage error", "key", key)
-								continue
-							}
-						}
-					}
-					if err != nil && apistorage.IsNotFound(err) {
-						ms.Create(ctx, key, robj, ms.newFunc(), 0)
-					}
-					// something unexpected error
-					if err != nil {
-						klog.ErrorS(err, "Unexpected inmemory storage error", "key", key)
-						continue
-					}
-				}
-			}
-
-			rev, err = ms.watchBackendStorage(rev)
-			if err != nil {
-				continue
-			}
-		}
-	}
-	return nil
-}
-
-func (ms *MemoryStore) watchBackendStorage(rev int64) (int64, error) {
-	if ms.backendStorage != nil {
-		updateCh := make(chan *storage.RevisionEvent)
-		defer close(updateCh)
-		ms.backendStorage.Watch(ms.grvKeyPrefix, rev, updateCh)
-		for {
-			select {
-			case event := <-updateCh:
-				if event.IsError {
-					return rev, event.Err
-				}
-				if event.Rev > rev {
-					rev = event.Rev
-				}
-				ms.handleWatchEvent(event)
-			}
-		}
-	}
-	return rev, nil
-}
-
-func (ms *MemoryStore) handleWatchEvent(event *storage.RevisionEvent) error {
-	return nil
-}
-
 func (ms *MemoryStore) getKey(obj runtime.Object) (string, error) {
 	if ms.keyFunc != nil {
 		return ms.keyFunc(obj)
@@ -200,7 +118,6 @@ func (ms *MemoryStore) getKey(obj runtime.Object) (string, error) {
 func (ms *MemoryStore) Stop() error {
 	ms.freezeWorld.Lock()
 	defer ms.freezeWorld.Unlock()
-	// TODO unload data into backend storage
 	return nil
 }
 
@@ -240,9 +157,6 @@ func (ms *MemoryStore) Create(ctx context.Context, key string, obj runtime.Objec
 			obj:   obj.DeepCopyObject(),
 			index: index,
 		}
-		if ms.backendStorage != nil {
-			ms.backendStorage.PutObject(key, obj, 0)
-		}
 		err = ms.kvs.put(keys, objWi, 0)
 		if err != nil {
 			return err
@@ -270,7 +184,7 @@ func (ms *MemoryStore) Delete(ctx context.Context, key string, out runtime.Objec
 	defer ms.freezeWorld.RUnlock()
 
 	if cachedExistingObject != nil {
-		_, err := objectResourceVersion(cachedExistingObject)
+		_, err := store.ObjectResourceVersion(cachedExistingObject)
 		if err != nil {
 			return apistorage.NewInternalError(err.Error())
 		}
@@ -284,7 +198,7 @@ func (ms *MemoryStore) Delete(ctx context.Context, key string, out runtime.Objec
 			ms.revmu.Lock()
 			defer ms.revmu.Unlock()
 			currObj := existingObj.obj.DeepCopyObject()
-			_, err := objectResourceVersion(currObj)
+			_, err := store.ObjectResourceVersion(currObj)
 			if err != nil {
 				return 0, apistorage.NewInternalError(err.Error())
 			}
@@ -295,8 +209,10 @@ func (ms *MemoryStore) Delete(ctx context.Context, key string, out runtime.Objec
 				}
 			}
 
-			if err := validateDeletion(ctx, currObj); err != nil {
-				return 0, err
+			if validateDeletion != nil {
+				if err := validateDeletion(ctx, currObj); err != nil {
+					return 0, err
+				}
 			}
 
 			rev := atomic.AddUint64(&_MemoryRev, 1)
@@ -306,9 +222,6 @@ func (ms *MemoryStore) Delete(ctx context.Context, key string, out runtime.Objec
 			return err
 		}
 
-		if ms.backendStorage != nil {
-			ms.backendStorage.DelObject(key, 0)
-		}
 		err = ms.kvs.del(keys)
 		if err != nil {
 			return err
@@ -332,7 +245,7 @@ func (ms *MemoryStore) Delete(ctx context.Context, key string, out runtime.Objec
 
 // Get implements storage.Interface
 func (ms *MemoryStore) Get(ctx context.Context, key string, opts apistorage.GetOptions, out runtime.Object) error {
-	klog.InfoS("GWJ get object", "key", key, "opts", opts)
+	// klog.InfoS("GWJ get object", "key", key, "opts", opts)
 	ms.freezeWorld.RLock()
 	defer ms.freezeWorld.RUnlock()
 	outVal, err := conversion.EnforcePtr(out)
@@ -348,7 +261,7 @@ func (ms *MemoryStore) Get(ctx context.Context, key string, opts apistorage.GetO
 		return apistorage.NewKeyNotFoundError(key, 0)
 	} else {
 		currObj := existingObj.obj.DeepCopyObject()
-		currObjRv, err := objectResourceVersion(currObj)
+		currObjRv, err := store.ObjectResourceVersion(currObj)
 		if err != nil {
 			return apistorage.NewInternalError(err.Error())
 		}
@@ -409,7 +322,7 @@ func (ms *MemoryStore) GetList(ctx context.Context, key string, opts apistorage.
 		}
 
 		var continueRV int64
-		continueKey, continueRV, err = decodeContinue(pred.Continue, keyPrefix)
+		continueKey, continueRV, err = store.DecodeContinue(pred.Continue, keyPrefix)
 		if err != nil {
 			return apierrors.NewBadRequest(fmt.Sprintf("invalid continue token: %v", err))
 		}
@@ -424,7 +337,7 @@ func (ms *MemoryStore) GetList(ctx context.Context, key string, opts apistorage.
 		// if object with continueKey is updated since last return, use continueRV do a binary search to get a index
 		continueKeys := strings.Split(continueKey, "/")
 		if obj := ms.kvs.get(continueKeys); obj != nil {
-			objRV, _ := ms.versioner.ObjectResourceVersion(obj.obj)
+			objRV, _ := store.ObjectResourceVersion(obj.obj)
 			if objRV == withRV {
 				searchingIndex = obj.index
 			} else {
@@ -459,7 +372,7 @@ func (ms *MemoryStore) GetList(ctx context.Context, key string, opts apistorage.
 	for i := searchingIndex; i < listBufferLen; i++ {
 		v := ms.kvList[i]
 		if v != nil {
-			rv, _ := ms.versioner.ObjectResourceVersion(v.obj)
+			rv, _ := store.ObjectResourceVersion(v.obj)
 			lastKey = v.key
 			lastRev = rv
 			if !strings.HasPrefix(lastKey, keyPrefix) {
@@ -468,16 +381,16 @@ func (ms *MemoryStore) GetList(ctx context.Context, key string, opts apistorage.
 			switch match {
 			case metav1.ResourceVersionMatchNotOlderThan:
 				if rv >= withRV {
-					appendListItem(listRetVal, v.obj, rv, pred, ms.versioner)
+					store.AppendListItem(listRetVal, v.obj, rv, pred, ms.versioner)
 				}
 			case metav1.ResourceVersionMatchExact:
 				if rv > withRV {
-					appendListItem(listRetVal, v.obj, rv, pred, ms.versioner)
+					store.AppendListItem(listRetVal, v.obj, rv, pred, ms.versioner)
 				}
 			case "":
 				if rv > withRV {
 					// append
-					appendListItem(listRetVal, v.obj, rv, pred, ms.versioner)
+					store.AppendListItem(listRetVal, v.obj, rv, pred, ms.versioner)
 				}
 			default:
 				return fmt.Errorf("unknown ResourceVersionMatch value: %v", match)
@@ -495,7 +408,7 @@ func (ms *MemoryStore) GetList(ctx context.Context, key string, opts apistorage.
 
 	// klog.InfoS("GWJ get list return a list", "len", listRetVal.Len(), "lastkey", lastKey, "last rev", lastRev, "hasMore", hasMore)
 	if hasMore {
-		continueToken, err := encodeContinue(lastKey, keyPrefix, lastRev)
+		continueToken, err := store.EncodeContinue(lastKey, keyPrefix, lastRev)
 		if err != nil {
 			return err
 		}
@@ -529,14 +442,13 @@ func (ms *MemoryStore) GuaranteedUpdate(ctx context.Context, key string, out run
 	} else {
 		// get current object state
 		currObj := curObjWi.obj.DeepCopyObject()
-		currStorageRev := curObjWi.storageRev
-		currRv, err := objectResourceVersion(currObj)
+		currRv, err := store.ObjectResourceVersion(currObj)
 		if err != nil {
 			return apistorage.NewInternalError(err.Error())
 		}
 
 		if cachedExistingObject != nil {
-			s, err := objectResourceVersion(cachedExistingObject)
+			s, err := store.ObjectResourceVersion(cachedExistingObject)
 			if err != nil {
 				return apistorage.NewInternalError(err.Error())
 			}
@@ -552,7 +464,7 @@ func (ms *MemoryStore) GuaranteedUpdate(ctx context.Context, key string, out run
 		}
 
 		// use try update to get a updated object of currObj, try update function should verify it's updating same revision of currObj
-		ret, _, err := updateState(ms.versioner, currObj, tryUpdate)
+		ret, _, err := store.UpdateState(ms.versioner, currObj, tryUpdate)
 		if err != nil {
 			return err
 		}
@@ -565,20 +477,13 @@ func (ms *MemoryStore) GuaranteedUpdate(ctx context.Context, key string, out run
 		if err := ms.versioner.UpdateObject(ret, rev); err != nil {
 			return err
 		}
+
+		// update object in kv store, also pass currRv to check being updated object in kv store is still same revision
 		newObjWi := &objWithIndex{
 			key:   key,
 			obj:   ret.DeepCopyObject(),
 			index: index,
 		}
-
-		if ms.backendStorage != nil {
-			sRev, err := ms.backendStorage.PutObject(key, newObjWi.obj, currStorageRev)
-			if err != nil {
-				return err
-			}
-			newObjWi.storageRev = sRev
-		}
-		// put updated object back to kv store, also pass currRv to let it object in kv store is still same revision
 		err = ms.kvs.put(keys, newObjWi, currRv)
 		if err != nil {
 			return err
@@ -590,6 +495,218 @@ func (ms *MemoryStore) GuaranteedUpdate(ctx context.Context, key string, out run
 		event := &objEvent{
 			key:       key,
 			obj:       out.DeepCopyObject(),
+			oldObj:    currObj,
+			rev:       rev,
+			isDeleted: false,
+			isCreated: false,
+		}
+		ms.sendEvent(event)
+	}
+
+	return nil
+}
+
+// Create an obj it it does not exist, or update existing one, increase revision
+func (ms *MemoryStore) CreateOrUpdate(ctx context.Context, key string, obj runtime.Object, out runtime.Object, mergeFunc func(from runtime.Object, to runtime.Object) error) error {
+	klog.InfoS("GWJ update object", "key", key)
+	ms.freezeWorld.RLock()
+	defer ms.freezeWorld.RUnlock()
+	outVal, err := conversion.EnforcePtr(out)
+	if err != nil {
+		return fmt.Errorf("unable to convert output object to pointer: %v", err)
+	}
+
+	keys := strings.Split(key, "/")
+	if curObjWi := ms.kvs.get(keys); curObjWi == nil {
+		newObj := obj.DeepCopyObject()
+		rev, index, err := ms.reserveRevAndSlot()
+		if err != nil {
+			return err
+		}
+		ms.versioner.UpdateObject(newObj, rev)
+		objWi := &objWithIndex{
+			key:   key,
+			obj:   newObj.DeepCopyObject(),
+			index: index,
+		}
+		err = ms.kvs.put(keys, objWi, 0)
+		if err != nil {
+			return err
+		}
+		ms.kvList[index] = objWi
+		outVal.Set(reflect.ValueOf(newObj).Elem())
+
+		event := &objEvent{
+			key:       key,
+			obj:       newObj.DeepCopyObject(),
+			oldObj:    nil,
+			rev:       rev,
+			isDeleted: false,
+			isCreated: true,
+		}
+		ms.sendEvent(event)
+
+	} else {
+		// get current object state
+		currObj := curObjWi.obj.DeepCopyObject()
+		currRv, err := store.ObjectResourceVersion(currObj)
+		if err != nil {
+			return apistorage.NewInternalError(err.Error())
+		}
+
+		// merge exiting object into passed obj
+		newObj := obj.DeepCopyObject()
+		if mergeFunc != nil {
+			err = mergeFunc(currObj, newObj)
+			if err != nil {
+				return err
+			}
+		} else {
+			return fmt.Errorf("Do not have merge function to update existing object using provided obj")
+		}
+
+		// bump updated object revsion
+		rev, index, err := ms.reserveRevAndSlot()
+		if err != nil {
+			return err
+		}
+		if err := ms.versioner.UpdateObject(newObj, rev); err != nil {
+			return err
+		}
+
+		// update object in kv store, also pass currRv to check being updated object in kv store is still same revision
+		newObjWi := &objWithIndex{
+			key:   key,
+			obj:   newObj,
+			index: index,
+		}
+		err = ms.kvs.put(keys, newObjWi, currRv)
+		if err != nil {
+			return err
+		}
+		ms.kvList[curObjWi.index] = nil
+		ms.kvList[newObjWi.index] = newObjWi
+		outVal.Set(reflect.ValueOf(newObj).Elem())
+
+		event := &objEvent{
+			key:       key,
+			obj:       newObj.DeepCopyObject(),
+			oldObj:    currObj,
+			rev:       rev,
+			isDeleted: false,
+			isCreated: false,
+		}
+		ms.sendEvent(event)
+	}
+
+	return nil
+}
+
+// get a object if key exist, if not create a obj using passed objToCreate, and set a new revision for created obj, return it in out
+func (ms *MemoryStore) GetOrCreate(ctx context.Context, key string, objToCreate runtime.Object, out runtime.Object) error {
+	klog.InfoS("GWJ get or create object", "key", key)
+	ms.freezeWorld.RLock()
+	defer ms.freezeWorld.RUnlock()
+	outVal, err := conversion.EnforcePtr(out)
+	if err != nil {
+		return fmt.Errorf("unable to convert output object to pointer: %v", err)
+	}
+
+	keys := strings.Split(key, "/")
+	if curObjWi := ms.kvs.get(keys); curObjWi == nil {
+		newObj := objToCreate.DeepCopyObject()
+		rev, index, err := ms.reserveRevAndSlot()
+		if err != nil {
+			return err
+		}
+		ms.versioner.UpdateObject(newObj, rev)
+		objWi := &objWithIndex{
+			key:   key,
+			obj:   newObj.DeepCopyObject(),
+			index: index,
+		}
+		err = ms.kvs.put(keys, objWi, 0)
+		if err != nil {
+			return err
+		}
+		ms.kvList[index] = objWi
+		outVal.Set(reflect.ValueOf(newObj).Elem())
+
+		event := &objEvent{
+			key:       key,
+			obj:       newObj.DeepCopyObject(),
+			oldObj:    nil,
+			rev:       rev,
+			isDeleted: false,
+			isCreated: true,
+		}
+		ms.sendEvent(event)
+	} else {
+		// get current object state
+		currObj := curObjWi.obj.DeepCopyObject()
+		outVal.Set(reflect.ValueOf(currObj).Elem())
+	}
+
+	return nil
+}
+
+// check if a object exist, if does not exit create a obj using passed objToCreate, and set a new revision for created obj, return it in out,
+// if exist, use passed objToCreate to replace existing one, increase revision of object
+func (ms *MemoryStore) CreateOrReplace(ctx context.Context, key string, out runtime.Object, objToCreate runtime.Object) error {
+	klog.InfoS("GWJ create or replace a object", "key", key)
+	ms.freezeWorld.RLock()
+	defer ms.freezeWorld.RUnlock()
+	outVal, err := conversion.EnforcePtr(out)
+	if err != nil {
+		return fmt.Errorf("unable to convert output object to pointer: %v", err)
+	}
+
+	newObj := objToCreate.DeepCopyObject()
+	rev, index, err := ms.reserveRevAndSlot()
+	if err != nil {
+		return err
+	}
+	ms.versioner.UpdateObject(newObj, rev)
+	newObjWi := &objWithIndex{
+		key:   key,
+		obj:   newObj.DeepCopyObject(),
+		index: index,
+	}
+
+	keys := strings.Split(key, "/")
+	if curObjWi := ms.kvs.get(keys); curObjWi == nil {
+		err = ms.kvs.put(keys, newObjWi, 0)
+		if err != nil {
+			return err
+		}
+		ms.kvList[index] = newObjWi
+		outVal.Set(reflect.ValueOf(newObj).Elem())
+		event := &objEvent{
+			key:       key,
+			obj:       out.DeepCopyObject(),
+			oldObj:    nil,
+			rev:       rev,
+			isDeleted: false,
+			isCreated: true,
+		}
+		ms.sendEvent(event)
+	} else {
+		// get current object state
+		currObj := curObjWi.obj.DeepCopyObject()
+		currRv, err := store.ObjectResourceVersion(currObj)
+		if err != nil {
+			return apistorage.NewInternalError(err.Error())
+		}
+		err = ms.kvs.put(keys, newObjWi, currRv)
+		if err != nil {
+			return err
+		}
+		ms.kvList[curObjWi.index] = nil
+		ms.kvList[index] = newObjWi
+		outVal.Set(reflect.ValueOf(newObj).Elem())
+		event := &objEvent{
+			key:       key,
+			obj:       newObj.DeepCopyObject(),
 			oldObj:    currObj,
 			rev:       rev,
 			isDeleted: false,
@@ -618,30 +735,16 @@ func (ms *MemoryStore) WatchWithOldObj(ctx context.Context, key string, opts api
 
 // EnsureUpdateAndDelete implements FornaxStorage, it update object and delete it if object has delete timestamp and empty finalizer, delete it
 func (ms *MemoryStore) EnsureUpdateAndDelete(ctx context.Context, key string, ignoreNotFound bool, preconditions *apistorage.Preconditions, updatedObj runtime.Object, output runtime.Object) error {
-	err := ms.GuaranteedUpdate(ctx, key, output, ignoreNotFound, preconditions, ms.getTryUpdateFunc(updatedObj), nil)
+	err := ms.GuaranteedUpdate(ctx, key, output, ignoreNotFound, preconditions, store.GetTryUpdateFunc(updatedObj), nil)
 	if err != nil {
 		return err
 	}
 
-	if shouldDeleteDuringUpdate(output) {
+	if store.ShouldDeleteSpec(output) {
 		err = ms.Delete(ctx, key, output, preconditions, func(ctx context.Context, obj runtime.Object) error { return nil }, output)
 	}
 
 	return nil
-}
-
-func (ms *MemoryStore) getTryUpdateFunc(updating runtime.Object) apistorage.UpdateFunc {
-	return func(existing runtime.Object, res apistorage.ResponseMeta) (runtime.Object, *uint64, error) {
-		existingVersion, err := ms.versioner.ObjectResourceVersion(existing)
-		if err != nil {
-			return nil, nil, err
-		}
-		updatingVersion, err := ms.versioner.ObjectResourceVersion(updating)
-		if existingVersion != updatingVersion {
-			return nil, nil, fmt.Errorf("object is already updated to a newer version, get it and update again")
-		}
-		return updating.DeepCopyObject(), nil, nil
-	}
 }
 
 func (ms *MemoryStore) watch(ctx context.Context, key string, opts apistorage.ListOptions, withOldObj bool) (*memoryStoreWatcher, error) {
@@ -690,7 +793,7 @@ func (ms *MemoryStore) getObjEventsAfterRev(key string, rev uint64, opts apistor
 		if v == nil || !strings.HasPrefix(v.key, prefix) {
 			continue
 		}
-		oRev, _ := objectResourceVersion(v.obj)
+		oRev, _ := store.ObjectResourceVersion(v.obj)
 		e := &objEvent{
 			key:       v.key,
 			obj:       v.obj,
@@ -729,7 +832,7 @@ func (ms *MemoryStore) binarySearchInObjList(rv uint64) uint64 {
 		if obj == nil {
 			return false
 		}
-		objRV, _ := objectResourceVersion(obj.obj)
+		objRV, _ := store.ObjectResourceVersion(obj.obj)
 		return objRV >= rv
 	}
 	index := uint64(sort.Search(len(ms.kvList), f))
@@ -739,7 +842,6 @@ func (ms *MemoryStore) binarySearchInObjList(rv uint64) uint64 {
 // send objEvent to watchers and remove watcher who has failure to receive event
 func (ms *MemoryStore) sendEvent(event *objEvent) {
 	ms.watchEventCache.addObjEvents(event)
-
 	watchers := []*memoryStoreWatcher{}
 	for _, v := range ms.watchers {
 		if !v.stopped {
@@ -798,7 +900,7 @@ func (ms *MemoryStore) getSingleObjectAsList(ctx context.Context, key string, op
 	if obj := ms.kvs.get(keys); obj == nil {
 		return ms.versioner.UpdateList(listObj, atomic.LoadUint64(&_MemoryRev), "", nil)
 	} else {
-		rv, err := ms.versioner.ObjectResourceVersion(obj.obj)
+		rv, err := store.ObjectResourceVersion(obj.obj)
 		if err != nil {
 			return err
 		}
@@ -806,25 +908,41 @@ func (ms *MemoryStore) getSingleObjectAsList(ctx context.Context, key string, op
 			switch match {
 			case metav1.ResourceVersionMatchNotOlderThan:
 				if rv >= *fromRV {
-					appendListItem(listRetVal, obj.obj, rv, pred, ms.versioner)
+					store.AppendListItem(listRetVal, obj.obj, rv, pred, ms.versioner)
 				}
 			case metav1.ResourceVersionMatchExact:
 				if rv == *fromRV {
-					appendListItem(listRetVal, obj.obj, rv, pred, ms.versioner)
+					store.AppendListItem(listRetVal, obj.obj, rv, pred, ms.versioner)
 				}
 			case "":
 				if rv > *fromRV {
 					// append
-					appendListItem(listRetVal, obj.obj, rv, pred, ms.versioner)
+					store.AppendListItem(listRetVal, obj.obj, rv, pred, ms.versioner)
 				}
 			default:
 				return fmt.Errorf("unknown ResourceVersionMatch value: %v", match)
 			}
 		} else {
-			appendListItem(listRetVal, obj.obj, rv, pred, ms.versioner)
+			store.AppendListItem(listRetVal, obj.obj, rv, pred, ms.versioner)
 		}
 		return ms.versioner.UpdateList(listObj, rv, "", nil)
 	}
+}
+
+// validateMinimumResourceVersion returns a 'too large resource' version error when the provided minimumResourceVersion is
+// greater than the most recent actualRevision available from storage.
+func (ms *MemoryStore) validateMinimumResourceVersion(versioner apistorage.Versioner, minimumResourceVersion string, actualRevision uint64) error {
+	if minimumResourceVersion == "" {
+		return nil
+	}
+	minimumRV, err := versioner.ParseResourceVersion(minimumResourceVersion)
+	if err != nil {
+		return apierrors.NewBadRequest(fmt.Sprintf("invalid resource version: %v", err))
+	}
+	if minimumRV > actualRevision {
+		return apistorage.NewTooLargeResourceVersionError(minimumRV, actualRevision, 0)
+	}
+	return nil
 }
 
 var _ apistorage.Interface = &MemoryStore{}

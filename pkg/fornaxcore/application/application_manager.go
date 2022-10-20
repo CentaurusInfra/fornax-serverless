@@ -36,7 +36,6 @@ import (
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/apimachinery/pkg/watch"
 	apistorage "k8s.io/apiserver/pkg/storage"
-	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/util/workqueue"
 	"k8s.io/klog/v2"
 )
@@ -195,7 +194,6 @@ func (am *ApplicationManager) Run(ctx context.Context) {
 	klog.Info("Starting fornaxv1 application manager")
 
 	am.applicationStatusManager = NewApplicationStatusManager(am.applicationStore)
-	am.applicationStatusManager.Run(ctx)
 
 	am.initApplicationInformer(ctx)
 	go func() {
@@ -232,8 +230,6 @@ func (am *ApplicationManager) Run(ctx context.Context) {
 				break
 			case update := <-am.podUpdateChannel:
 				am.onPodEventFromNode(update)
-			case update := <-am.sessionUpdateChannel:
-				am.onSessionEventFromNode(update)
 			}
 		}
 	}()
@@ -289,10 +285,10 @@ func (am *ApplicationManager) onApplicationUpdateEvent(old, cur interface{}) {
 	newCopy := cur.(*fornaxv1.Application)
 
 	applicationKey := util.Name(newCopy)
-	// application status are update when session or pod changed, its own status change does not need sync,
 	// only sync when deleting or spec change
+	// application status are updated when session or pod changed, pod and session status change will trigger sync in their own event
 	if (newCopy.DeletionTimestamp != nil && oldCopy.DeletionTimestamp == nil) || !reflect.DeepEqual(oldCopy.Spec, newCopy.Spec) {
-		klog.Infof("Updating application %s", applicationKey)
+		klog.InfoS("Updating application", "app", applicationKey, "deleting", newCopy.DeletionTimestamp != nil)
 		am.enqueueApplication(applicationKey)
 	}
 }
@@ -348,6 +344,7 @@ func (am *ApplicationManager) cleanupDeletedApplication(pool *ApplicationPool) e
 
 	// if a application does not have any pod or session, remove it from application pool to save memory
 	if pool.podLength() == 0 && pool.sessionLength() == 0 {
+		klog.InfoS("No remaining pod and session for deleting application, cleanup is done", "application", pool.appName)
 		am.deleteApplicationPool(pool.appName)
 	}
 	return nil
@@ -413,8 +410,8 @@ func (am *ApplicationManager) syncApplication(ctx context.Context, applicationKe
 			syncErr = am.cleanupDeletedApplication(pool)
 		}
 
-		newStatus := am.calculateStatus(application, numOfDesiredPod, action, syncErr)
-		am.applicationStatusManager.AsyncUpdateApplicationStatus(application, newStatus)
+		newStatus := am.calculateStatus(pool, application, numOfDesiredPod, action, syncErr)
+		am.applicationStatusManager.UpdateApplicationStatus(application, newStatus)
 	}
 
 	// Requeue the Application if there is error, if no error but total pods number does not meet desired number,
@@ -510,17 +507,10 @@ func (am *ApplicationManager) calculateDesiredIdlePods(application *fornaxv1.App
 	return desiredCount
 }
 
-func (am *ApplicationManager) calculateStatus(application *fornaxv1.Application, desiredCount int, action fornaxv1.DeploymentAction, deploymentErr error) *fornaxv1.ApplicationStatus {
+func (am *ApplicationManager) calculateStatus(pool *ApplicationPool, application *fornaxv1.Application, desiredCount int, action fornaxv1.DeploymentAction, deploymentErr error) *fornaxv1.ApplicationStatus {
+	klog.InfoS("calculate status for application", "app", pool.appName)
 	newStatus := application.Status.DeepCopy()
-	applicationKey, err := cache.MetaNamespaceKeyFunc(application)
-	if err != nil {
-		return newStatus
-	}
-
-	var poolSummary ApplicationPodSummary
-	if pool := am.getApplicationPool(applicationKey); pool != nil {
-		poolSummary = pool.summaryPod(am.podManager)
-	}
+	poolSummary := pool.summaryPod(am.podManager)
 
 	if application.Status.DesiredInstances == int32(desiredCount) &&
 		application.Status.TotalInstances == poolSummary.totalCount &&

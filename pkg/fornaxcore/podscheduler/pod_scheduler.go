@@ -339,7 +339,6 @@ func (ps *podScheduler) Run() {
 				schedulers := ps.schedulers
 				if len(schedulers) == 0 {
 					// no scheduler, do not poll pods
-					klog.Info("No node is ready for scheduling pod, wait for 100ms")
 					time.Sleep(100 * time.Millisecond)
 					continue
 				}

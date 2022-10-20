@@ -19,7 +19,6 @@ package application
 import (
 	"context"
 	"fmt"
-	"reflect"
 	"sync"
 	"time"
 
@@ -92,8 +91,8 @@ func NewApplicationStatusManager(appStore fornaxstore.ApiStorageInterface) *Appl
 	}
 }
 
-// Run receive application status from channel and update applications use api service client
-func (asm *ApplicationStatusManager) Run(ctx context.Context) {
+// AsyncStatusUpdateRun receive application status from channel and update applications use api service client
+func (asm *ApplicationStatusManager) AsyncUpdateApplicationStatusRun(ctx context.Context) {
 	klog.Info("Starting fornaxv1 application status manager")
 	asm.ctx = ctx
 
@@ -163,10 +162,6 @@ func (asm *ApplicationStatusManager) _updateApplicationStatus(applicationKey str
 
 		if application == nil {
 			// application already deleted
-			return nil
-		}
-
-		if reflect.DeepEqual(application.Status, *newStatus) {
 			return nil
 		}
 

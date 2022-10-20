@@ -320,11 +320,11 @@ func (pool *ApplicationPool) _deleteSessionNoLock(session *fornaxv1.ApplicationS
 	}
 }
 
-// groupSessionsByState return a list of session of different states,
+// getNonRunningSessions return a list of session of different states,
 // pending, not assigned to pod yet
 // deleting, delete requested
 // timeout, session timedout to get a pod, or session assigned to node, but timeout to get session state from node
-func (pool *ApplicationPool) groupSessionsByState() (pendingSessions, deletingSessions, timeoutSessions []*ApplicationSession) {
+func (pool *ApplicationPool) getNonRunningSessions() (pendingSessions, deletingSessions, timeoutSessions []*ApplicationSession) {
 	pool.mu.RLock()
 	defer pool.mu.RUnlock()
 

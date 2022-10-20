@@ -87,16 +87,6 @@ func (am *ApplicationManager) onSessionEventFromNode(se *ie.SessionEvent) error 
 	pod := se.Pod
 	session := se.Session
 
-	applicationKey := getSessionApplicationKey(session)
-	pool := am.getOrCreateApplicationPool(applicationKey)
-
-	// termiante pod after sesion is closed, do this here before update session status to avoid race condition that
-	// session removed from pod and pod is set idle and be picked up by other session
-	if session.Spec.KillInstanceWhenSessionClosed && session.Status.SessionStatus == fornaxv1.SessionStatusClosed && util.PodNotTerminated(pod) {
-		klog.InfoS("Terminate a pod as KillInstanceWhenSessionClosed is true", "pod", util.Name(pod), "session", util.Name(session))
-		am.deleteApplicationPod(pool, util.Name(pod), false)
-	}
-
 	storeCopy, err := storefactory.GetApplicationSessionCache(am.sessionStore, util.Name(session))
 	if err != nil {
 		return err
@@ -125,8 +115,17 @@ func (am *ApplicationManager) onSessionEventFromNode(se *ie.SessionEvent) error 
 		}
 
 		am.sessionManager.UpdateSessionStatus(storeCopy.DeepCopy(), session.Status.DeepCopy())
-
 	}
+
+	// termiante pod after sesion is closed, do this here before update session status to avoid race condition that
+	// session removed from pod and pod is set idle and be picked up by other session
+	if session.Spec.KillInstanceWhenSessionClosed && session.Status.SessionStatus == fornaxv1.SessionStatusClosed && util.PodNotTerminated(pod) {
+		klog.InfoS("Terminate a pod as KillInstanceWhenSessionClosed is true", "pod", util.Name(pod), "session", util.Name(session))
+		applicationKey := getSessionApplicationKey(session)
+		pool := am.getOrCreateApplicationPool(applicationKey)
+		am.deleteApplicationPod(pool, util.Name(pod), false)
+	}
+
 	return nil
 }
 
@@ -165,9 +164,8 @@ func (am *ApplicationManager) onApplicationSessionAddEvent(obj interface{}) {
 }
 
 // callback from Application informer when ApplicationSession is updated
-// if session in terminal state, remove this session from pool,
-// else add new copy into pool
-// do not need to sync application unless session is deleting or status changed
+// if session already in application pool, update it and trigger application sync
+// else add new copy into pool and do not need to add new session if it's terminated if it's not in app pool, just forget it
 func (am *ApplicationManager) onApplicationSessionUpdateEvent(old, cur interface{}) {
 	oldCopy := old.(*fornaxv1.ApplicationSession)
 	newCopy := cur.(*fornaxv1.ApplicationSession)
@@ -176,14 +174,10 @@ func (am *ApplicationManager) onApplicationSessionUpdateEvent(old, cur interface
 	pool := am.getOrCreateApplicationPool(applicationKey)
 	if v := pool.getSession(string(newCopy.GetUID())); v != nil {
 		oldCopy = v.session.DeepCopy()
-		klog.InfoS("Application session updated", "session", util.Name(newCopy), "old status", oldCopy.Status.SessionStatus, "new status", newCopy.Status.SessionStatus, "deleting", newCopy.DeletionTimestamp != nil, "state", v.state)
+		klog.InfoS("Application session updated", "session", util.Name(newCopy), "old status", oldCopy.Status.SessionStatus, "new status", newCopy.Status.SessionStatus, "deleting", newCopy.DeletionTimestamp != nil)
 		updateSessionPool(pool, newCopy)
-		// if (newCopy.DeletionTimestamp != nil && oldCopy.DeletionTimestamp == nil) || !reflect.DeepEqual(oldCopy.Status, newCopy.Status) {
-		// ignore no change session sync
 		am.enqueueApplication(applicationKey)
-		// }
 	} else {
-		// do not need to add a session if it's terminated
 		if !util.SessionInTerminalState(newCopy) {
 			updateSessionPool(pool, newCopy)
 			am.enqueueApplication(applicationKey)
@@ -216,7 +210,6 @@ func (am *ApplicationManager) onApplicationSessionDeleteEvent(obj interface{}) {
 				oldCopy.session.DeletionTimestamp = util.NewCurrentMetaTime()
 			}
 		}
-
 		updateSessionPool(pool, oldCopy.session)
 		am.enqueueApplication(applicationKey)
 	} else {
@@ -255,7 +248,7 @@ func (ps PendingSessions) Swap(i, j int) {
 // session is changed to SessionStatusClosed, session client need to create a new session.
 // session timedout and closed are removed from application pool's session list, so, syncApplicationPods do not need to consider these sessions anymore
 func (am *ApplicationManager) deployApplicationSessions(pool *ApplicationPool, application *fornaxv1.Application) error {
-	pendingSessions, deletingSessions, timeoutSessions := pool.groupSessionsByState()
+	pendingSessions, deletingSessions, timeoutSessions := pool.getNonRunningSessions()
 	// get 5 more in case some pods assigment failed
 	idlePods := pool.getSomeIdlePods(len(pendingSessions))
 	klog.InfoS("Syncing application pending session", "application", pool.appName, "#pending", len(pendingSessions), "#deleting", len(deletingSessions), "#timeout", len(timeoutSessions))
@@ -389,9 +382,9 @@ func (am *ApplicationManager) bindSessionToPod(pool *ApplicationPool, pod *v1.Po
 // and does not try to call node to close session, as session does not exist at all on node when pod deleted
 func (am *ApplicationManager) cleanupSessionOnDeletedPod(pool *ApplicationPool, podName string) {
 	podSessions := pool.getPodSessions(podName)
-	for _, session := range podSessions {
-		klog.Infof("Delete session %s on deleted pod %s", util.Name(session), podName)
-		am.deleteApplicationSession(pool, session)
+	for _, sess := range podSessions {
+		klog.Infof("Delete session %s on deleted pod %s", util.Name(sess.session), podName)
+		am.deleteApplicationSession(pool, sess)
 	}
 }
 

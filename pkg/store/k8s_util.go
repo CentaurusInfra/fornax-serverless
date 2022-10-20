@@ -15,7 +15,7 @@ limitations under the License.
 */
 
 // Most of code is a COPY from k8s.io/apiserver/pkg/storage/etcd3/api_object_versioner.go
-package inmemory
+package store
 
 import (
 	"encoding/base64"
@@ -23,10 +23,8 @@ import (
 	"fmt"
 	"path"
 	"reflect"
-	"strconv"
 	"strings"
 
-	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/runtime"
 	apistorage "k8s.io/apiserver/pkg/storage"
@@ -43,73 +41,8 @@ type continueToken struct {
 	StartKey        string `json:"start"`
 }
 
-func objectResourceVersion(obj runtime.Object) (uint64, error) {
-	accessor, err := meta.Accessor(obj)
-	if err != nil {
-		return 0, err
-	}
-	version := accessor.GetResourceVersion()
-	if len(version) == 0 {
-		return 0, nil
-	}
-
-	return strconv.ParseUint(version, 10, 64)
-}
-
-func getStateFromObject(obj runtime.Object) (*objState, error) {
-}
-
-// validateMinimumResourceVersion returns a 'too large resource' version error when the provided minimumResourceVersion is
-// greater than the most recent actualRevision available from storage.
-func (ms *MemoryStore) validateMinimumResourceVersion(versioner apistorage.Versioner, minimumResourceVersion string, actualRevision uint64) error {
-	if minimumResourceVersion == "" {
-		return nil
-	}
-	minimumRV, err := versioner.ParseResourceVersion(minimumResourceVersion)
-	if err != nil {
-		return apierrors.NewBadRequest(fmt.Sprintf("invalid resource version: %v", err))
-	}
-	// Enforce the storage.Interface guarantee that the resource version of the returned data
-	// "will be at least 'resourceVersion'".
-	if minimumRV > actualRevision {
-		return apistorage.NewTooLargeResourceVersionError(minimumRV, actualRevision, 0)
-	}
-	return nil
-}
-
-// growSlice takes a slice value and grows its capacity up
-// to the maximum of the passed sizes or maxCapacity, whichever
-// is smaller. Above maxCapacity decisions about allocation are left
-// to the Go runtime on append. This allows a caller to make an
-// educated guess about the potential size of the total list while
-// still avoiding overly aggressive initial allocation. If sizes
-// is empty maxCapacity will be used as the size to grow.
-func growSlice(v reflect.Value, maxCapacity int, sizes ...int) {
-	cap := v.Cap()
-	max := cap
-	for _, size := range sizes {
-		if size > max {
-			max = size
-		}
-	}
-	if len(sizes) == 0 || max > maxCapacity {
-		max = maxCapacity
-	}
-	if max <= cap {
-		return
-	}
-	if v.Len() > 0 {
-		extra := reflect.MakeSlice(v.Type(), 0, max)
-		reflect.Copy(extra, v)
-		v.Set(extra)
-	} else {
-		extra := reflect.MakeSlice(v.Type(), 0, max)
-		v.Set(extra)
-	}
-}
-
-// appendListItem decodes and appends the object (if it passes filter) to v, which must be a slice.
-func appendListItem(v reflect.Value, obj runtime.Object, rev uint64, pred apistorage.SelectionPredicate, versioner apistorage.Versioner) error {
+// AppendListItem decodes and appends the object (if it passes filter) to v, which must be a slice.
+func AppendListItem(v reflect.Value, obj runtime.Object, rev uint64, pred apistorage.SelectionPredicate, versioner apistorage.Versioner) error {
 	// being unable to set the version does not prevent the object from being extracted
 	if err := versioner.UpdateObject(obj, rev); err != nil {
 		klog.Errorf("failed to update object version: %v", err)
@@ -120,11 +53,11 @@ func appendListItem(v reflect.Value, obj runtime.Object, rev uint64, pred apisto
 	return nil
 }
 
-func updateState(versioner apistorage.Versioner, existintObj runtime.Object, userUpdate apistorage.UpdateFunc) (runtime.Object, uint64, error) {
+func UpdateState(versioner apistorage.Versioner, existintObj runtime.Object, userUpdate apistorage.UpdateFunc) (runtime.Object, uint64, error) {
 	obj := existintObj.DeepCopyObject() // deep copy to avoid obj changed by other routine, state should be a snapshot
 	meta := apistorage.ResponseMeta{}
 
-	rv, err := objectResourceVersion(obj)
+	rv, err := ObjectResourceVersion(obj)
 	if err != nil {
 		return nil, 0, fmt.Errorf("couldn't get resource version: %v", err)
 	}
@@ -146,7 +79,7 @@ func updateState(versioner apistorage.Versioner, existintObj runtime.Object, use
 }
 
 // TODO: return a typed error that instructs clients that they must relist
-func decodeContinue(continueValue, keyPrefix string) (fromKey string, rv int64, err error) {
+func DecodeContinue(continueValue, keyPrefix string) (fromKey string, rv int64, err error) {
 	data, err := base64.RawURLEncoding.DecodeString(continueValue)
 	if err != nil {
 		return "", 0, fmt.Errorf("continue key is not valid: %v", err)
@@ -182,7 +115,7 @@ func decodeContinue(continueValue, keyPrefix string) (fromKey string, rv int64, 
 }
 
 // encodeContinue returns a string representing the encoded continuation of the current query.
-func encodeContinue(key, keyPrefix string, resourceVersion uint64) (string, error) {
+func EncodeContinue(key, keyPrefix string, resourceVersion uint64) (string, error) {
 	klog.InfoS("encode continue key", "key", key, "keyprefix", keyPrefix, "rev", resourceVersion)
 	nextKey := strings.TrimPrefix(key, keyPrefix)
 	if nextKey == key {
@@ -195,7 +128,18 @@ func encodeContinue(key, keyPrefix string, resourceVersion uint64) (string, erro
 	return base64.RawURLEncoding.EncodeToString(out), nil
 }
 
-func shouldDeleteDuringUpdate(obj runtime.Object) bool {
+func HasDeletionTimestamp(obj runtime.Object) bool {
+	objMeta, err := meta.Accessor(obj)
+	if err != nil {
+		return false
+	}
+	if objMeta.GetDeletionTimestamp() != nil {
+		return true
+	}
+	return false
+}
+
+func ShouldDeleteSpec(obj runtime.Object) bool {
 	objMeta, err := meta.Accessor(obj)
 	if err != nil {
 		return false
@@ -207,4 +151,18 @@ func shouldDeleteDuringUpdate(obj runtime.Object) bool {
 		return false
 	}
 	return objMeta.GetDeletionGracePeriodSeconds() == nil || *objMeta.GetDeletionGracePeriodSeconds() == 0
+}
+
+func GetTryUpdateFunc(updating runtime.Object) apistorage.UpdateFunc {
+	return func(existing runtime.Object, res apistorage.ResponseMeta) (runtime.Object, *uint64, error) {
+		existingVersion, err := ObjectResourceVersion(existing)
+		if err != nil {
+			return nil, nil, err
+		}
+		updatingVersion, err := ObjectResourceVersion(updating)
+		if existingVersion != updatingVersion {
+			return nil, nil, fmt.Errorf("object is already updated to a newer version, get it and update again")
+		}
+		return updating.DeepCopyObject(), nil, nil
+	}
 }

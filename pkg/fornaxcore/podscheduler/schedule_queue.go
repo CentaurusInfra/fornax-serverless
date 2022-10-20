@@ -24,8 +24,10 @@ import (
 
 	fornaxv1 "centaurusinfra.io/fornax-serverless/pkg/apis/core/v1"
 	"centaurusinfra.io/fornax-serverless/pkg/collection"
+	"centaurusinfra.io/fornax-serverless/pkg/util"
 	podutil "centaurusinfra.io/fornax-serverless/pkg/util"
 	v1 "k8s.io/api/core/v1"
+	"k8s.io/klog/v2"
 )
 
 type PodScheduleItem struct {
@@ -187,6 +189,7 @@ func (q *PodScheduleQueue) BackoffPod(v1pod *v1.Pod, backoffDuration time.Durati
 
 // AddPod add pod into active queue, if there is already a copy with same name, remove old copy and add new copy,
 func (q *PodScheduleQueue) AddPod(v1pod *v1.Pod, backoff time.Duration) {
+	st := time.Now().UnixMicro()
 	// remove old version and add new version to active queue
 	if oldcopy := q.backoffRetryQueue.RemovePod(v1pod); oldcopy != nil {
 		q.activeQueue.AddPod(v1pod, backoff)
@@ -198,6 +201,8 @@ func (q *PodScheduleQueue) AddPod(v1pod *v1.Pod, backoff time.Duration) {
 	q.c.L.Lock()
 	q.c.Broadcast()
 	q.c.L.Unlock()
+	et := time.Now().UnixMicro()
+	klog.InfoS("GWJ Done pod manager add a pod in schedule, broadcast", "pod", util.Name(v1pod), "took", et-st)
 }
 
 // RemovePod remove pod from active and retry queue

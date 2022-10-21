@@ -1,15 +1,15 @@
 # Fornax serverless
 
 ## Scope
-Fornax-Serverless is targeted as general platform hosting serverless application or function. It features a lightweight, cost-effective, and secure serverless platform.
+Fornax Serverless is targeted as general platform hosting serverless application or function. It features a lightweight and secure serverless platform.
+Fornax manage two simple resources Application and Session, and use this two resources to support use cases of 
 
 * Serverless application
 
-Application is defined by api by a client, a application does not have instance deployed until a application session is created.
-when session is created, a instance is automatically deployed in fleet, and a session endpoint is created in ingress gateway to access this session.
-when session is closed, its instance and endpoint are also destroyed. Each application session will has its own instance, and its own session endpoint
-After a session is setup. client access it's session via ingress gateway using session endpoint.
-In a multiple tenant environment, network policy is used to prohibit session accessible from other tenants.
+Application is definition of how to run a container, it includes container spec, resource spec and config spec, application resource is only a spec, when client need to access an Application, it need to create a Session of th an Application. 
+When a Session is created, a instance is automatically deployed in fleet, and a session endpoint is created in ingress gateway to access this session.
+when client done use a application, it can close Session, its instance and endpoint are also destroyed. Each application session will has its own instance, and its own session endpoint.  Session endpoint is accessible via ingress gateway.
+In a multiple tenant environment, network policy is used to prohibit Application Session accessible by other tenants.
 
 * Serverless function
 

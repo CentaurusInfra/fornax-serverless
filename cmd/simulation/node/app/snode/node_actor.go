@@ -335,7 +335,7 @@ func (n *SimulationNodeActor) onPodCreateCommand(msg *fornaxgrpc.PodCreate) erro
 		conditions = append(conditions, podScheduledCondition)
 		fpod.Pod.Status.Conditions = conditions
 
-		// time.Sleep(3 * time.Millisecond)
+		time.Sleep(10 * time.Millisecond)
 		fpod.FornaxPodState = fornaxtypes.PodStateRunning
 		func() {
 			n.nodeMutex.Lock()
@@ -358,7 +358,7 @@ func (n *SimulationNodeActor) onPodTerminateCommand(msg *fornaxgrpc.PodTerminate
 	if fpod == nil {
 		return fmt.Errorf("Pod: %s does not exist, fornax core is not in sync", msg.GetPodIdentifier())
 	} else {
-		// time.Sleep(3 * time.Millisecond)
+		time.Sleep(30 * time.Millisecond)
 		fpod.Pod.Status.Phase = v1.PodSucceeded
 		fpod.FornaxPodState = fornaxtypes.PodStateTerminated
 		func() {
@@ -401,7 +401,7 @@ func (n *SimulationNodeActor) onSessionOpenCommand(msg *fornaxgrpc.SessionOpen) 
 			ClientSessions: map[string]*fornaxtypes.ClientSession{},
 		}
 		func() {
-			// time.Sleep(3 * time.Millisecond)
+			time.Sleep(3 * time.Millisecond)
 			n.nodeMutex.Lock()
 			defer n.nodeMutex.Unlock()
 			revision := n.incrementNodeRevision()
@@ -426,7 +426,7 @@ func (n *SimulationNodeActor) onSessionCloseCommand(msg *fornaxgrpc.SessionClose
 	} else {
 		if fsess, found := fpod.Sessions[sessId]; found {
 			func() {
-				// time.Sleep(3 * time.Millisecond)
+				time.Sleep(3 * time.Millisecond)
 				n.nodeMutex.Lock()
 				defer n.nodeMutex.Unlock()
 				revision := n.incrementNodeRevision()

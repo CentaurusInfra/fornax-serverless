@@ -109,11 +109,9 @@ func NewCommand() *cobra.Command {
 }
 
 func Run(ctx context.Context, testConfig config.TestConfiguration) {
-	initApplicationSessionInformer(ctx)
 
-	RunTest := func(appName, randAppName string) {
+	RunTest := func(namespace, appName, randAppName string) {
 		klog.Infof("--------App %s Test begin--------\n", appName)
-		namespace := "fornaxtest"
 		for i := 1; i <= testConfig.NumOfTestCycle; i++ {
 			sessions := []*TestSession{}
 			cycleName := fmt.Sprintf("%s-cycle-%d", randAppName, i)
@@ -151,18 +149,31 @@ func Run(ctx context.Context, testConfig config.TestConfiguration) {
 		}
 	}()
 
-	randAppName := rand.String(16)
-	wg := sync.WaitGroup{}
+	// wait for all app finish sync
+	wgAppInformers := sync.WaitGroup{}
 	for i := 0; i < testConfig.NumOfApps; i++ {
-		wg.Add(1)
+		wgAppInformers.Add(1)
+		namespace := fmt.Sprintf("echoserver%d", i)
+		go func(ns string) {
+			initApplicationSessionInformer(ctx, ns)
+			wgAppInformers.Done()
+		}(namespace)
+	}
+	wgAppInformers.Wait()
+
+	// start to test all apps
+	randAppName := rand.String(16)
+	wgAppTest := sync.WaitGroup{}
+	for i := 0; i < testConfig.NumOfApps; i++ {
+		wgAppTest.Add(1)
 		appName := fmt.Sprintf("echoserver%d", i)
 		klog.Infof("Run test app %s", appName)
 		go func(app string) {
-			RunTest(app, randAppName)
-			wg.Done()
+			RunTest(app, app, randAppName)
+			wgAppTest.Done()
 		}(appName)
 	}
-	wg.Wait()
+	wgAppTest.Wait()
 	done = true
 
 	et := time.Now().UnixMilli()

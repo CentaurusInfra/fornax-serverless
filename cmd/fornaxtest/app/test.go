@@ -55,11 +55,11 @@ var (
 			Resources: v1.ResourceRequirements{
 				Limits: map[v1.ResourceName]resource.Quantity{
 					"memory": util.ResourceQuantity(50*1024*1024, v1.ResourceMemory),
-					"cpu":    util.ResourceQuantity(0.1*1000, v1.ResourceCPU),
+					"cpu":    util.ResourceQuantity(0.01*1000, v1.ResourceCPU),
 				},
 				Requests: map[v1.ResourceName]resource.Quantity{
 					"memory": util.ResourceQuantity(50*1024*1024, v1.ResourceMemory),
-					"cpu":    util.ResourceQuantity(0.1*1000, v1.ResourceCPU),
+					"cpu":    util.ResourceQuantity(0.01*1000, v1.ResourceCPU),
 				},
 			},
 		}},
@@ -79,12 +79,13 @@ var (
 		SessionData:                   "session-data",
 		KillInstanceWhenSessionClosed: false,
 		CloseGracePeriodSeconds:       &CloseGracePeriodSeconds,
-		OpenTimeoutSeconds:            10,
+		OpenTimeoutSeconds:            5,
 	}
 )
 
-func initApplicationSessionInformer(ctx context.Context) {
-	sessionInformerFactory := externalversions.NewSharedInformerFactory(util.GetFornaxCoreApiClient(util.GetFornaxCoreKubeConfig()), 0*time.Minute)
+func initApplicationSessionInformer(ctx context.Context, namespace string) {
+	// sessionInformerFactory := externalversions.NewSharedInformerFactory(util.GetFornaxCoreApiClient(util.GetFornaxCoreKubeConfig()), 0*time.Minute)
+	sessionInformerFactory := externalversions.NewSharedInformerFactoryWithOptions(util.GetFornaxCoreApiClient(util.GetFornaxCoreKubeConfig()), 0*time.Minute, externalversions.WithNamespace(namespace))
 	applicationSessionInformer := sessionInformerFactory.Core().V1().ApplicationSessions()
 	applicationSessionInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc:    onApplicationSessionAddEvent,
@@ -466,25 +467,25 @@ func summaryAppTestResult(apps TestApplicationArray, st, et int64) {
 }
 
 func summarySessionTestResult(sessions TestSessionArray, st, et int64) {
-	failedSession := 0
-	timeoutSession := 0
+	timeoutSessions := []*TestSession{}
+	failedSessions := []*TestSession{}
 	successSession := 0
 	for _, v := range sessions {
 		if v.status == fornaxv1.SessionStatusClosed {
-			failedSession += 1
+			failedSessions = append(failedSessions, v)
 		}
 		if v.status == fornaxv1.SessionStatusAvailable {
 			successSession += 1
 		}
 		if v.status == fornaxv1.SessionStatusTimeout {
-			timeoutSession += 1
+			timeoutSessions = append(timeoutSessions, v)
 		}
 	}
 	if len(sessions) == 0 {
 		return
 	}
 	klog.Infof("--------%d sessions tested in %d ms, rate %d/s ----------", len(sessions), et-st, int64(len(sessions))*1000/(et-st))
-	klog.Infof("%d success, %d failed, %d timeout", successSession, failedSession, timeoutSession)
+	klog.Infof("%d success, %d failed, %d timeout", successSession, len(failedSessions), len(timeoutSessions))
 	sort.Sort(sessions)
 	p99 := sessions[len(sessions)*99/100]
 	p90 := sessions[len(sessions)*90/100]
@@ -495,8 +496,18 @@ func summarySessionTestResult(sessions TestSessionArray, st, et int64) {
 		time.UnixMilli(p99.watchAvailableTimeMilli).String(),
 		time.UnixMilli(p99.internalAvailableTimeMilli).String(),
 		util.Name(p99.session))
-	klog.Infof("Session setup time: p90 %d ms", p90.watchAvailableTimeMilli-p90.apiCreationTimeMilli)
-	klog.Infof("Session setup time: p50 %d ms", p50.watchAvailableTimeMilli-p50.apiCreationTimeMilli)
+	klog.Infof("Session setup time: p90 %d ms, st: %s, et: %s, iet: %s, %s",
+		p90.watchAvailableTimeMilli-p90.apiCreationTimeMilli,
+		time.UnixMilli(p90.apiCreationTimeMilli).String(),
+		time.UnixMilli(p90.watchAvailableTimeMilli).String(),
+		time.UnixMilli(p90.internalAvailableTimeMilli).String(),
+		util.Name(p90.session))
+	klog.Infof("Session setup time: p50 %d ms, st: %s, et: %s, iet: %s, %s",
+		p50.watchAvailableTimeMilli-p50.apiCreationTimeMilli,
+		time.UnixMilli(p50.apiCreationTimeMilli).String(),
+		time.UnixMilli(p50.watchAvailableTimeMilli).String(),
+		time.UnixMilli(p50.internalAvailableTimeMilli).String(),
+		util.Name(p50.session))
 
 	klog.Infof("-------- sessions rate counters--------")
 	for _, v := range testSessionCounters {
@@ -504,4 +515,11 @@ func summarySessionTestResult(sessions TestSessionArray, st, et int64) {
 		klog.Infof("--------ct: %s, %d sessions tested in %d ms, rate %d/s ----------", time.UnixMilli(v.et).Truncate(time.Second), v.numOfSessions, milliseconds, int64(v.numOfSessions)*1000/(milliseconds))
 	}
 
+	for _, v := range timeoutSessions {
+		klog.InfoS("timeout session", "s", util.Name(v.session))
+	}
+
+	for _, v := range failedSessions {
+		klog.InfoS("failed session", "s", util.Name(v.session))
+	}
 }

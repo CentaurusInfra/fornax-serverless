@@ -6,11 +6,12 @@ Fornax manage two simple resources Application and Session, and use this two res
 
 * Serverless application
 
-Application is definition of how to run a container, it includes container spec, resource spec and config spec, application resource is only a spec, when client need to access an Application, it need to create a Session of th an Application. 
+Application is definition of how to run a container, it includes container spec, resource spec and config spec, application resource is only a spec, when client need to access an Application, it need to create a Session of an Application. 
 When a Session is created, a instance is automatically deployed in fleet, and a session endpoint is created in ingress gateway to access this session.
 when client done use a application, it can close Session, its instance and endpoint are also destroyed. Each application session will has its own instance, and its own session endpoint.  Session endpoint is accessible via ingress gateway.
 In a multiple tenant environment, network policy is used to prohibit Application Session accessible by other tenants.
 
+Application spec include auto scale policy, client can define idle session numbers and application instances are warm up already before session is created. whenever a session is required and there are warm up instances, it reduce session ready latency.
 * Serverless function
 
 Function is defined as application also, A Function gateway is responsible for create application for function, and create session to serve function call requests.

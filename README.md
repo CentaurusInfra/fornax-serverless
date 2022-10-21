@@ -20,7 +20,7 @@ Sessions could be warm up by Function gateway to improve latency.
 
 ## Fornax serverless Components 
 
-Here is a overview of system components.
+Here is an overview of system components.
 
 ![fornax serverless overview](doc/design/pictures/architecture/fornax.jpg)
 

@@ -17,7 +17,6 @@ limitations under the License.
 package podscheduler
 
 import (
-	"sort"
 	"sync"
 	"time"
 
@@ -130,12 +129,6 @@ type SortedNodes struct {
 	nodes    []*SchedulableNode
 	lessFunc collection.LessFunc
 }
-type SchedulableNodePool struct {
-	mu            sync.Mutex
-	nodes         map[string]*SchedulableNode
-	sortedNodes   []*SchedulableNode
-	sortingMethod NodeSortingMethod
-}
 
 func (sn *SortedNodes) Len() int {
 	return len(sn.nodes)
@@ -149,7 +142,14 @@ func (sn *SortedNodes) Swap(i, j int) {
 	sn.nodes[i], sn.nodes[j] = sn.nodes[j], sn.nodes[i]
 }
 
+type SchedulableNodePool struct {
+	mu    sync.RWMutex
+	nodes map[string]*SchedulableNode
+}
+
 func (pool *SchedulableNodePool) GetNode(name string) *SchedulableNode {
+	pool.mu.RLock()
+	defer pool.mu.RUnlock()
 	if n, f := pool.nodes[name]; f {
 		return n
 	}
@@ -169,32 +169,13 @@ func (pool *SchedulableNodePool) AddNode(name string, node *SchedulableNode) {
 }
 
 func (pool *SchedulableNodePool) GetNodes() []*SchedulableNode {
-	return pool.sortedNodes
-}
-
-func (pool *SchedulableNodePool) SortNodes() {
-	pool.mu.Lock()
-	defer pool.mu.Unlock()
-	pool.sort()
-}
-
-// use copy on write to build pool.sortedNodes to avoid concurrent map iteration and modification,
-// sorting method are like free memory or pods on node
-// scheduler use this list to find a number nodes from this list to schedule pods,
-// when pods are assigned to nodes or terminated from nodes, pool.sortedNodes are not sorted again,
-// this list need to resort, but do not want to resort every time since cow is expensive,
-// scheduler control how offen a resort is needed
-func (pool *SchedulableNodePool) sort() {
 	nodes := []*SchedulableNode{}
+	pool.mu.RLock()
+	defer pool.mu.RUnlock()
 	for _, v := range pool.nodes {
 		nodes = append(nodes, v)
 	}
-	sortedNodes := &SortedNodes{
-		nodes:    nodes,
-		lessFunc: BuildNodeSortingFunc(pool.sortingMethod),
-	}
-	sort.Sort(sortedNodes)
-	pool.sortedNodes = sortedNodes.nodes
+	return nodes
 }
 
 func (pool *SchedulableNodePool) size() int {

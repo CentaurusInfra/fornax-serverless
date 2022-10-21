@@ -33,10 +33,10 @@ type APIObjectVersioner struct{}
 
 // UpdateObject implements Versioner
 func (a APIObjectVersioner) UpdateObject(obj runtime.Object, resourceVersion uint64) error {
-	return UpdateObject(obj, resourceVersion)
+	return UpdateObjectResourceVersion(obj, resourceVersion)
 }
 
-func UpdateObject(obj runtime.Object, resourceVersion uint64) error {
+func UpdateObjectResourceVersion(obj runtime.Object, resourceVersion uint64) error {
 	accessor, err := meta.Accessor(obj)
 	if err != nil {
 		return err

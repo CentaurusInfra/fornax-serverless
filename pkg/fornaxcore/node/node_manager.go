@@ -90,7 +90,6 @@ func (nm *nodeManager) List() []*ie.NodeEvent {
 // even a pod is terminated status, we still keep it in podmanager,
 // it got deleted until next time pod does not report it again in node state event
 func (nm *nodeManager) UpdatePodState(nodeId string, pod *v1.Pod, sessions []*fornaxv1.ApplicationSession) error {
-	st := time.Now().UnixMicro()
 	if nodeWS := nm.nodes.get(nodeId); nodeWS != nil {
 		nodeWS.LastSeen = time.Now()
 		podName := util.Name(pod)
@@ -105,9 +104,6 @@ func (nm *nodeManager) UpdatePodState(nodeId string, pod *v1.Pod, sessions []*fo
 		klog.InfoS("Node does not exist, ask node full sync", "node", nodeId)
 		return nodeagent.NodeRevisionOutOfOrderError
 	}
-	et := time.Now().UnixMicro()
-	klog.InfoS("GWJ Done node manager update a pod state", "pod", util.Name(pod), "took", et-st)
-
 	return nil
 }
 
@@ -124,14 +120,13 @@ func (nm *nodeManager) SyncNodePodStates(nodeId string, podStates []*grpc.PodSta
 	existingPodNames := nodeWS.Pods.GetKeys()
 	reportedPods := map[string]bool{}
 	for _, podState := range podStates {
+		podName := util.Name(podState.GetPod())
+		reportedPods[podName] = true
 		podRev, err := strconv.Atoi(podState.GetPod().ResourceVersion)
 		if err == nil && int64(podRev) <= minimalNodeRevision {
 			// this pod is already updated in previous revision
 			continue
 		}
-		podName := util.Name(podState.GetPod())
-		reportedPods[podName] = true
-		// incremental order
 		sessions := []*fornaxv1.ApplicationSession{}
 		for _, v := range podState.GetSessionStates() {
 			session := &fornaxv1.ApplicationSession{}

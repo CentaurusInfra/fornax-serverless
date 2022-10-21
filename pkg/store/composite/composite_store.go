@@ -74,7 +74,6 @@ func (c *CompositeStore) Count(key string) (int64, error) {
 
 // Create implements storage.Interface
 func (c *CompositeStore) Create(ctx context.Context, key string, obj runtime.Object, out runtime.Object, ttl uint64) error {
-	klog.InfoS("GWJ composite create ", "key", key)
 	specOut := out.DeepCopyObject()
 	statusOut := out.DeepCopyObject()
 	// create persist copy firstly,
@@ -98,7 +97,6 @@ func (c *CompositeStore) Create(ctx context.Context, key string, obj runtime.Obj
 
 // Delete implements storage.Interface
 func (c *CompositeStore) Delete(ctx context.Context, key string, out runtime.Object, preconditions *storage.Preconditions, validateDeletion storage.ValidateObjectFunc, cachedExistingObject runtime.Object) error {
-	klog.InfoS("GWJ composite delete ", "key", key)
 	outVal, _ := conversion.EnforcePtr(out)
 	specOut := out.DeepCopyObject()
 	statusOut := out.DeepCopyObject()
@@ -120,7 +118,6 @@ func (c *CompositeStore) Delete(ctx context.Context, key string, out runtime.Obj
 // get spec from specPersistStore, and get status from statusMemoryStore, and merge them, if no spec, return error,
 // if no status, create one,
 func (c *CompositeStore) Get(ctx context.Context, key string, opts storage.GetOptions, out runtime.Object) error {
-	klog.InfoS("GWJ composite get", "key", key, "opts", opts)
 	outVal, _ := conversion.EnforcePtr(out)
 	specOut := out.DeepCopyObject()
 	statusOut := out.DeepCopyObject()
@@ -148,7 +145,6 @@ func (c *CompositeStore) Get(ctx context.Context, key string, opts storage.GetOp
 
 // GetList implements storage.Interface
 func (c *CompositeStore) GetList(ctx context.Context, key string, opts storage.ListOptions, listObj runtime.Object) error {
-	klog.InfoS("GWJ composite get list", "key", key, "opts", opts)
 	err := c.specPersistStore.GetList(ctx, key, opts, listObj)
 	if err != nil {
 		return err
@@ -188,14 +184,13 @@ func (c *CompositeStore) GetList(ctx context.Context, key string, opts storage.L
 // GuaranteedUpdate implements storage.Interface
 func (c *CompositeStore) GuaranteedUpdate(ctx context.Context, key string, out runtime.Object, ignoreNotFound bool, preconditions *storage.Preconditions, tryUpdate storage.UpdateFunc, cachedExistingObject runtime.Object) error {
 	debug.PrintStack()
-	klog.InfoS("GWJ composite guarantee update", "key", key)
 	specOut := out.DeepCopyObject()
 
 	// ugly because we have to update etcd object's finalizer to make sure does not delete object with empty finalizer in persit store's GuaranteedUpdate method
 	c.ensureFinalizerUpdated(ctx, key)
 	err := c.specPersistStore.GuaranteedUpdate(ctx, key, specOut, ignoreNotFound, preconditions, tryUpdate, cachedExistingObject)
 	if err != nil {
-		klog.ErrorS(err, "GWJ composite guarantee update", "key", key)
+		klog.ErrorS(err, "Failed to update object spec", "key", key)
 		return err
 	}
 
@@ -204,13 +199,12 @@ func (c *CompositeStore) GuaranteedUpdate(ctx context.Context, key string, out r
 	// status is updated using statusMemoryStore by internal components, we just get status from memrory and merge status into out
 	err = c.statusMemoryStore.CreateOrUpdate(ctx, key, specOut, statusOut, c.mergeFunc)
 	if err != nil {
-		klog.ErrorS(err, "GWJ composite guarantee update", "key", key)
+		klog.ErrorS(err, "Failed to update memory status", "key", key)
 		return err
 	}
 	outVal, _ := conversion.EnforcePtr(out)
 	outVal.Set(reflect.ValueOf(statusOut).Elem())
 
-	klog.InfoS("GWJ composite guarantee update", "key", key, "out", statusOut)
 	return nil
 }
 
@@ -384,7 +378,6 @@ func (c *CompositeStore) Run(ctx context.Context) {
 							}
 							specOut := c.newFunc()
 							if mwche.Type == watch.Deleted {
-								klog.InfoS("GWJ received a status delete object", "key", key)
 								if store.ShouldDeleteSpec(statusObj) {
 									// obj has deletion timestamp and finalizers is empty,
 									err = c.specPersistStore.Get(ctx, key, apistorage.GetOptions{IgnoreNotFound: false}, specOut)

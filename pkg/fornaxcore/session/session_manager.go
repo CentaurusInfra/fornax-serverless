@@ -201,10 +201,7 @@ func (sm *sessionManager) AsyncUpdateSessionStatus(session *fornaxv1.Application
 
 // UpdateApplicationSessionStatus put updated status into a map send singal into a channel to asynchronously update session status
 func (sm *sessionManager) UpdateSessionStatus(session *fornaxv1.ApplicationSession, newStatus *fornaxv1.ApplicationSessionStatus) error {
-	st := time.Now().UnixMicro()
 	e := sm._updateSessionStatus(util.Name(session), newStatus)
-	et := time.Now().UnixMicro()
-	klog.Infof("GWJ update session status took %d micro seconds for %s", et-st, util.Name(session))
 	return e
 }
 

@@ -404,7 +404,6 @@ func (am *ApplicationManager) deployApplicationPods(pool *ApplicationPool, appli
 				createErrors = append(createErrors, err)
 				continue
 			}
-			pool.addOrUpdatePod(util.Name(pod), PodStatePending, []string{})
 			createdPods = append(createdPods, pod)
 		}
 

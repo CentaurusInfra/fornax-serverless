@@ -124,13 +124,16 @@ func (ms *MemoryStore) Stop() error {
 // Count implements storage.Interface
 func (ms *MemoryStore) Count(key string) (int64, error) {
 	count, err := ms.kvs.count(strings.Split(key, "/"))
-	klog.InfoS("GWJ count object", "key", key, "count", count)
 	return count, err
 }
 
 // Create implements storage.Interface
 func (ms *MemoryStore) Create(ctx context.Context, key string, obj runtime.Object, out runtime.Object, ttl uint64) error {
-	klog.InfoS("GWJ create object", "key", key)
+	st := time.Now().UnixMicro()
+	defer func() {
+		et := time.Now().UnixMicro()
+		klog.InfoS("Memory store create object", "key", key, "took", et-st)
+	}()
 	ms.freezeWorld.RLock()
 	defer ms.freezeWorld.RUnlock()
 	outVal, err := conversion.EnforcePtr(out)
@@ -138,7 +141,7 @@ func (ms *MemoryStore) Create(ctx context.Context, key string, obj runtime.Objec
 		return err
 	}
 
-	if err := ms.versioner.PrepareObjectForStorage(obj); err != nil {
+	if err := store.PrepareObjectForStorage(obj); err != nil {
 		return fmt.Errorf("PrepareObjectForStorage failed: %v", err)
 	}
 
@@ -151,7 +154,7 @@ func (ms *MemoryStore) Create(ctx context.Context, key string, obj runtime.Objec
 			return err
 		}
 
-		ms.versioner.UpdateObject(obj, rev)
+		store.UpdateObjectResourceVersion(obj, rev)
 		objWi := &objWithIndex{
 			key:   key,
 			obj:   obj.DeepCopyObject(),
@@ -179,7 +182,11 @@ func (ms *MemoryStore) Create(ctx context.Context, key string, obj runtime.Objec
 
 // Delete implements storage.Interface
 func (ms *MemoryStore) Delete(ctx context.Context, key string, out runtime.Object, preconditions *apistorage.Preconditions, validateDeletion apistorage.ValidateObjectFunc, cachedExistingObject runtime.Object) error {
-	klog.InfoS("GWJ delete object", "key", key)
+	st := time.Now().UnixMicro()
+	defer func() {
+		et := time.Now().UnixMicro()
+		klog.InfoS("MemoryStore delete object", "key", key, "took", et-st)
+	}()
 	ms.freezeWorld.RLock()
 	defer ms.freezeWorld.RUnlock()
 
@@ -245,7 +252,6 @@ func (ms *MemoryStore) Delete(ctx context.Context, key string, out runtime.Objec
 
 // Get implements storage.Interface
 func (ms *MemoryStore) Get(ctx context.Context, key string, opts apistorage.GetOptions, out runtime.Object) error {
-	// klog.InfoS("GWJ get object", "key", key, "opts", opts)
 	ms.freezeWorld.RLock()
 	defer ms.freezeWorld.RUnlock()
 	outVal, err := conversion.EnforcePtr(out)
@@ -266,7 +272,7 @@ func (ms *MemoryStore) Get(ctx context.Context, key string, opts apistorage.GetO
 			return apistorage.NewInternalError(err.Error())
 		}
 
-		if err := ms.validateMinimumResourceVersion(ms.versioner, opts.ResourceVersion, currObjRv); err != nil {
+		if err := ms.validateMinimumResourceVersion(opts.ResourceVersion, currObjRv); err != nil {
 			return err
 		}
 
@@ -277,7 +283,6 @@ func (ms *MemoryStore) Get(ctx context.Context, key string, opts apistorage.GetO
 
 // GetList implements k8s storage.Interface
 func (ms *MemoryStore) GetList(ctx context.Context, key string, opts apistorage.ListOptions, listObj runtime.Object) error {
-	klog.InfoS("GWJ get list of object", "key", key, "opts", opts)
 	ms.freezeWorld.RLock()
 	defer ms.freezeWorld.RUnlock()
 
@@ -304,7 +309,7 @@ func (ms *MemoryStore) GetList(ctx context.Context, key string, opts apistorage.
 	pred := opts.Predicate
 	var fromRV *uint64
 	if len(resourceVersion) > 0 {
-		parsedRV, err := ms.versioner.ParseResourceVersion(resourceVersion)
+		parsedRV, err := store.ParseResourceVersion(resourceVersion)
 		if err != nil {
 			return apierrors.NewBadRequest(fmt.Sprintf("invalid resource version: %v", err))
 		}
@@ -326,7 +331,6 @@ func (ms *MemoryStore) GetList(ctx context.Context, key string, opts apistorage.
 		if err != nil {
 			return apierrors.NewBadRequest(fmt.Sprintf("invalid continue token: %v", err))
 		}
-		// klog.InfoS("GWJ get list with", "continueRV", continueRV, "continueKey", continueKey)
 		if continueRV > 0 {
 			withRV = uint64(continueRV)
 			returnedRV = withRV
@@ -355,7 +359,7 @@ func (ms *MemoryStore) GetList(ctx context.Context, key string, opts apistorage.
 
 	// can not find valid searching index from list, return empty list
 	if searchingIndex >= uint64(len(ms.kvList)) {
-		return ms.versioner.UpdateList(listObj, uint64(returnedRV), "", nil)
+		return store.UpdateList(listObj, uint64(returnedRV), "", nil)
 	}
 
 	// range sorted revision list from searching index until meet requested limit or there are no more items
@@ -368,7 +372,6 @@ func (ms *MemoryStore) GetList(ctx context.Context, key string, opts apistorage.
 	lastKey := ""
 	lastRev := withRV
 	listBufferLen := uint64(len(ms.kvList))
-	// klog.InfoS("GWJ get list from", "withRV", withRV, "index", searchingIndex, "list size", listBufferLen)
 	for i := searchingIndex; i < listBufferLen; i++ {
 		v := ms.kvList[i]
 		if v != nil {
@@ -381,16 +384,16 @@ func (ms *MemoryStore) GetList(ctx context.Context, key string, opts apistorage.
 			switch match {
 			case metav1.ResourceVersionMatchNotOlderThan:
 				if rv >= withRV {
-					store.AppendListItem(listRetVal, v.obj, rv, pred, ms.versioner)
+					store.AppendListItem(listRetVal, v.obj, rv, pred)
 				}
 			case metav1.ResourceVersionMatchExact:
 				if rv > withRV {
-					store.AppendListItem(listRetVal, v.obj, rv, pred, ms.versioner)
+					store.AppendListItem(listRetVal, v.obj, rv, pred)
 				}
 			case "":
 				if rv > withRV {
 					// append
-					store.AppendListItem(listRetVal, v.obj, rv, pred, ms.versioner)
+					store.AppendListItem(listRetVal, v.obj, rv, pred)
 				}
 			default:
 				return fmt.Errorf("unknown ResourceVersionMatch value: %v", match)
@@ -406,26 +409,29 @@ func (ms *MemoryStore) GetList(ctx context.Context, key string, opts apistorage.
 		}
 	}
 
-	// klog.InfoS("GWJ get list return a list", "len", listRetVal.Len(), "lastkey", lastKey, "last rev", lastRev, "hasMore", hasMore)
 	if hasMore {
 		continueToken, err := store.EncodeContinue(lastKey, keyPrefix, lastRev)
 		if err != nil {
 			return err
 		}
 		if pred.Empty() {
-			return ms.versioner.UpdateList(listObj, returnedRV, continueToken, &remainingItemCount)
+			return store.UpdateList(listObj, returnedRV, continueToken, &remainingItemCount)
 		} else {
-			return ms.versioner.UpdateList(listObj, returnedRV, continueToken, nil)
+			return store.UpdateList(listObj, returnedRV, continueToken, nil)
 		}
 	}
 
 	// no more items, use empty string as continue token
-	return ms.versioner.UpdateList(listObj, returnedRV, "", nil)
+	return store.UpdateList(listObj, returnedRV, "", nil)
 }
 
 // GuaranteedUpdate implements k8s storage.Interface
 func (ms *MemoryStore) GuaranteedUpdate(ctx context.Context, key string, out runtime.Object, ignoreNotFound bool, preconditions *apistorage.Preconditions, tryUpdate apistorage.UpdateFunc, cachedExistingObject runtime.Object) error {
-	klog.InfoS("GWJ update object", "key", key)
+	st := time.Now().UnixMicro()
+	defer func() {
+		et := time.Now().UnixMicro()
+		klog.InfoS("Memory store update object", "key", key, "took", et-st)
+	}()
 	ms.freezeWorld.RLock()
 	defer ms.freezeWorld.RUnlock()
 	outVal, err := conversion.EnforcePtr(out)
@@ -440,7 +446,6 @@ func (ms *MemoryStore) GuaranteedUpdate(ctx context.Context, key string, out run
 		}
 		return apistorage.NewKeyNotFoundError(key, 0)
 	} else {
-		// get current object state
 		currObj := curObjWi.obj.DeepCopyObject()
 		currRv, err := store.ObjectResourceVersion(currObj)
 		if err != nil {
@@ -464,7 +469,7 @@ func (ms *MemoryStore) GuaranteedUpdate(ctx context.Context, key string, out run
 		}
 
 		// use try update to get a updated object of currObj, try update function should verify it's updating same revision of currObj
-		ret, _, err := store.UpdateState(ms.versioner, currObj, tryUpdate)
+		ret, _, err := store.UpdateState(currObj, tryUpdate)
 		if err != nil {
 			return err
 		}
@@ -474,7 +479,7 @@ func (ms *MemoryStore) GuaranteedUpdate(ctx context.Context, key string, out run
 		if err != nil {
 			return err
 		}
-		if err := ms.versioner.UpdateObject(ret, rev); err != nil {
+		if err := store.UpdateObjectResourceVersion(ret, rev); err != nil {
 			return err
 		}
 
@@ -502,13 +507,16 @@ func (ms *MemoryStore) GuaranteedUpdate(ctx context.Context, key string, out run
 		}
 		ms.sendEvent(event)
 	}
-
 	return nil
 }
 
 // Create an obj it it does not exist, or update existing one, increase revision
 func (ms *MemoryStore) CreateOrUpdate(ctx context.Context, key string, obj runtime.Object, out runtime.Object, mergeFunc func(from runtime.Object, to runtime.Object) error) error {
-	klog.InfoS("GWJ update object", "key", key)
+	st := time.Now().UnixMicro()
+	defer func() {
+		et := time.Now().UnixMicro()
+		klog.InfoS("Memory store create or update object", "key", key, "took", et-st)
+	}()
 	ms.freezeWorld.RLock()
 	defer ms.freezeWorld.RUnlock()
 	outVal, err := conversion.EnforcePtr(out)
@@ -523,7 +531,7 @@ func (ms *MemoryStore) CreateOrUpdate(ctx context.Context, key string, obj runti
 		if err != nil {
 			return err
 		}
-		ms.versioner.UpdateObject(newObj, rev)
+		store.UpdateObjectResourceVersion(newObj, rev)
 		objWi := &objWithIndex{
 			key:   key,
 			obj:   newObj.DeepCopyObject(),
@@ -570,7 +578,7 @@ func (ms *MemoryStore) CreateOrUpdate(ctx context.Context, key string, obj runti
 		if err != nil {
 			return err
 		}
-		if err := ms.versioner.UpdateObject(newObj, rev); err != nil {
+		if err := store.UpdateObjectResourceVersion(newObj, rev); err != nil {
 			return err
 		}
 
@@ -604,7 +612,6 @@ func (ms *MemoryStore) CreateOrUpdate(ctx context.Context, key string, obj runti
 
 // get a object if key exist, if not create a obj using passed objToCreate, and set a new revision for created obj, return it in out
 func (ms *MemoryStore) GetOrCreate(ctx context.Context, key string, objToCreate runtime.Object, out runtime.Object) error {
-	klog.InfoS("GWJ get or create object", "key", key)
 	ms.freezeWorld.RLock()
 	defer ms.freezeWorld.RUnlock()
 	outVal, err := conversion.EnforcePtr(out)
@@ -619,7 +626,7 @@ func (ms *MemoryStore) GetOrCreate(ctx context.Context, key string, objToCreate 
 		if err != nil {
 			return err
 		}
-		ms.versioner.UpdateObject(newObj, rev)
+		store.UpdateObjectResourceVersion(newObj, rev)
 		objWi := &objWithIndex{
 			key:   key,
 			obj:   newObj.DeepCopyObject(),
@@ -653,7 +660,6 @@ func (ms *MemoryStore) GetOrCreate(ctx context.Context, key string, objToCreate 
 // check if a object exist, if does not exit create a obj using passed objToCreate, and set a new revision for created obj, return it in out,
 // if exist, use passed objToCreate to replace existing one, increase revision of object
 func (ms *MemoryStore) CreateOrReplace(ctx context.Context, key string, out runtime.Object, objToCreate runtime.Object) error {
-	klog.InfoS("GWJ create or replace a object", "key", key)
 	ms.freezeWorld.RLock()
 	defer ms.freezeWorld.RUnlock()
 	outVal, err := conversion.EnforcePtr(out)
@@ -666,7 +672,7 @@ func (ms *MemoryStore) CreateOrReplace(ctx context.Context, key string, out runt
 	if err != nil {
 		return err
 	}
-	ms.versioner.UpdateObject(newObj, rev)
+	store.UpdateObjectResourceVersion(newObj, rev)
 	newObjWi := &objWithIndex{
 		key:   key,
 		obj:   newObj.DeepCopyObject(),
@@ -748,8 +754,7 @@ func (ms *MemoryStore) EnsureUpdateAndDelete(ctx context.Context, key string, ig
 }
 
 func (ms *MemoryStore) watch(ctx context.Context, key string, opts apistorage.ListOptions, withOldObj bool) (*memoryStoreWatcher, error) {
-	klog.InfoS("GWJ watch object", "key", key, "ops", opts, "resource", ms.groupResource.String())
-	rev, err := ms.versioner.ParseResourceVersion(opts.ResourceVersion)
+	rev, err := store.ParseResourceVersion(opts.ResourceVersion)
 	if err != nil {
 		return nil, err
 	}
@@ -781,7 +786,7 @@ func (ms *MemoryStore) getObjEventsAfterRev(key string, rev uint64, opts apistor
 		prefix += "/"
 	}
 
-	rev, err := ms.versioner.ParseResourceVersion(opts.ResourceVersion)
+	rev, err := store.ParseResourceVersion(opts.ResourceVersion)
 	if err != nil {
 		return nil, err
 	}
@@ -841,7 +846,7 @@ func (ms *MemoryStore) binarySearchInObjList(rv uint64) uint64 {
 
 // send objEvent to watchers and remove watcher who has failure to receive event
 func (ms *MemoryStore) sendEvent(event *objEvent) {
-	ms.watchEventCache.addObjEvents(event)
+	// ms.watchEventCache.addObjEvents(event)
 	watchers := []*memoryStoreWatcher{}
 	for _, v := range ms.watchers {
 		if !v.stopped {
@@ -850,7 +855,7 @@ func (ms *MemoryStore) sendEvent(event *objEvent) {
 		}
 	}
 	ms.watchers = watchers
-	ms.watchEventCache.shrink()
+	// ms.watchEventCache.shrink()
 }
 
 // sorted klist has empty slots spreaded when items are deleted and updated, if len of klist is more than a threshold longer, we want to shrink array to avoid memory waste
@@ -863,7 +868,7 @@ func (ms *MemoryStore) shrink() {
 	}
 }
 
-// occupy a revision number and a position in sorted resource version list
+// occupy a revision number and a position in sorted revisioned object list
 func (ms *MemoryStore) reserveRevAndSlot() (uint64, uint64, error) {
 	ms.revmu.Lock()
 	defer ms.revmu.Unlock()
@@ -880,7 +885,7 @@ func (ms *MemoryStore) getSingleObjectAsList(ctx context.Context, key string, op
 
 	var fromRV *uint64
 	if len(resourceVersion) > 0 {
-		parsedRV, err := ms.versioner.ParseResourceVersion(resourceVersion)
+		parsedRV, err := store.ParseResourceVersion(resourceVersion)
 		if err != nil {
 			return apierrors.NewBadRequest(fmt.Sprintf("invalid resource version: %v", err))
 		}
@@ -898,7 +903,7 @@ func (ms *MemoryStore) getSingleObjectAsList(ctx context.Context, key string, op
 
 	keys := strings.Split(key, "/")
 	if obj := ms.kvs.get(keys); obj == nil {
-		return ms.versioner.UpdateList(listObj, atomic.LoadUint64(&_MemoryRev), "", nil)
+		return store.UpdateList(listObj, atomic.LoadUint64(&_MemoryRev), "", nil)
 	} else {
 		rv, err := store.ObjectResourceVersion(obj.obj)
 		if err != nil {
@@ -908,34 +913,34 @@ func (ms *MemoryStore) getSingleObjectAsList(ctx context.Context, key string, op
 			switch match {
 			case metav1.ResourceVersionMatchNotOlderThan:
 				if rv >= *fromRV {
-					store.AppendListItem(listRetVal, obj.obj, rv, pred, ms.versioner)
+					store.AppendListItem(listRetVal, obj.obj, rv, pred)
 				}
 			case metav1.ResourceVersionMatchExact:
 				if rv == *fromRV {
-					store.AppendListItem(listRetVal, obj.obj, rv, pred, ms.versioner)
+					store.AppendListItem(listRetVal, obj.obj, rv, pred)
 				}
 			case "":
 				if rv > *fromRV {
 					// append
-					store.AppendListItem(listRetVal, obj.obj, rv, pred, ms.versioner)
+					store.AppendListItem(listRetVal, obj.obj, rv, pred)
 				}
 			default:
 				return fmt.Errorf("unknown ResourceVersionMatch value: %v", match)
 			}
 		} else {
-			store.AppendListItem(listRetVal, obj.obj, rv, pred, ms.versioner)
+			store.AppendListItem(listRetVal, obj.obj, rv, pred)
 		}
-		return ms.versioner.UpdateList(listObj, rv, "", nil)
+		return store.UpdateList(listObj, rv, "", nil)
 	}
 }
 
 // validateMinimumResourceVersion returns a 'too large resource' version error when the provided minimumResourceVersion is
 // greater than the most recent actualRevision available from storage.
-func (ms *MemoryStore) validateMinimumResourceVersion(versioner apistorage.Versioner, minimumResourceVersion string, actualRevision uint64) error {
+func (ms *MemoryStore) validateMinimumResourceVersion(minimumResourceVersion string, actualRevision uint64) error {
 	if minimumResourceVersion == "" {
 		return nil
 	}
-	minimumRV, err := versioner.ParseResourceVersion(minimumResourceVersion)
+	minimumRV, err := store.ParseResourceVersion(minimumResourceVersion)
 	if err != nil {
 		return apierrors.NewBadRequest(fmt.Sprintf("invalid resource version: %v", err))
 	}

@@ -17,7 +17,6 @@ limitations under the License.
 package nodemonitor
 
 import (
-	"context"
 	"encoding/json"
 	"sync"
 
@@ -75,7 +74,7 @@ type nodeMonitor struct {
 }
 
 // OnSessionUpdate implements server.NodeMonitor
-func (nm *nodeMonitor) OnSessionUpdate(ctx context.Context, message *grpc.FornaxCoreMessage) (*grpc.FornaxCoreMessage, error) {
+func (nm *nodeMonitor) OnSessionUpdate(message *grpc.FornaxCoreMessage) (*grpc.FornaxCoreMessage, error) {
 	sessionState := message.GetSessionState()
 	revision := sessionState.GetNodeRevision()
 	nodeId := message.GetNodeIdentifier().GetIdentifier()
@@ -107,7 +106,7 @@ func (nm *nodeMonitor) OnSessionUpdate(ctx context.Context, message *grpc.Fornax
 
 // OnRegistry setup a new node, send a a node configruation back to node for initialization,
 // node will send back node ready message after node configruation finished
-func (nm *nodeMonitor) OnRegistry(ctx context.Context, message *grpc.FornaxCoreMessage) (*grpc.FornaxCoreMessage, error) {
+func (nm *nodeMonitor) OnRegistry(message *grpc.FornaxCoreMessage) (*grpc.FornaxCoreMessage, error) {
 	v1node := message.GetNodeRegistry().GetNode().DeepCopy()
 	nodeId := message.GetNodeIdentifier().GetIdentifier()
 	revision := message.GetNodeRegistry().GetNodeRevision()
@@ -185,7 +184,7 @@ func (nm *nodeMonitor) OnNodeDisconnect(nodeId string) error {
 }
 
 // OnNodeReady update node state, make node ready for schedule pod
-func (nm *nodeMonitor) OnNodeReady(ctx context.Context, message *grpc.FornaxCoreMessage) (*grpc.FornaxCoreMessage, error) {
+func (nm *nodeMonitor) OnNodeReady(message *grpc.FornaxCoreMessage) (*grpc.FornaxCoreMessage, error) {
 	nodeReady := message.GetNodeReady()
 	nodeId := message.GetNodeIdentifier().GetIdentifier()
 	klog.InfoS("A node is ready", "node", nodeId, "revision", nodeReady.GetNodeRevision(), "pods", len(nodeReady.PodStates))
@@ -199,7 +198,7 @@ func (nm *nodeMonitor) OnNodeReady(ctx context.Context, message *grpc.FornaxCore
 }
 
 // OnNodeStateUpdate sync node pods state
-func (nm *nodeMonitor) OnNodeStateUpdate(ctx context.Context, message *grpc.FornaxCoreMessage) (*grpc.FornaxCoreMessage, error) {
+func (nm *nodeMonitor) OnNodeStateUpdate(message *grpc.FornaxCoreMessage) (*grpc.FornaxCoreMessage, error) {
 	nodeState := message.GetNodeState()
 	nodeId := message.GetNodeIdentifier().GetIdentifier()
 	klog.InfoS("Received a node state", "node", nodeId, "revision", nodeState.GetNodeRevision(), "pods", len(nodeState.GetPodStates()))
@@ -213,7 +212,7 @@ func (nm *nodeMonitor) OnNodeStateUpdate(ctx context.Context, message *grpc.Forn
 }
 
 // OnPodStateUpdate update single pod state
-func (nm *nodeMonitor) OnPodStateUpdate(ctx context.Context, message *grpc.FornaxCoreMessage) (*grpc.FornaxCoreMessage, error) {
+func (nm *nodeMonitor) OnPodStateUpdate(message *grpc.FornaxCoreMessage) (*grpc.FornaxCoreMessage, error) {
 	podState := message.GetPodState()
 	revision := podState.GetNodeRevision()
 	nodeId := message.GetNodeIdentifier()
@@ -246,7 +245,6 @@ func (nm *nodeMonitor) OnPodStateUpdate(ctx context.Context, message *grpc.Forna
 	}
 
 	nodeWRev.Revision = revision
-	klog.InfoS("Received pod state and sessions on pod", "pod", podState, "sessions", len(sessions))
 	err := nm.nodeManager.UpdatePodState(nodeId.GetIdentifier(), podState.GetPod().DeepCopy(), sessions)
 	if err != nil {
 		klog.ErrorS(err, "Failed to update pod state", "pod", podState)

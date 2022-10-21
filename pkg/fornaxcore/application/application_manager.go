@@ -41,25 +41,25 @@ import (
 )
 
 const (
-	// The number of times we retry updating a Application's status.
+	// The number of times we retry updating an application's status.
 	DefaultApplicationSyncErrorRecycleDuration = 10 * time.Second
 
-	// The number of workers sync application
+	// The number of application workers
 	DefaultNumOfApplicationWorkers = 4
 )
 
 type ApplicationPool struct {
-	appName  string
-	mu       sync.RWMutex
-	pods     map[ApplicationPodState]map[string]*ApplicationPod
-	sessions map[ApplicationSessionState]map[string]*ApplicationSession
+	appName     string
+	mu          sync.RWMutex
+	podsByState map[ApplicationPodState]map[string]*ApplicationPod
+	sessions    map[ApplicationSessionState]map[string]*ApplicationSession
 }
 
 func NewApplicationPool(appName string) *ApplicationPool {
 	return &ApplicationPool{
 		appName: appName,
 		mu:      sync.RWMutex{},
-		pods: map[ApplicationPodState]map[string]*ApplicationPod{
+		podsByState: map[ApplicationPodState]map[string]*ApplicationPod{
 			PodStatePending:   {},
 			PodStateIdle:      {},
 			PodStateAllocated: {},
@@ -109,9 +109,9 @@ func NewApplicationManager(ctx context.Context, podManager ie.PodManagerInterfac
 		ctx:                  ctx,
 		applicationQueue:     workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "fornaxv1.Application"),
 		applicationPools:     map[string]*ApplicationPool{},
-		podUpdateChannel:     make(chan *ie.PodEvent, 500),
+		podUpdateChannel:     make(chan *ie.PodEvent, 1000),
 		podManager:           podManager,
-		sessionUpdateChannel: make(chan *ie.SessionEvent, 500),
+		sessionUpdateChannel: make(chan *ie.SessionEvent, 1000),
 		sessionManager:       sessionManager,
 		applicationStore:     appStore,
 		sessionStore:         sessionStore,
@@ -221,31 +221,33 @@ func (am *ApplicationManager) Run(ctx context.Context) {
 
 	klog.Info("Fornaxv1 application manager started")
 
-	go func() {
-		defer klog.Info("Shutting down fornaxv1 application pod manager")
+	for i := 0; i < DefaultNumOfApplicationWorkers; i++ {
+		go wait.UntilWithContext(ctx, am.worker, time.Second)
 
-		for {
-			select {
-			case <-ctx.Done():
-				break
-			case update := <-am.podUpdateChannel:
-				am.onPodEventFromNode(update)
+		go func() {
+			defer klog.Info("Shutting down fornaxv1 application pod manager")
+			for {
+				select {
+				case <-ctx.Done():
+					break
+				case update := <-am.podUpdateChannel:
+					am.onPodEventFromNode(update)
+				}
 			}
-		}
-	}()
+		}()
 
-	go func() {
-		defer klog.Info("Shutting down fornaxv1 application session manager")
-
-		for {
-			select {
-			case <-ctx.Done():
-				break
-			case update := <-am.sessionUpdateChannel:
-				am.onSessionEventFromNode(update)
+		go func() {
+			defer klog.Info("Shutting down fornaxv1 application session manager")
+			for {
+				select {
+				case <-ctx.Done():
+					break
+				case update := <-am.sessionUpdateChannel:
+					am.onSessionEventFromNode(update)
+				}
 			}
-		}
-	}()
+		}()
+	}
 
 	go func() {
 		defer utilruntime.HandleCrash()
@@ -260,10 +262,6 @@ func (am *ApplicationManager) Run(ctx context.Context) {
 			}
 		}
 	}()
-
-	for i := 0; i < DefaultNumOfApplicationWorkers; i++ {
-		go wait.UntilWithContext(ctx, am.worker, time.Second)
-	}
 }
 
 func (am *ApplicationManager) enqueueApplication(applicationKey string) {
@@ -355,9 +353,10 @@ func (am *ApplicationManager) cleanupDeletedApplication(pool *ApplicationPool) e
 // if a application is being deleted, it cleanup session and pods of this application
 func (am *ApplicationManager) syncApplication(ctx context.Context, applicationKey string) (syncErr error) {
 	klog.InfoS("Syncing application", "application", applicationKey)
-	// startTime := time.Now()
+	st := time.Now().UnixMicro()
 	defer func() {
-		klog.InfoS("Finished syncing application", "application", applicationKey)
+		et := time.Now().UnixMicro()
+		klog.InfoS("Done syncing application", "application", applicationKey, "took", et-st)
 		// TODO post metrics
 	}()
 	pool := am.getApplicationPool(applicationKey)
@@ -384,11 +383,10 @@ func (am *ApplicationManager) syncApplication(ctx context.Context, applicationKe
 			// 1, assign pending session to idle pods firstly and cleanup timedout and deleting sessions
 			syncErr = am.deployApplicationSessions(pool, application)
 
-			// 2, determine how many more pods required for remaining pending sessions
+			// 2, find how many more pods required for remaining pending sessions
 			if syncErr == nil {
 				sessionSummary := pool.summarySession()
-				// get length in one method to make sure it has snapshot image at a moment, method is locking write operation
-				numOfOccupiedPod, numOfPendingPod, numOfIdlePod := pool.activeApplicationPodLength()
+				numOfOccupiedPod, numOfPendingPod, numOfIdlePod := pool.activePodNums()
 				numOfUnoccupiedPod := numOfPendingPod + numOfIdlePod
 				numOfPendingSession := sessionSummary.pendingCount
 				numOfDesiredUnoccupiedPod := am.calculateDesiredIdlePods(application, numOfOccupiedPod, numOfUnoccupiedPod, numOfPendingSession)

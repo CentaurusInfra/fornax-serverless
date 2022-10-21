@@ -37,10 +37,10 @@ func (pool *ApplicationPool) summaryPod(podManager ie.PodManagerInterface) Appli
 	pool.mu.RLock()
 	defer pool.mu.RUnlock()
 	summary := ApplicationPodSummary{}
-	summary.pendingCount = int32(len(pool.pods[PodStatePending]))
-	summary.deletingCount = int32(len(pool.pods[PodStateDeleting]))
-	summary.occupiedCount = int32(len(pool.pods[PodStateAllocated]))
-	summary.idleCount = int32(len(pool.pods[PodStateIdle]))
+	summary.pendingCount = int32(len(pool.podsByState[PodStatePending]))
+	summary.deletingCount = int32(len(pool.podsByState[PodStateDeleting]))
+	summary.occupiedCount = int32(len(pool.podsByState[PodStateAllocated]))
+	summary.idleCount = int32(len(pool.podsByState[PodStateIdle]))
 	summary.totalCount = summary.pendingCount + summary.deletingCount + summary.idleCount + summary.occupiedCount
 
 	return summary
@@ -69,7 +69,7 @@ func (pool *ApplicationPool) getPod(podName string) *ApplicationPod {
 }
 
 func (pool *ApplicationPool) _getPodNoLock(podName string) *ApplicationPod {
-	for _, pods := range pool.pods {
+	for _, pods := range pool.podsByState {
 		if p, found := pods[podName]; found {
 			return p
 		}
@@ -85,7 +85,7 @@ func (pool *ApplicationPool) addOrUpdatePod(podName string, podState Application
 }
 
 func (pool *ApplicationPool) _addOrUpdatePodNoLock(podName string, podState ApplicationPodState, sessionIds []string) *ApplicationPod {
-	for _, pods := range pool.pods {
+	for _, pods := range pool.podsByState {
 		if p, f := pods[podName]; f {
 			for _, v := range sessionIds {
 				p.sessions[v] = true
@@ -94,7 +94,7 @@ func (pool *ApplicationPool) _addOrUpdatePodNoLock(podName string, podState Appl
 				return p
 			} else {
 				p.state = podState
-				pool.pods[podState][podName] = p
+				pool.podsByState[podState][podName] = p
 				delete(pods, podName)
 				return p
 			}
@@ -106,14 +106,14 @@ func (pool *ApplicationPool) _addOrUpdatePodNoLock(podName string, podState Appl
 	for _, v := range sessionIds {
 		p.sessions[v] = true
 	}
-	pool.pods[podState][podName] = p
+	pool.podsByState[podState][podName] = p
 	return p
 }
 
 func (pool *ApplicationPool) deletePod(podName string) {
 	pool.mu.Lock()
 	defer pool.mu.Unlock()
-	for _, v := range pool.pods {
+	for _, v := range pool.podsByState {
 		delete(v, podName)
 	}
 }
@@ -122,7 +122,7 @@ func (pool *ApplicationPool) getSomeIdlePods(num int) []*ApplicationPod {
 	pool.mu.RLock()
 	defer pool.mu.RUnlock()
 	pods := []*ApplicationPod{}
-	for _, v := range pool.pods[PodStateIdle] {
+	for _, v := range pool.podsByState[PodStateIdle] {
 		if len(pods) == num {
 			break
 		}
@@ -131,12 +131,12 @@ func (pool *ApplicationPool) getSomeIdlePods(num int) []*ApplicationPod {
 	return pods
 }
 
-func (pool *ApplicationPool) activeApplicationPodLength() (occupiedPods, pendingPods, idlePods int) {
+func (pool *ApplicationPool) activePodNums() (occupiedPods, pendingPods, idlePods int) {
 	pool.mu.RLock()
 	defer pool.mu.RUnlock()
-	pendingPods = len(pool.pods[PodStatePending])
-	idlePods = len(pool.pods[PodStateIdle])
-	occupiedPods = len(pool.pods[PodStateAllocated])
+	pendingPods = len(pool.podsByState[PodStatePending])
+	idlePods = len(pool.podsByState[PodStateIdle])
+	occupiedPods = len(pool.podsByState[PodStateAllocated])
 	return occupiedPods, pendingPods, idlePods
 }
 
@@ -144,7 +144,7 @@ func (pool *ApplicationPool) podLength() int {
 	pool.mu.RLock()
 	defer pool.mu.RUnlock()
 	length := 0
-	for _, v := range pool.pods {
+	for _, v := range pool.podsByState {
 		length += len(v)
 	}
 	return length
@@ -154,7 +154,7 @@ func (pool *ApplicationPool) podListOfState(state ApplicationPodState) []*Applic
 	pool.mu.RLock()
 	defer pool.mu.RUnlock()
 	pods := []*ApplicationPod{}
-	for _, p := range pool.pods[state] {
+	for _, p := range pool.podsByState[state] {
 		pods = append(pods, p)
 	}
 	return pods
@@ -164,7 +164,7 @@ func (pool *ApplicationPool) podList() []*ApplicationPod {
 	pool.mu.RLock()
 	defer pool.mu.RUnlock()
 	pods := []*ApplicationPod{}
-	for _, v := range pool.pods {
+	for _, v := range pool.podsByState {
 		for _, p := range v {
 			pods = append(pods, p)
 		}
@@ -302,14 +302,14 @@ func (pool *ApplicationPool) _deleteSessionNoLock(session *fornaxv1.ApplicationS
 	sessionId := string(session.GetUID())
 	if session.Status.PodReference != nil {
 		podName := session.Status.PodReference.Name
-		for _, podsOfState := range pool.pods {
+		for _, podsOfState := range pool.podsByState {
 			if pod, found := podsOfState[podName]; found {
 				delete(pod.sessions, sessionId)
 				if len(pod.sessions) == 0 && pod.state == PodStateAllocated {
 					// only allow from allocated => idle when delete a session from this pod, pod is in pending/deleting state should keep its state
 					delete(podsOfState, podName)
 					pod.state = PodStateIdle
-					pool.pods[PodStateIdle][podName] = pod
+					pool.podsByState[PodStateIdle][podName] = pod
 				}
 				break
 			}

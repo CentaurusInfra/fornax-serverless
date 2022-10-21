@@ -241,51 +241,39 @@ func (pm *podManager) createPodAndSendEvent(nodeId string, pod *v1.Pod) {
 }
 
 func (pm *podManager) updatePodAndSendEvent(nodeId string, pod *v1.Pod, oldPodState *PodWithFornaxNodeState) {
-	switch {
-	case util.PodIsTerminated(pod):
-		pm.podStateMap.deletePod(oldPodState)
-		pm.podUpdates <- &ie.PodEvent{NodeId: nodeId, Pod: pod.DeepCopy(), Type: ie.PodEventTypeTerminate}
-	default:
-		oldPodState.v1pod = pod.DeepCopy()
-		oldPodState.nodeId = nodeId
-		pm.podUpdates <- &ie.PodEvent{NodeId: nodeId, Pod: pod.DeepCopy(), Type: ie.PodEventTypeUpdate}
-	}
 }
 
 // AddPod is called when node agent report a newly implemented pod or application try to create a new pending pod
+// if pod come from application, and in pending state, add it into scheduler pool.
+// add pod when it does not exist in pod manager, even it's terminated, still add it,
+// pod will be eventually deleted next time when node update does not include this pod anymore
+// if a pod is reported back by node agent, check revision, skip update if no change
+// when pod owner have determinted pod should be deleted, termiante this pod reported by node
 func (pm *podManager) AddPod(nodeId string, pod *v1.Pod) (*v1.Pod, error) {
 	st := time.Now().UnixMicro()
 	fornaxPodState := pm.podStateMap.findPod(util.Name(pod))
 	if fornaxPodState == nil {
 		newPod := pod.DeepCopy()
-		// pod does not exist in pod manager, even it's terminated, still add it, and will delete next time when node does not report again
 		if util.PodIsTerminated(newPod) {
-			// pod is reported back by node agent as a terminated or failed pod
 			if newPod.DeletionTimestamp == nil {
 				newPod.DeletionTimestamp = util.NewCurrentMetaTime()
 			}
 			pm.createPodAndSendEvent(nodeId, newPod)
-		} else if len(newPod.Status.HostIP) > 0 {
+		} else if len(nodeId) > 0 {
 			pm.createPodAndSendEvent(nodeId, newPod)
 		} else {
 			pm.createPodAndSendEvent(nodeId, newPod)
-			et := time.Now().UnixMicro()
-			klog.InfoS("GWJ Done pod manager create and send pod event", "pod", util.Name(pod), "took", et-st)
 			pm.podScheduler.AddPod(newPod, 0*time.Second)
 		}
 		et := time.Now().UnixMicro()
-		klog.InfoS("GWJ Done pod manager add a pod", "pod", util.Name(pod), "took", et-st)
+		klog.InfoS("GWJ Done pod manager add a new pod", "pod", util.Name(pod), "took", et-st)
 		return newPod, nil
 	} else {
 		podInCache := fornaxPodState.v1pod.DeepCopy()
-		// no change, node agent probably just send a full list again
 		if podInCache.ResourceVersion == pod.ResourceVersion {
 			return podInCache, nil
 		}
-		util.MergePod(podInCache, pod)
-		fornaxPodState.nodeId = nodeId
 		if len(nodeId) > 0 {
-			// pod is reported back by node agent and pod owner have determinted pod should be deleted, termiante this pod
 			if podInCache.DeletionTimestamp != nil && util.PodNotTerminated(pod) {
 				klog.InfoS("Terminate a running pod which was request to terminate", "pod", util.Name(pod))
 				err := pm.nodeAgentClient.TerminatePod(nodeId, pod)
@@ -293,13 +281,21 @@ func (pm *podManager) AddPod(nodeId string, pod *v1.Pod) (*v1.Pod, error) {
 					return nil, err
 				}
 			}
-			pm.updatePodAndSendEvent(nodeId, podInCache, fornaxPodState)
+			switch {
+			case util.PodIsTerminated(pod):
+				pm.podStateMap.deletePod(fornaxPodState)
+				pm.podUpdates <- &ie.PodEvent{NodeId: nodeId, Pod: podInCache.DeepCopy(), Type: ie.PodEventTypeTerminate}
+			default:
+				util.MergePod(podInCache, pod)
+				fornaxPodState.v1pod = podInCache.DeepCopy()
+				fornaxPodState.nodeId = nodeId
+				pm.podUpdates <- &ie.PodEvent{NodeId: nodeId, Pod: podInCache.DeepCopy(), Type: ie.PodEventTypeUpdate}
+			}
 		} else {
-			// this case is more likely pod owner call pod manager again to create a pending schedule pod twice
 			pm.podScheduler.AddPod(podInCache, 0*time.Second)
 		}
 		et := time.Now().UnixMicro()
-		klog.InfoS("GWJ Done pod manager add a pod", "pod", util.Name(pod), "took", et-st)
+		klog.InfoS("GWJ Done pod manager update a pod", "pod", util.Name(pod), "took", et-st)
 		return podInCache, nil
 	}
 }
@@ -307,7 +303,7 @@ func (pm *podManager) AddPod(nodeId string, pod *v1.Pod) (*v1.Pod, error) {
 func NewPodManager(ctx context.Context, nodeAgentProxy nodeagent.NodeAgentClient) *podManager {
 	return &podManager{
 		ctx:             ctx,
-		podUpdates:      make(chan *ie.PodEvent, 100),
+		podUpdates:      make(chan *ie.PodEvent, 1000),
 		watchers:        []chan<- *ie.PodEvent{},
 		podStateMap:     &PodStateMap{pods: map[string]*PodWithFornaxNodeState{}},
 		nodeAgentClient: nodeAgentProxy,

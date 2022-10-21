@@ -17,7 +17,6 @@ limitations under the License.
 package internal
 
 import (
-	"context"
 	"time"
 
 	fornaxv1 "centaurusinfra.io/fornax-serverless/pkg/apis/core/v1"
@@ -88,9 +87,9 @@ type PodInfoProviderInterface interface {
 type NodeMonitorInterface interface {
 	OnNodeConnect(nodeId string) error
 	OnNodeDisconnect(nodeId string) error
-	OnRegistry(ctx context.Context, message *grpc.FornaxCoreMessage) (*grpc.FornaxCoreMessage, error)
-	OnNodeReady(ctx context.Context, message *grpc.FornaxCoreMessage) (*grpc.FornaxCoreMessage, error)
-	OnNodeStateUpdate(ctx context.Context, message *grpc.FornaxCoreMessage) (*grpc.FornaxCoreMessage, error)
-	OnPodStateUpdate(ctx context.Context, message *grpc.FornaxCoreMessage) (*grpc.FornaxCoreMessage, error)
-	OnSessionUpdate(ctx context.Context, message *grpc.FornaxCoreMessage) (*grpc.FornaxCoreMessage, error)
+	OnRegistry(message *grpc.FornaxCoreMessage) (*grpc.FornaxCoreMessage, error)
+	OnNodeReady(message *grpc.FornaxCoreMessage) (*grpc.FornaxCoreMessage, error)
+	OnNodeStateUpdate(message *grpc.FornaxCoreMessage) (*grpc.FornaxCoreMessage, error)
+	OnPodStateUpdate(message *grpc.FornaxCoreMessage) (*grpc.FornaxCoreMessage, error)
+	OnSessionUpdate(message *grpc.FornaxCoreMessage) (*grpc.FornaxCoreMessage, error)
 }

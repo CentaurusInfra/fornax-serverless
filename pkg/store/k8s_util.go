@@ -42,9 +42,9 @@ type continueToken struct {
 }
 
 // AppendListItem decodes and appends the object (if it passes filter) to v, which must be a slice.
-func AppendListItem(v reflect.Value, obj runtime.Object, rev uint64, pred apistorage.SelectionPredicate, versioner apistorage.Versioner) error {
+func AppendListItem(v reflect.Value, obj runtime.Object, rev uint64, pred apistorage.SelectionPredicate) error {
 	// being unable to set the version does not prevent the object from being extracted
-	if err := versioner.UpdateObject(obj, rev); err != nil {
+	if err := UpdateObjectResourceVersion(obj, rev); err != nil {
 		klog.Errorf("failed to update object version: %v", err)
 	}
 	if matched, err := pred.Matches(obj); err == nil && matched {
@@ -53,7 +53,7 @@ func AppendListItem(v reflect.Value, obj runtime.Object, rev uint64, pred apisto
 	return nil
 }
 
-func UpdateState(versioner apistorage.Versioner, existintObj runtime.Object, userUpdate apistorage.UpdateFunc) (runtime.Object, uint64, error) {
+func UpdateState(existintObj runtime.Object, userUpdate apistorage.UpdateFunc) (runtime.Object, uint64, error) {
 	obj := existintObj.DeepCopyObject() // deep copy to avoid obj changed by other routine, state should be a snapshot
 	meta := apistorage.ResponseMeta{}
 
@@ -68,7 +68,7 @@ func UpdateState(versioner apistorage.Versioner, existintObj runtime.Object, use
 		return nil, 0, err
 	}
 
-	if err := versioner.PrepareObjectForStorage(ret); err != nil {
+	if err := PrepareObjectForStorage(ret); err != nil {
 		return nil, 0, fmt.Errorf("PrepareObjectForStorage failed: %v", err)
 	}
 	var ttl uint64

@@ -67,7 +67,7 @@ var (
 		ScalingPolicy: fornaxv1.ScalingPolicy{
 			MinimumInstance:         0,
 			MaximumInstance:         500000,
-			Burst:                   100,
+			Burst:                   10,
 			ScalingPolicyType:       "idle_session_number",
 			IdleSessionNumThreshold: &fornaxv1.IdelSessionNumThreshold{HighWaterMark: 0, LowWaterMark: 0},
 		},

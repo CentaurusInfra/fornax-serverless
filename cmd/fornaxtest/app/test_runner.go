@@ -132,6 +132,9 @@ func Run(ctx context.Context, testConfig config.TestConfiguration) {
 	}
 	logs.InitLogs()
 
+	ns := "fornaxtest"
+	initApplicationSessionInformer(ctx, ns)
+
 	done := false
 	st := time.Now().UnixMilli()
 	go func() {
@@ -149,18 +152,6 @@ func Run(ctx context.Context, testConfig config.TestConfiguration) {
 		}
 	}()
 
-	// wait for all app finish sync
-	wgAppInformers := sync.WaitGroup{}
-	for i := 0; i < testConfig.NumOfApps; i++ {
-		wgAppInformers.Add(1)
-		namespace := fmt.Sprintf("echoserver%d", i)
-		go func(ns string) {
-			initApplicationSessionInformer(ctx, ns)
-			wgAppInformers.Done()
-		}(namespace)
-	}
-	wgAppInformers.Wait()
-
 	// start to test all apps
 	randAppName := rand.String(16)
 	wgAppTest := sync.WaitGroup{}
@@ -169,7 +160,7 @@ func Run(ctx context.Context, testConfig config.TestConfiguration) {
 		appName := fmt.Sprintf("echoserver%d", i)
 		klog.Infof("Run test app %s", appName)
 		go func(app string) {
-			RunTest(app, app, randAppName)
+			RunTest(ns, app, randAppName)
 			wgAppTest.Done()
 		}(appName)
 	}

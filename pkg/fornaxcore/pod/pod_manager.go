@@ -250,7 +250,6 @@ func (pm *podManager) updatePodAndSendEvent(nodeId string, pod *v1.Pod, oldPodSt
 // if a pod is reported back by node agent, check revision, skip update if no change
 // when pod owner have determinted pod should be deleted, termiante this pod reported by node
 func (pm *podManager) AddPod(nodeId string, pod *v1.Pod) (*v1.Pod, error) {
-	st := time.Now().UnixMicro()
 	fornaxPodState := pm.podStateMap.findPod(util.Name(pod))
 	if fornaxPodState == nil {
 		newPod := pod.DeepCopy()
@@ -265,8 +264,6 @@ func (pm *podManager) AddPod(nodeId string, pod *v1.Pod) (*v1.Pod, error) {
 			pm.createPodAndSendEvent(nodeId, newPod)
 			pm.podScheduler.AddPod(newPod, 0*time.Second)
 		}
-		et := time.Now().UnixMicro()
-		klog.InfoS("GWJ Done pod manager add a new pod", "pod", util.Name(pod), "took", et-st)
 		return newPod, nil
 	} else {
 		podInCache := fornaxPodState.v1pod.DeepCopy()
@@ -294,8 +291,6 @@ func (pm *podManager) AddPod(nodeId string, pod *v1.Pod) (*v1.Pod, error) {
 		} else {
 			pm.podScheduler.AddPod(podInCache, 0*time.Second)
 		}
-		et := time.Now().UnixMicro()
-		klog.InfoS("GWJ Done pod manager update a pod", "pod", util.Name(pod), "took", et-st)
 		return podInCache, nil
 	}
 }

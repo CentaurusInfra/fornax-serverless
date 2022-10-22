@@ -21,7 +21,6 @@ import (
 	"sync"
 
 	"centaurusinfra.io/fornax-serverless/pkg/store"
-	"k8s.io/klog/v2"
 
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apiserver/pkg/storage"
@@ -55,7 +54,6 @@ type objWithIndex struct {
 type objList []*objWithIndex
 
 func (list objList) shrink(length int64) objList {
-	klog.InfoS("GWJ shrink memory storage list", "len", len(list), "to", length)
 	newList := make([]*objWithIndex, length)
 	i := uint64(0)
 	for _, v := range list {
@@ -65,7 +63,6 @@ func (list objList) shrink(length int64) objList {
 			i += 1
 		}
 	}
-	klog.InfoS("GWJ done shrink memory storage list", "len", len(newList))
 	return newList
 }
 

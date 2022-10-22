@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package factory
+package store
 
 import (
 	"os"
@@ -23,8 +23,8 @@ import (
 
 	fornaxv1 "centaurusinfra.io/fornax-serverless/pkg/apis/core/v1"
 	"centaurusinfra.io/fornax-serverless/pkg/nodeagent/runtime"
-	"centaurusinfra.io/fornax-serverless/pkg/nodeagent/store/sqlite"
 	fornaxtypes "centaurusinfra.io/fornax-serverless/pkg/nodeagent/types"
+	"centaurusinfra.io/fornax-serverless/pkg/store/storage/sqlite"
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
@@ -33,7 +33,21 @@ func NewATestSession(id string) *fornaxtypes.FornaxSession {
 	testSession := fornaxtypes.FornaxSession{
 		Identifier:    id,
 		PodIdentifier: id,
-		Session:       &fornaxv1.ApplicationSession{},
+		Session: &fornaxv1.ApplicationSession{
+			TypeMeta: metav1.TypeMeta{
+				Kind:       "ApplicationSession",
+				APIVersion: "centaurusinfra.io/fornax-serverless/core/v1",
+			},
+			ObjectMeta: metav1.ObjectMeta{
+				Name:            id,
+				GenerateName:    id,
+				Namespace:       "test",
+				ResourceVersion: "123",
+				Generation:      0,
+			},
+			Spec:   fornaxv1.ApplicationSessionSpec{},
+			Status: fornaxv1.ApplicationSessionStatus{},
+		},
 	}
 	return &testSession
 }
@@ -41,16 +55,21 @@ func NewATestSession(id string) *fornaxtypes.FornaxSession {
 func NewATestPod(id string) *fornaxtypes.FornaxPod {
 	testPod := fornaxtypes.FornaxPod{
 		Identifier:     id,
-		ApplicationId:  "applicationId",
 		FornaxPodState: "PodStateCreated",
 		Pod: &v1.Pod{
 			TypeMeta: metav1.TypeMeta{
 				Kind:       "Pod",
 				APIVersion: "k8s.io/core/v1",
 			},
-			ObjectMeta: metav1.ObjectMeta{},
-			Spec:       v1.PodSpec{},
-			Status:     v1.PodStatus{},
+			ObjectMeta: metav1.ObjectMeta{
+				Name:            id,
+				Namespace:       "test",
+				GenerateName:    id,
+				ResourceVersion: "123",
+				Generation:      0,
+			},
+			Spec:   v1.PodSpec{},
+			Status: v1.PodStatus{},
 		},
 		ConfigMap:  &v1.ConfigMap{},
 		RuntimePod: &runtime.Pod{},

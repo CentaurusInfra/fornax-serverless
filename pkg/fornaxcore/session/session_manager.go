@@ -19,20 +19,17 @@ package session
 import (
 	"context"
 	"fmt"
-	"reflect"
 	"sync"
 	"time"
 
 	fornaxv1 "centaurusinfra.io/fornax-serverless/pkg/apis/core/v1"
 	"centaurusinfra.io/fornax-serverless/pkg/fornaxcore/grpc/nodeagent"
 	ie "centaurusinfra.io/fornax-serverless/pkg/fornaxcore/internal"
+	fornaxstore "centaurusinfra.io/fornax-serverless/pkg/store"
+	storefactory "centaurusinfra.io/fornax-serverless/pkg/store/factory"
 	"centaurusinfra.io/fornax-serverless/pkg/util"
-	apierrors "k8s.io/apimachinery/pkg/api/errors"
-	"k8s.io/client-go/rest"
-	"k8s.io/client-go/tools/cache"
 
 	v1 "k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/klog/v2"
 )
 
@@ -46,11 +43,10 @@ type SessionStatusChangeMap struct {
 type sessionManager struct {
 	ctx             context.Context
 	nodeAgentClient nodeagent.NodeAgentClient
-	podManager      ie.PodManagerInterface
 	watchers        []chan<- *ie.SessionEvent
 	statusUpdateCh  chan string
 	statusChanges   *SessionStatusChangeMap
-	kubeConfig      *rest.Config
+	sessionStore    fornaxstore.ApiStorageInterface
 }
 
 func (sscm *SessionStatusChangeMap) addSessionStatusChange(name string, status *fornaxv1.ApplicationSessionStatus, replace bool) {
@@ -79,24 +75,23 @@ func (sscm *SessionStatusChangeMap) getAndRemoveStatusChangeSnapshot() map[strin
 	return updatedSessions
 }
 
-func NewSessionManager(ctx context.Context, nodeAgentProxy nodeagent.NodeAgentClient, podManager ie.PodManagerInterface) *sessionManager {
+func NewSessionManager(ctx context.Context, nodeAgentProxy nodeagent.NodeAgentClient, sessionStore fornaxstore.ApiStorageInterface) *sessionManager {
 	mgr := &sessionManager{
 		ctx:             ctx,
 		nodeAgentClient: nodeAgentProxy,
-		podManager:      podManager,
 		statusUpdateCh:  make(chan string, 500),
 		statusChanges: &SessionStatusChangeMap{
 			changes: map[string]*fornaxv1.ApplicationSessionStatus{},
 			mu:      sync.Mutex{},
 		},
-		kubeConfig: util.GetFornaxCoreKubeConfig(),
+		sessionStore: sessionStore,
 	}
 	return mgr
 }
 
-// Run receive session status signal from channel and grab a snapshot of session status change from session statua map, and update api server,
+// AsyncSessionStatusUpdateRun receive session status signal from channel and grab a snapshot of session status change from session statua map, and update api server,
 // snap shot is removed from session status change map, if any session status update failed, put it back if there is no new status
-func (sm *sessionManager) Run(ctx context.Context) {
+func (sm *sessionManager) AsyncSessionStatusUpdateRun(ctx context.Context) {
 	klog.Info("Starting fornaxv1 session status manager")
 
 	go func() {
@@ -108,7 +103,7 @@ func (sm *sessionManager) Run(ctx context.Context) {
 			for name, status := range sessionBatch {
 				wg.Add(1)
 				go func(name string, status *fornaxv1.ApplicationSessionStatus) {
-					err := sm.updateSessionStatus(name, status)
+					err := sm._updateSessionStatus(name, status)
 					if err != nil {
 						failedSessions[name] = status
 						klog.ErrorS(err, "Failed to update session status", "session", name)
@@ -166,10 +161,10 @@ func (sm *sessionManager) Watch(receiver chan<- *ie.SessionEvent) {
 }
 
 // forward to who are interested in session event
-func (sm *sessionManager) ReceiveSessionStatusFromNode(nodeId string, pod *v1.Pod, sessions []*fornaxv1.ApplicationSession) {
+func (sm *sessionManager) NotifySessionStatusFromNode(nodeId string, pod *v1.Pod, sessions []*fornaxv1.ApplicationSession) {
 	for _, session := range sessions {
-		for _, v := range sm.watchers {
-			v <- &ie.SessionEvent{
+		for _, watcher := range sm.watchers {
+			watcher <- &ie.SessionEvent{
 				NodeId:  nodeId,
 				Pod:     pod,
 				Session: session,
@@ -196,7 +191,7 @@ func (sm *sessionManager) OpenSession(pod *v1.Pod, session *fornaxv1.Application
 }
 
 // UpdateApplicationSessionStatus put updated status into a map send singal into a channel to asynchronously update session status
-func (sm *sessionManager) UpdateSessionStatus(session *fornaxv1.ApplicationSession, newStatus *fornaxv1.ApplicationSessionStatus) error {
+func (sm *sessionManager) AsyncUpdateSessionStatus(session *fornaxv1.ApplicationSession, newStatus *fornaxv1.ApplicationSessionStatus) error {
 	sm.statusChanges.addSessionStatusChange(util.Name(session), newStatus, true)
 	if len(sm.statusUpdateCh) == 0 {
 		sm.statusUpdateCh <- util.Name(session)
@@ -204,60 +199,36 @@ func (sm *sessionManager) UpdateSessionStatus(session *fornaxv1.ApplicationSessi
 	return nil
 }
 
-// updateApplicationSessionStatus attempts to update the Status of the given Application Session
-func (sm *sessionManager) updateSessionStatus(sessionName string, newStatus *fornaxv1.ApplicationSessionStatus) error {
-	apiServerClient := util.GetFornaxCoreApiClient(sm.kubeConfig)
-	namespace, name, _ := cache.SplitMetaNamespaceKey(sessionName)
-	session, err := apiServerClient.CoreV1().ApplicationSessions(namespace).Get(context.Background(), name, metav1.GetOptions{})
-	if err != nil {
-		if apierrors.IsNotFound(err) {
-			return nil
-		}
-		return err
-	}
-
-	if reflect.DeepEqual(session.Status, *newStatus) {
-		return nil
-	}
-
-	updatedSession := session.DeepCopy()
-	updatedSession.Status = *newStatus
-	client := apiServerClient.CoreV1().ApplicationSessions(session.Namespace)
-	for i := 0; i <= 3; i++ {
-		updatedSession, err = client.UpdateStatus(context.TODO(), updatedSession, metav1.UpdateOptions{})
-		if err == nil {
-			break
-		} else {
-			updatedSession = session.DeepCopy()
-			updatedSession.Status = *newStatus
-		}
-	}
-	if err != nil {
-		klog.ErrorS(err, "Failed to update session status", "sess", session)
-		return err
-	}
-
-	return nil
+// UpdateApplicationSessionStatus put updated status into a map send singal into a channel to asynchronously update session status
+func (sm *sessionManager) UpdateSessionStatus(session *fornaxv1.ApplicationSession, newStatus *fornaxv1.ApplicationSessionStatus) error {
+	e := sm._updateSessionStatus(util.Name(session), newStatus)
+	return e
 }
 
-func (sm *sessionManager) UpdateSessionFinalizer(session *fornaxv1.ApplicationSession) error {
-	apiServerClient := util.GetFornaxCoreApiClient(sm.kubeConfig)
-	client := apiServerClient.CoreV1().ApplicationSessions(session.Namespace)
-	updatedSession := session.DeepCopy()
-	if util.SessionIsOpen(updatedSession) {
-		util.AddFinalizer(&updatedSession.ObjectMeta, fornaxv1.FinalizerOpenSession)
-	} else {
-		util.RemoveFinalizer(&updatedSession.ObjectMeta, fornaxv1.FinalizerOpenSession)
-	}
+// attempts to update the Status of the given Application Session name
+func (sm *sessionManager) _updateSessionStatus(sessionName string, newStatus *fornaxv1.ApplicationSessionStatus) error {
+	var updateErr error
+	for i := 0; i <= 3; i++ {
+		session, err := storefactory.GetApplicationSessionCache(sm.sessionStore, sessionName)
+		if err != nil {
+			return err
+		}
+		if session == nil {
+			return nil
+		}
 
-	if len(session.Finalizers) != len(updatedSession.Finalizers) {
-		for i := 0; i <= 3; i++ {
-			_, err := client.Update(context.TODO(), updatedSession, metav1.UpdateOptions{})
-			if err == nil {
-				break
-			}
+		updatedSession := session.DeepCopy()
+		updatedSession.Status = *newStatus
+		if util.SessionIsOpen(updatedSession) {
+			util.AddFinalizer(&updatedSession.ObjectMeta, fornaxv1.FinalizerOpenSession)
+		} else {
+			util.RemoveFinalizer(&updatedSession.ObjectMeta, fornaxv1.FinalizerOpenSession)
+		}
+
+		_, updateErr = storefactory.UpdateApplicationSession(sm.ctx, sm.sessionStore, updatedSession)
+		if updateErr == nil {
+			break
 		}
 	}
-
-	return nil
+	return updateErr
 }

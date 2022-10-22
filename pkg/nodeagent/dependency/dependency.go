@@ -27,8 +27,8 @@ import (
 	"centaurusinfra.io/fornax-serverless/pkg/nodeagent/runtime"
 	"centaurusinfra.io/fornax-serverless/pkg/nodeagent/sessionservice"
 	"centaurusinfra.io/fornax-serverless/pkg/nodeagent/sessionservice/server"
-	"centaurusinfra.io/fornax-serverless/pkg/nodeagent/store/factory"
-	"centaurusinfra.io/fornax-serverless/pkg/nodeagent/store/sqlite"
+	"centaurusinfra.io/fornax-serverless/pkg/nodeagent/store"
+	"centaurusinfra.io/fornax-serverless/pkg/store/storage/sqlite"
 	v1 "k8s.io/api/core/v1"
 	criv1 "k8s.io/cri-api/pkg/apis/runtime/v1"
 	"k8s.io/klog/v2"
@@ -46,8 +46,8 @@ type Dependencies struct {
 	MemoryManager     resourcemanager.MemoryManager
 	CPUManager        resourcemanager.CPUManager
 	VolumeManager     resourcemanager.VolumeManager
-	NodeStore         *factory.NodeStore
-	PodStore          *factory.PodStore
+	NodeStore         *store.NodeStore
+	PodStore          *store.PodStore
 	SessionService    sessionservice.SessionService
 }
 
@@ -60,8 +60,8 @@ func InitBasicDependencies(nodeConfig config.NodeConfiguration) (*Dependencies, 
 		MemoryManager:     resourcemanager.MemoryManager{},
 		CPUManager:        resourcemanager.CPUManager{},
 		VolumeManager:     resourcemanager.VolumeManager{},
-		PodStore:          &factory.PodStore{},
-		NodeStore:         &factory.NodeStore{},
+		PodStore:          &store.PodStore{},
+		NodeStore:         &store.NodeStore{},
 	}
 
 	// SqliteStore
@@ -125,14 +125,14 @@ func InitNetworkProvider(hostname string) network.NetworkAddressProvider {
 	}
 }
 
-func InitPodStore(databaseURL string) (*factory.PodStore, error) {
-	return factory.NewPodSqliteStore(&sqlite.SQLiteStoreOptions{
+func InitPodStore(databaseURL string) (*store.PodStore, error) {
+	return store.NewPodSqliteStore(&sqlite.SQLiteStoreOptions{
 		ConnUrl: databaseURL,
 	})
 }
 
-func InitNodeStore(databaseURL string) (*factory.NodeStore, error) {
-	return factory.NewNodeSqliteStore(&sqlite.SQLiteStoreOptions{
+func InitNodeStore(databaseURL string) (*store.NodeStore, error) {
+	return store.NewNodeSqliteStore(&sqlite.SQLiteStoreOptions{
 		ConnUrl: databaseURL,
 	})
 }

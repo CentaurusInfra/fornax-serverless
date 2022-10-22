@@ -16,6 +16,8 @@ limitations under the License.
 
 package v1
 
+import "fmt"
+
 const (
 	LabelFornaxCore                   = "core.fornax-serverless.centaurusinfra.io"
 	LabelFornaxCoreNode               = "node.fornax-serverless.centaurusinfra.io"
@@ -28,6 +30,8 @@ const (
 )
 
 var (
-	ApplicationKind        = SchemeGroupVersion.WithKind("Application")
-	ApplicationSessionKind = SchemeGroupVersion.WithKind("ApplicationSession")
+	ApplicationKind          = SchemeGroupVersion.WithKind("Application")
+	ApplicationSessionKind   = SchemeGroupVersion.WithKind("ApplicationSession")
+	ApplicationGrvKey        = fmt.Sprintf("/%s/%s", ApplicationGrv.Group, ApplicationGrv.Resource)
+	ApplicationSessionGrvKey = fmt.Sprintf("/%s/%s", ApplicationSessionGrv.Group, ApplicationSessionGrv.Resource)
 )

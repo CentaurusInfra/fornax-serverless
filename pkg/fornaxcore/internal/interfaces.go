@@ -17,7 +17,6 @@ limitations under the License.
 package internal
 
 import (
-	"context"
 	"time"
 
 	fornaxv1 "centaurusinfra.io/fornax-serverless/pkg/apis/core/v1"
@@ -55,7 +54,7 @@ type NodeManagerInterface interface {
 	NodeInfoProviderInterface
 	UpdateSessionState(nodeId string, session *fornaxv1.ApplicationSession) error
 	UpdatePodState(nodeId string, pod *v1.Pod, sessions []*fornaxv1.ApplicationSession) error
-	SyncNodePodStates(nodeId string, podStates []*grpc.PodState)
+	SyncNodePodStates(nodeId string, podStates []*grpc.PodState, minimalResourceRevision int64)
 	DisconnectNode(nodeId string) error
 	FindNode(name string) *FornaxNodeWithState
 	CreateNode(nodeId string, node *v1.Node) (*FornaxNodeWithState, error)
@@ -67,8 +66,7 @@ type NodeManagerInterface interface {
 // and update session status using session state reported back from node agent
 type SessionManagerInterface interface {
 	UpdateSessionStatus(session *fornaxv1.ApplicationSession, newStatus *fornaxv1.ApplicationSessionStatus) error
-	UpdateSessionFinalizer(session *fornaxv1.ApplicationSession) error
-	ReceiveSessionStatusFromNode(nodeId string, pod *v1.Pod, sessions []*fornaxv1.ApplicationSession)
+	NotifySessionStatusFromNode(nodeId string, pod *v1.Pod, sessions []*fornaxv1.ApplicationSession)
 	OpenSession(pod *v1.Pod, session *fornaxv1.ApplicationSession) error
 	CloseSession(pod *v1.Pod, session *fornaxv1.ApplicationSession) error
 	Watch(watcher chan<- *SessionEvent)
@@ -89,9 +87,9 @@ type PodInfoProviderInterface interface {
 type NodeMonitorInterface interface {
 	OnNodeConnect(nodeId string) error
 	OnNodeDisconnect(nodeId string) error
-	OnRegistry(ctx context.Context, message *grpc.FornaxCoreMessage) (*grpc.FornaxCoreMessage, error)
-	OnNodeReady(ctx context.Context, message *grpc.FornaxCoreMessage) (*grpc.FornaxCoreMessage, error)
-	OnNodeStateUpdate(ctx context.Context, message *grpc.FornaxCoreMessage) (*grpc.FornaxCoreMessage, error)
-	OnPodStateUpdate(ctx context.Context, message *grpc.FornaxCoreMessage) (*grpc.FornaxCoreMessage, error)
-	OnSessionUpdate(ctx context.Context, message *grpc.FornaxCoreMessage) (*grpc.FornaxCoreMessage, error)
+	OnRegistry(message *grpc.FornaxCoreMessage) (*grpc.FornaxCoreMessage, error)
+	OnNodeReady(message *grpc.FornaxCoreMessage) (*grpc.FornaxCoreMessage, error)
+	OnNodeStateUpdate(message *grpc.FornaxCoreMessage) (*grpc.FornaxCoreMessage, error)
+	OnPodStateUpdate(message *grpc.FornaxCoreMessage) (*grpc.FornaxCoreMessage, error)
+	OnSessionUpdate(message *grpc.FornaxCoreMessage) (*grpc.FornaxCoreMessage, error)
 }

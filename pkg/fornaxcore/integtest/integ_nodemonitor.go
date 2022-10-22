@@ -17,7 +17,6 @@ limitations under the License.
 package integtest
 
 import (
-	"context"
 	"sync"
 	"time"
 
@@ -56,12 +55,12 @@ func (*integtestNodeMonitor) OnNodeDisconnect(nodeId string) error {
 }
 
 // OnSessionUpdate implements server.NodeMonitor
-func (*integtestNodeMonitor) OnSessionUpdate(ctx context.Context, message *grpc.FornaxCoreMessage) (*grpc.FornaxCoreMessage, error) {
+func (*integtestNodeMonitor) OnSessionUpdate(message *grpc.FornaxCoreMessage) (*grpc.FornaxCoreMessage, error) {
 	panic("unimplemented")
 }
 
 // OnPodUpdate implements server.NodeMonitor
-func (*integtestNodeMonitor) OnPodStateUpdate(ctx context.Context, message *grpc.FornaxCoreMessage) (*grpc.FornaxCoreMessage, error) {
+func (*integtestNodeMonitor) OnPodStateUpdate(message *grpc.FornaxCoreMessage) (*grpc.FornaxCoreMessage, error) {
 	podState := message.GetPodState()
 	klog.InfoS("Received a pod state", "pod", podutil.Name(podState.GetPod()), "state", podState.GetState())
 
@@ -87,7 +86,7 @@ func (*integtestNodeMonitor) OnPodStateUpdate(ctx context.Context, message *grpc
 }
 
 // OnReady implements server.NodeMonitor
-func (*integtestNodeMonitor) OnNodeReady(ctx context.Context, message *grpc.FornaxCoreMessage) (*grpc.FornaxCoreMessage, error) {
+func (*integtestNodeMonitor) OnNodeReady(message *grpc.FornaxCoreMessage) (*grpc.FornaxCoreMessage, error) {
 	// update node, scheduler begin to schedule pod in ready node
 
 	// for test, send node a test pod
@@ -97,7 +96,7 @@ func (*integtestNodeMonitor) OnNodeReady(ctx context.Context, message *grpc.Forn
 }
 
 // OnRegistry implements server.NodeMonitor
-func (*integtestNodeMonitor) OnRegistry(ctx context.Context, message *grpc.FornaxCoreMessage) (*grpc.FornaxCoreMessage, error) {
+func (*integtestNodeMonitor) OnRegistry(message *grpc.FornaxCoreMessage) (*grpc.FornaxCoreMessage, error) {
 	registry := message.GetNodeRegistry()
 
 	daemonPod := BuildATestDaemonPod()
@@ -124,7 +123,7 @@ func (*integtestNodeMonitor) OnRegistry(ctx context.Context, message *grpc.Forna
 }
 
 // OnNodeUpdate implements server.NodeMonitor
-func (*integtestNodeMonitor) OnNodeStateUpdate(ctx context.Context, state *grpc.FornaxCoreMessage) (*grpc.FornaxCoreMessage, error) {
+func (*integtestNodeMonitor) OnNodeStateUpdate(state *grpc.FornaxCoreMessage) (*grpc.FornaxCoreMessage, error) {
 	// update node resource info
 	return nil, nil
 }

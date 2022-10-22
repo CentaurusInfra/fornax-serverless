@@ -41,7 +41,7 @@ type PodScheduler interface {
 
 var _ PodScheduler = &podScheduler{}
 
-var NumOfNodesPerScheduler = 200
+var DefaultNumOfNodesPerScheduler = 200
 
 type NodeSortingMethod string
 
@@ -59,7 +59,7 @@ var (
 )
 
 // we want to use more memory node, so, lager value are put ahead in sorted list
-func MoreNodeMemorySortFunc(pi, pj interface{}) bool {
+func NodeHasMoreMemorySortFunc(pi, pj interface{}) bool {
 	piResource := pi.(*SchedulableNode).GetAllocatableResources()
 	piResourceV, _ := piResource.Memory().AsInt64()
 	pjResource := pj.(*SchedulableNode).GetAllocatableResources()
@@ -68,7 +68,7 @@ func MoreNodeMemorySortFunc(pi, pj interface{}) bool {
 }
 
 // we want to use less used node, so, smaller value are put ahead in sorted list
-func LessNodeLastUseSortFunc(pi, pj interface{}) bool {
+func NodeLeastLastUseSortFunc(pi, pj interface{}) bool {
 	piLastUsed := pi.(*SchedulableNode).LastUsed.UnixNano()
 	pjLastUsed := pj.(*SchedulableNode).LastUsed.UnixNano()
 	return piLastUsed < pjLastUsed
@@ -81,11 +81,11 @@ func NodeNameKeyFunc(pj interface{}) string {
 func BuildNodeSortingFunc(sortingMethod NodeSortingMethod) collection.LessFunc {
 	switch sortingMethod {
 	case NodeSortingMethodMoreMemory:
-		return MoreNodeMemorySortFunc
+		return NodeHasMoreMemorySortFunc
 	case NodeSortingMethodLessLastUse:
-		return LessNodeLastUseSortFunc
+		return NodeLeastLastUseSortFunc
 	default:
-		return LessNodeLastUseSortFunc
+		return NodeLeastLastUseSortFunc
 	}
 }
 
@@ -152,7 +152,7 @@ func (ps *podScheduler) selectNode(pod *v1.Pod, nodes []*SchedulableNode) *Sched
 func (ps *podScheduler) bindNode(snode *SchedulableNode, pod *v1.Pod) error {
 	podName := util.Name(pod)
 	nodeId := snode.NodeId
-	klog.InfoS("Bind pod to node", "pod", podName, "node", nodeId)
+	klog.InfoS("Bind pod to node", "pod", podName, "node", nodeId, "available resource", snode.GetAllocatableResources())
 
 	resourceList := util.GetPodResourceList(pod)
 	snode.AdmitPodOccupiedResourceList(resourceList)
@@ -186,6 +186,11 @@ func (ps *podScheduler) unbindNode(node *SchedulableNode, pod *v1.Pod) {
 }
 
 func (ps *podScheduler) schedulePod(pod *v1.Pod, candidateNodes []*SchedulableNode) error {
+	st := time.Now().UnixMicro()
+	defer func() {
+		et := time.Now().UnixMicro()
+		klog.InfoS("Schedule pod took", "pod", util.Name(pod), "ms", et-st)
+	}()
 	if pod.DeletionTimestamp != nil {
 		klog.InfoS("Pod has a deletion timestamp, remove it from queue", "pod", util.Name(pod))
 		ps.RemovePod(pod)
@@ -200,7 +205,6 @@ func (ps *podScheduler) schedulePod(pod *v1.Pod, candidateNodes []*SchedulableNo
 		for _, cond := range conditions {
 			goodNode = goodNode && cond.Apply(node, &allocatedResources)
 			if !goodNode {
-				klog.InfoS("Schedule condition does not meet", "condition", cond, "pod", util.Name(pod))
 				break
 			}
 		}
@@ -214,7 +218,7 @@ func (ps *podScheduler) schedulePod(pod *v1.Pod, candidateNodes []*SchedulableNo
 	}
 
 	if len(availableNodes) == 0 {
-		klog.InfoS("Can not find a node candidate for scheduling pod, retry later", "pod", util.Name(pod))
+		klog.InfoS("Can not find node met condition for pod, come back later", "pod", util.Name(pod), "required resource", util.GetPodResourceList(pod))
 		return InsufficientResourceError
 	} else {
 		// sort candidates to use first one,
@@ -224,10 +228,8 @@ func (ps *podScheduler) schedulePod(pod *v1.Pod, candidateNodes []*SchedulableNo
 		}
 		sort.Sort(sortedNodes)
 
-		// try first three nodes, put pod back to pool if binding failed
 		var bindError error
-		for i := 0; i < 3; i++ {
-			node := sortedNodes.nodes[i]
+		for _, node := range sortedNodes.nodes {
 			bindError = ps.bindNode(node, pod)
 			if bindError != nil {
 				ps.unbindNode(node, pod)
@@ -292,14 +294,34 @@ func (ps *podScheduler) updatePodOccupiedResourceList(snode *SchedulableNode, v1
 
 func (ps *podScheduler) printScheduleSummary() {
 	activeNum, retryNum := ps.scheduleQueue.Length()
-	klog.InfoS("Scheduler summary", "active queue length", activeNum, "backoff queue length", retryNum, "available nodes", ps.nodePool.size())
+	klog.InfoS("Scheduler summary", "active queue length", activeNum, "backoff queue length", retryNum, "available nodes", ps.nodePool.size(), "schedulers", len(ps.schedulers))
 	// ps.nodePool.printSummary()
 }
 
 type nodeChunkScheduler struct {
-	mu        sync.Mutex
-	nodes     []*SchedulableNode
-	scheduler *podScheduler
+	mu            sync.Mutex
+	nodes         []*SchedulableNode
+	scheduler     *podScheduler
+	sortingMethod NodeSortingMethod
+}
+
+// use copy on write to build pool.sortedNodes to avoid concurrent map iteration and modification,
+// sorting method are like free memory or pods on node
+// scheduler use this list to find a number nodes from this list to schedule pods,
+// when pods are assigned to nodes or terminated from nodes, pool.sortedNodes are not sorted again,
+// this list need to resort, but do not want to resort every time since cow is expensive,
+// scheduler control when a resort is needed
+func (cps *nodeChunkScheduler) sortNodes() {
+	nodes := []*SchedulableNode{}
+	for _, v := range cps.nodes {
+		nodes = append(nodes, v)
+	}
+	sortedNodes := &SortedNodes{
+		nodes:    nodes,
+		lessFunc: BuildNodeSortingFunc(cps.sortingMethod),
+	}
+	sort.Sort(sortedNodes)
+	cps.nodes = sortedNodes.nodes
 }
 
 func (cps *nodeChunkScheduler) schedulePod(pod *v1.Pod) error {
@@ -310,16 +332,20 @@ func (cps *nodeChunkScheduler) schedulePod(pod *v1.Pod) error {
 }
 
 func (ps *podScheduler) initializeChunkSchedulers() {
+	numOfNodesPerScheduler := ps.policy.NumOfEvaluatedNodes
 	chunkSchedulers := []*nodeChunkScheduler{}
 	allNodes := ps.nodePool.GetNodes()
-	numOfSchedulers := int(math.Ceil(float64(len(allNodes)) / float64(NumOfNodesPerScheduler)))
+	klog.InfoS("Reinitialize chunk schedulers", "available nodes", len(allNodes))
+	numOfSchedulers := int(math.Ceil(float64(len(allNodes)) / float64(numOfNodesPerScheduler)))
 	for i := 0; i < numOfSchedulers; i++ {
-		nodes := allNodes[i*NumOfNodesPerScheduler : int(math.Min(float64((i+1)*NumOfNodesPerScheduler), float64(len(allNodes))))]
+		nodes := allNodes[i*numOfNodesPerScheduler : int(math.Min(float64((i+1)*numOfNodesPerScheduler), float64(len(allNodes))))]
 		cs := &nodeChunkScheduler{
-			mu:        sync.Mutex{},
-			nodes:     nodes,
-			scheduler: ps,
+			mu:            sync.Mutex{},
+			nodes:         nodes,
+			scheduler:     ps,
+			sortingMethod: ps.policy.NodeSortingMethod,
 		}
+		cs.sortNodes()
 		chunkSchedulers = append(chunkSchedulers, cs)
 	}
 	ps.schedulers = chunkSchedulers
@@ -339,7 +365,6 @@ func (ps *podScheduler) Run() {
 				schedulers := ps.schedulers
 				if len(schedulers) == 0 {
 					// no scheduler, do not poll pods
-					klog.Info("No node is ready for scheduling pod, wait for 100ms")
 					time.Sleep(100 * time.Millisecond)
 					continue
 				}
@@ -359,7 +384,6 @@ func (ps *podScheduler) Run() {
 					// every pod start a routing to schedule, every pod start to loop chunck scheduler from a different position, if a it's scheduled, then break loop
 					go func(index int) {
 						pod := pods[index]
-						klog.InfoS("Schedule a pod", "pod", util.Name(pod), "num of scheduler", numOfScheduler)
 						var schedErr error
 						for i := 0; i < numOfScheduler; i++ {
 							scheduler := schedulers[(index+i)%numOfScheduler]
@@ -409,15 +433,20 @@ func (ps *podScheduler) Run() {
 					}
 				}
 			case update := <-ps.nodeUpdateCh:
+				oldSize := ps.nodePool.size()
 				ps.updateNodePool(update.NodeId, update.Node.DeepCopy(), update.Type)
-				// reinitialize chunk schedulers, reinitialization is expensive, but it's ok for now since it only happen when node is added or removed
-				ps.initializeChunkSchedulers()
-				ps.scheduleQueue.ReviveBackoffItem()
+				newSize := ps.nodePool.size()
+				if oldSize != newSize {
+					// reinitialization is expensive, but it's ok for now since it only happen when node pool size changed
+					ps.initializeChunkSchedulers()
+				}
 			case <-ticker.C:
+				ps.printScheduleSummary()
 				// sorting nodes using same node selection logic, move more likely nodes ahead,
 				// we may use different sorting interval
-				ps.printScheduleSummary()
-				ps.nodePool.SortNodes()
+				for _, v := range ps.schedulers {
+					v.sortNodes()
+				}
 
 				// move item from backoff queue to active queue if item exceed cool down time
 				if ps.scheduleQueue.backoffRetryQueue.queue.Len() > 0 {
@@ -432,16 +461,14 @@ func NewPodScheduler(ctx context.Context, nodeAgent nodeagent.NodeAgentClient, n
 	ps := &podScheduler{
 		ctx:             ctx,
 		stop:            false,
-		nodeUpdateCh:    make(chan *ie.NodeEvent, 500),
-		podUpdateCh:     make(chan *ie.PodEvent, 500),
+		nodeUpdateCh:    make(chan *ie.NodeEvent, 100),
+		podUpdateCh:     make(chan *ie.PodEvent, 1000),
 		nodeInfoP:       nodeInfoP,
 		nodeAgentClient: nodeAgent,
 		scheduleQueue:   NewScheduleQueue(),
 		nodePool: &SchedulableNodePool{
-			mu:            sync.Mutex{},
-			nodes:         map[string]*SchedulableNode{},
-			sortedNodes:   []*SchedulableNode{},
-			sortingMethod: policy.NodeSortingMethod,
+			mu:    sync.RWMutex{},
+			nodes: map[string]*SchedulableNode{},
 		},
 		ScheduleConditionBuilders: []ConditionBuildFunc{
 			NewPodCPUCondition,

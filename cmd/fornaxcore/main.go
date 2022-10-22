@@ -18,14 +18,11 @@ package main
 
 import (
 	"context"
-	"fmt"
 	"os"
 	"time"
 
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/apiserver/pkg/registry/generic"
-	"k8s.io/apiserver/pkg/registry/generic/registry"
+	"k8s.io/apiserver/pkg/server"
 	"k8s.io/klog/v2"
 	"sigs.k8s.io/apiserver-runtime/pkg/builder"
 
@@ -39,6 +36,7 @@ import (
 	"centaurusinfra.io/fornax-serverless/pkg/fornaxcore/pod"
 	"centaurusinfra.io/fornax-serverless/pkg/fornaxcore/podscheduler"
 	"centaurusinfra.io/fornax-serverless/pkg/fornaxcore/session"
+	"centaurusinfra.io/fornax-serverless/pkg/store/factory"
 )
 
 var (
@@ -50,68 +48,68 @@ func init() {
 }
 
 func main() {
-	_ = func(scheme *runtime.Scheme, store *registry.Store, option *generic.StoreOptions) {
-		store.AfterCreate = func(obj runtime.Object, options *metav1.CreateOptions) {
-			fmt.Println(obj)
-		}
-		store.AfterUpdate = func(obj runtime.Object, options *metav1.UpdateOptions) {
-			fmt.Println(obj)
-		}
-		store.AfterDelete = func(obj runtime.Object, options *metav1.DeleteOptions) {
-			fmt.Println(obj)
-		}
-	}
+	// initialize fornax resource memory store
+	ctx := context.Background()
+	appStatusStore := factory.NewFornaxApplicationStatusStorage()
+	appSessionStore := factory.NewFornaxApplicationSessionStorage()
 
 	// new fornaxcore grpc grpcServer which implement node agent proxy
 	grpcServer := grpc_server.NewGrpcServer()
 
-	// start node and pod manager
-	podManager := pod.NewPodManager(context.Background(), grpcServer)
-	sessionManager := session.NewSessionManager(context.Background(), grpcServer, podManager)
-	sessionManager.Run(context.Background())
-	nodeManager := node.NewNodeManager(context.Background(), node.DefaultStaleNodeTimeout, grpcServer, podManager, sessionManager)
-	podScheduler := podscheduler.NewPodScheduler(context.Background(), grpcServer, nodeManager, podManager,
+	// start internal managers and pod scheduler
+	podManager := pod.NewPodManager(ctx, grpcServer)
+	sessionManager := session.NewSessionManager(ctx, grpcServer, appSessionStore)
+	nodeManager := node.NewNodeManager(ctx, grpcServer, podManager, sessionManager)
+	podScheduler := podscheduler.NewPodScheduler(ctx, grpcServer, nodeManager, podManager,
 		&podscheduler.SchedulePolicy{
 			NumOfEvaluatedNodes: 100,
 			BackoffDuration:     10 * time.Second,
 			NodeSortingMethod:   podscheduler.NodeSortingMethodMoreMemory,
 		})
-	podManager.Run(podScheduler)
 	podScheduler.Run()
+	podManager.Run(podScheduler)
 	nodeManager.Run()
 
-	// start fornaxcore grpc server to listen to nodeagent
-	klog.Info("starting fornaxcore grpc server")
+	// start application manager at last as it require api server
+	klog.Info("starting application manager")
+	appManager := application.NewApplicationManager(ctx, podManager, sessionManager, appStatusStore, appSessionStore)
+	appManager.Run(ctx)
+
+	// start fornaxcore grpc server to listen nodes
+	klog.Info("starting fornaxcore grpc node agent server")
 	port := 18001
+	// we are using k8s api server, command line flags are only parsed when apiserver started
+	// TODO, parse flags before start api server and get certificates from command line flags,
 	certFile := ""
 	keyFile := ""
-	err := grpcServer.RunGrpcServer(context.Background(), nodemonitor.NewNodeMonitor(nodeManager), port, certFile, keyFile)
+	err := grpcServer.RunGrpcServer(ctx, nodemonitor.NewNodeMonitor(nodeManager), port, certFile, keyFile)
 	if err != nil {
 		klog.Fatal(err)
 	}
 	klog.Info("Fornaxcore grpc server started")
 
-	// start application manager at last as it require api server
-	klog.Info("starting application manager")
-	appManager := application.NewApplicationManager(context.Background(), podManager, sessionManager)
-	go appManager.Run(context.Background())
+	// TODO, wait for all known nodes are registered
 
-	// start api server
-	klog.Info("starting fornaxcore k8s.io rest api server")
+	// start api server to listen to clients
+	klog.Info("starting fornaxcore rest api server")
 	// +kubebuilder:scaffold:resource-register
 	apiserver := builder.APIServer.
 		WithLocalDebugExtension().
+		WithConfigFns(func(config *server.RecommendedConfig) *server.RecommendedConfig {
+			optionsGetter := config.RESTOptionsGetter
+			config.RESTOptionsGetter = &factory.FornaxRestOptionsFactory{
+				OptionsGetter: optionsGetter,
+			}
+			return config
+		}).
+		WithOptionsFns(func(options *builder.ServerOptions) *builder.ServerOptions {
+			return options
+		}).
+		WithServerFns(func(server *builder.GenericAPIServer) *builder.GenericAPIServer {
+			return server
+		}).
 		WithResource(&fornaxv1.Application{}).
 		WithResource(&fornaxv1.ApplicationSession{})
-	// WithResourceAndStorage(&fornaxv1.ApplicationInstance{}, storageFunc).
-	// WithResourceAndStorage(&fornaxv1.ClientSession{}, storageFunc).
-	// WithResourceAndStorage(&fornaxv1.IngressEndpoint{}, storageFunc).
-	// WithConfigFns(func(config *apiserver.RecommendedConfig) *apiserver.RecommendedConfig {
-	//  fmt.Printf("%T\n", config.Authentication.Authenticator)
-	//  fmt.Println(config.Authentication.APIAudiences)
-	//  return config
-	// })
-
 	err = apiserver.Execute()
 	if err != nil {
 		klog.Fatal(err)

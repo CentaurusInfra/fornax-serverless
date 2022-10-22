@@ -18,6 +18,8 @@ package node
 
 import (
 	"context"
+	"encoding/json"
+	"strconv"
 	"sync"
 	"time"
 
@@ -58,19 +60,19 @@ func (nm *nodeManager) UpdateSessionState(nodeIdentifier string, session *fornax
 	podName := session.Status.PodReference.Name
 	pod := nm.podManager.FindPod(podName)
 	if pod != nil {
-		nm.sessionManager.ReceiveSessionStatusFromNode(nodeIdentifier, pod, []*fornaxv1.ApplicationSession{session})
+		nm.sessionManager.NotifySessionStatusFromNode(nodeIdentifier, pod, []*fornaxv1.ApplicationSession{session})
 	} else {
 		klog.InfoS("Pod does not exist in pod manager, can not update session info", "session", util.Name(session), "pod", podName)
 	}
 	return nil
 }
 
-// WatchNode implements NodeManagerInterface
+// Watch add a watcher, and beging to send NodeEvent to watcher
 func (nm *nodeManager) Watch(watcher chan<- *ie.NodeEvent) {
 	nm.watchers = append(nm.watchers, watcher)
 }
 
-// ListNodes return all nodes
+// List return all nodes in NodeEvent
 func (nm *nodeManager) List() []*ie.NodeEvent {
 	nodes := []*ie.NodeEvent{}
 	for _, v := range nm.nodes.list() {
@@ -85,20 +87,27 @@ func (nm *nodeManager) List() []*ie.NodeEvent {
 }
 
 // UpdatePodState check node status and update single pod state
+// even a pod is terminated status, we still keep it in podmanager,
+// it got deleted until next time pod does not report it again in node state event
 func (nm *nodeManager) UpdatePodState(nodeId string, pod *v1.Pod, sessions []*fornaxv1.ApplicationSession) error {
 	if nodeWS := nm.nodes.get(nodeId); nodeWS != nil {
 		nodeWS.LastSeen = time.Now()
-		nm.handleAPodState(nodeId, nodeWS, pod)
-		nm.sessionManager.ReceiveSessionStatusFromNode(nodeId, pod, sessions)
+		podName := util.Name(pod)
+		updatedPod, err := nm.podManager.AddPod(nodeId, pod)
+		if err != nil {
+			return err
+		}
+		nodeWS.Pods.Add(podName)
+		nm.sessionManager.NotifySessionStatusFromNode(nodeId, updatedPod, sessions)
 	} else {
-		// TODO, node supposed to exist
+		// not supposed to happend node state is send when node register
 		klog.InfoS("Node does not exist, ask node full sync", "node", nodeId)
+		return nodeagent.NodeRevisionOutOfOrderError
 	}
-
 	return nil
 }
 
-func (nm *nodeManager) SyncNodePodStates(nodeId string, podStates []*grpc.PodState) {
+func (nm *nodeManager) SyncNodePodStates(nodeId string, podStates []*grpc.PodState, minimalNodeRevision int64) {
 	klog.InfoS("Sync pods state for node", "node", nodeId)
 	var err error
 	nodeWS := nm.nodes.get(nodeId)
@@ -113,7 +122,19 @@ func (nm *nodeManager) SyncNodePodStates(nodeId string, podStates []*grpc.PodSta
 	for _, podState := range podStates {
 		podName := util.Name(podState.GetPod())
 		reportedPods[podName] = true
-		err = nm.handleAPodState(nodeId, nodeWS, podState.GetPod().DeepCopy())
+		podRev, err := strconv.Atoi(podState.GetPod().ResourceVersion)
+		if err == nil && int64(podRev) <= minimalNodeRevision {
+			// this pod is already updated in previously
+			continue
+		}
+		sessions := []*fornaxv1.ApplicationSession{}
+		for _, v := range podState.GetSessionStates() {
+			session := &fornaxv1.ApplicationSession{}
+			if err := json.Unmarshal(v.SessionData, session); err == nil {
+				sessions = append(sessions, session)
+			}
+		}
+		err = nm.UpdatePodState(nodeId, podState.GetPod().DeepCopy(), sessions)
 		if err != nil {
 			klog.ErrorS(err, "Failed to update a pod state, wait for next sync", "pod", podName)
 		}
@@ -146,18 +167,8 @@ func (nm *nodeManager) SyncNodePodStates(nodeId string, podStates []*grpc.PodSta
 	}
 }
 
-func (nm *nodeManager) handleAPodState(nodeId string, fornaxnode *ie.FornaxNodeWithState, newStatePod *v1.Pod) error {
-	podName := util.Name(newStatePod)
-
-	// even a pod is terminated status, we still keep it in podmanager, it got deleted until next time pod does not report it again
-	_, err := nm.podManager.AddPod(nodeId, newStatePod)
-	if err != nil {
-		return err
-	}
-
-	fornaxnode.Pods.Add(podName)
-	return nil
-}
+// func (nm *nodeManager) handleAPodState(nodeId string, fornaxnode *ie.FornaxNodeWithState, pod *v1.Pod, sessions []*fornaxv1.ApplicationSession) error {
+// }
 
 // SetupNode complete node spec info provided by node agent, including
 // 1/ pod cidr
@@ -234,7 +245,7 @@ func (nm *nodeManager) UpdateNode(nodeId string, node *v1.Node) (*ie.FornaxNodeW
 		}
 		nodeWS.LastSeen = time.Now()
 
-		// nodeWS.State change means node probably disconnected, need to resend node event
+		// sync with node only if node state changed or revision is different
 		if oldNodeWSState == nodeWS.State && node.ResourceVersion == nodeWS.Node.ResourceVersion {
 			return nodeWS, nil
 		}
@@ -290,7 +301,7 @@ func (nm *nodeManager) PrintNodeSummary() {
 	}
 }
 
-func NewNodeManager(ctx context.Context, checkPeriod time.Duration, nodeAgent nodeagent.NodeAgentClient, podManager ie.PodManagerInterface, sessionManager ie.SessionManagerInterface) *nodeManager {
+func NewNodeManager(ctx context.Context, nodeAgent nodeagent.NodeAgentClient, podManager ie.PodManagerInterface, sessionManager ie.SessionManagerInterface) *nodeManager {
 	return &nodeManager{
 		ctx:                ctx,
 		nodeUpdates:        make(chan *ie.NodeEvent, 100),
@@ -298,7 +309,7 @@ func NewNodeManager(ctx context.Context, checkPeriod time.Duration, nodeAgent no
 		nodeAgent:          nodeAgent,
 		nodePodCidrManager: NewPodCidrManager(),
 		nodeDaemonManager:  NewNodeDaemonManager(),
-		houseKeepingTicker: time.NewTicker(checkPeriod),
+		houseKeepingTicker: time.NewTicker(DefaultStaleNodeTimeout),
 		podManager:         podManager,
 		sessionManager:     sessionManager,
 		nodes: NodePool{

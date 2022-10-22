@@ -20,6 +20,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	fornaxv1 "centaurusinfra.io/fornax-serverless/pkg/apis/core/v1"
@@ -146,17 +147,17 @@ func (n *FornaxNodeActor) incrementNodeRevision() int64 {
 	n.nodeMutex.Lock()
 	defer n.nodeMutex.Unlock()
 
-	n.node.Revision += 1
+	revision := atomic.AddInt64(&n.node.Revision, 1)
 	n.node.V1Node.ResourceVersion = fmt.Sprint(n.node.Revision)
 	n.node.Dependencies.NodeStore.PutNode(
 		&types.FornaxNodeWithRevision{
 			Identifier: util.Name(n.node.V1Node),
 			Node:       n.node.V1Node.DeepCopy(),
-			Revision:   n.node.Revision,
+			Revision:   revision,
 		},
 	)
 
-	return n.node.Revision
+	return revision
 }
 
 func (n *FornaxNodeActor) nodeHandler(msg message.ActorMessage) (interface{}, error) {

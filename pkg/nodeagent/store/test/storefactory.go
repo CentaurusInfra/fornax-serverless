@@ -5,9 +5,9 @@ import (
 	"os"
 	"time"
 
-	"centaurusinfra.io/fornax-serverless/pkg/nodeagent/store/factory"
-	"centaurusinfra.io/fornax-serverless/pkg/nodeagent/store/sqlite"
+	"centaurusinfra.io/fornax-serverless/pkg/nodeagent/store"
 	fornaxtypes "centaurusinfra.io/fornax-serverless/pkg/nodeagent/types"
+	"centaurusinfra.io/fornax-serverless/pkg/store/storage/sqlite"
 	_ "github.com/mattn/go-sqlite3"
 	v1 "k8s.io/api/core/v1"
 )
@@ -17,13 +17,13 @@ func main() {
 	start := time.Now().UnixMilli()
 
 	var err error
-	var podstore *factory.PodStore
-	if podstore, err = factory.NewPodSqliteStore(&sqlite.SQLiteStoreOptions{ConnUrl: "./nodeagent_test.db"}); err != nil {
+	var podstore *store.PodStore
+	if podstore, err = store.NewPodSqliteStore(&sqlite.SQLiteStoreOptions{ConnUrl: "./nodeagent_test.db"}); err != nil {
 		fmt.Println(err)
 	}
 
-	var sessionstore *factory.SessionStore
-	if sessionstore, err = factory.NewSessionSqliteStore(&sqlite.SQLiteStoreOptions{ConnUrl: "./nodeagent_test.db"}); err != nil {
+	var sessionstore *store.SessionStore
+	if sessionstore, err = store.NewSessionSqliteStore(&sqlite.SQLiteStoreOptions{ConnUrl: "./nodeagent_test.db"}); err != nil {
 		fmt.Println(err)
 	}
 

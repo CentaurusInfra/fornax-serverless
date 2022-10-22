@@ -17,6 +17,7 @@ limitations under the License.
 package application
 
 import (
+	"fmt"
 	"time"
 
 	fornaxv1 "centaurusinfra.io/fornax-serverless/pkg/apis/core/v1"
@@ -36,17 +37,17 @@ func (pool *ApplicationPool) summaryPod(podManager ie.PodManagerInterface) Appli
 	pool.mu.RLock()
 	defer pool.mu.RUnlock()
 	summary := ApplicationPodSummary{}
-	summary.pendingCount = int32(len(pool.pods[PodStatePending]))
-	summary.deletingCount = int32(len(pool.pods[PodStateDeleting]))
-	summary.occupiedCount = int32(len(pool.pods[PodStateAllocated]))
-	summary.idleCount = int32(len(pool.pods[PodStateIdle]))
+	summary.pendingCount = int32(len(pool.podsByState[PodStatePending]))
+	summary.deletingCount = int32(len(pool.podsByState[PodStateDeleting]))
+	summary.occupiedCount = int32(len(pool.podsByState[PodStateAllocated]))
+	summary.idleCount = int32(len(pool.podsByState[PodStateIdle]))
 	summary.totalCount = summary.pendingCount + summary.deletingCount + summary.idleCount + summary.occupiedCount
 
 	return summary
 }
 
-func (pool *ApplicationPool) getPodSessions(podName string) []*fornaxv1.ApplicationSession {
-	sessions := []*fornaxv1.ApplicationSession{}
+func (pool *ApplicationPool) getPodSessions(podName string) []*ApplicationSession {
+	sessions := []*ApplicationSession{}
 	pool.mu.RLock()
 	defer pool.mu.RUnlock()
 	pod := pool._getPodNoLock(podName)
@@ -54,8 +55,8 @@ func (pool *ApplicationPool) getPodSessions(podName string) []*fornaxv1.Applicat
 		return sessions
 	}
 	for k := range pod.sessions {
-		if sess := pool._getSessionNoLock(k); sess != nil {
-			sessions = append(sessions, sess)
+		if s := pool._getSessionNoLock(k); s != nil {
+			sessions = append(sessions, s)
 		}
 	}
 	return sessions
@@ -68,7 +69,7 @@ func (pool *ApplicationPool) getPod(podName string) *ApplicationPod {
 }
 
 func (pool *ApplicationPool) _getPodNoLock(podName string) *ApplicationPod {
-	for _, pods := range pool.pods {
+	for _, pods := range pool.podsByState {
 		if p, found := pods[podName]; found {
 			return p
 		}
@@ -80,11 +81,22 @@ func (pool *ApplicationPool) _getPodNoLock(podName string) *ApplicationPod {
 func (pool *ApplicationPool) addOrUpdatePod(podName string, podState ApplicationPodState, sessionIds []string) *ApplicationPod {
 	pool.mu.Lock()
 	defer pool.mu.Unlock()
+	if p := pool._getPodNoLock(podName); p != nil {
+		// pod state should not be reverted to avoid race condition
+		if p.state == PodStateDeleting && podState != PodStateDeleting {
+			// do not change a pod state already marked as deleting pods
+			return p
+		}
+		if p.state != PodStatePending && podState == PodStatePending {
+			// do not change a pod state which already not pending
+			return p
+		}
+	}
 	return pool._addOrUpdatePodNoLock(podName, podState, sessionIds)
 }
 
 func (pool *ApplicationPool) _addOrUpdatePodNoLock(podName string, podState ApplicationPodState, sessionIds []string) *ApplicationPod {
-	for _, pods := range pool.pods {
+	for _, pods := range pool.podsByState {
 		if p, f := pods[podName]; f {
 			for _, v := range sessionIds {
 				p.sessions[v] = true
@@ -93,7 +105,7 @@ func (pool *ApplicationPool) _addOrUpdatePodNoLock(podName string, podState Appl
 				return p
 			} else {
 				p.state = podState
-				pool.pods[podState][podName] = p
+				pool.podsByState[podState][podName] = p
 				delete(pods, podName)
 				return p
 			}
@@ -105,14 +117,14 @@ func (pool *ApplicationPool) _addOrUpdatePodNoLock(podName string, podState Appl
 	for _, v := range sessionIds {
 		p.sessions[v] = true
 	}
-	pool.pods[podState][podName] = p
+	pool.podsByState[podState][podName] = p
 	return p
 }
 
 func (pool *ApplicationPool) deletePod(podName string) {
 	pool.mu.Lock()
 	defer pool.mu.Unlock()
-	for _, v := range pool.pods {
+	for _, v := range pool.podsByState {
 		delete(v, podName)
 	}
 }
@@ -121,7 +133,7 @@ func (pool *ApplicationPool) getSomeIdlePods(num int) []*ApplicationPod {
 	pool.mu.RLock()
 	defer pool.mu.RUnlock()
 	pods := []*ApplicationPod{}
-	for _, v := range pool.pods[PodStateIdle] {
+	for _, v := range pool.podsByState[PodStateIdle] {
 		if len(pods) == num {
 			break
 		}
@@ -130,12 +142,12 @@ func (pool *ApplicationPool) getSomeIdlePods(num int) []*ApplicationPod {
 	return pods
 }
 
-func (pool *ApplicationPool) activeApplicationPodLength() (occupiedPods, pendingPods, idlePods int) {
+func (pool *ApplicationPool) activePodNums() (occupiedPods, pendingPods, idlePods int) {
 	pool.mu.RLock()
 	defer pool.mu.RUnlock()
-	pendingPods = len(pool.pods[PodStatePending])
-	idlePods = len(pool.pods[PodStateIdle])
-	occupiedPods = len(pool.pods[PodStateAllocated])
+	pendingPods = len(pool.podsByState[PodStatePending])
+	idlePods = len(pool.podsByState[PodStateIdle])
+	occupiedPods = len(pool.podsByState[PodStateAllocated])
 	return occupiedPods, pendingPods, idlePods
 }
 
@@ -143,7 +155,7 @@ func (pool *ApplicationPool) podLength() int {
 	pool.mu.RLock()
 	defer pool.mu.RUnlock()
 	length := 0
-	for _, v := range pool.pods {
+	for _, v := range pool.podsByState {
 		length += len(v)
 	}
 	return length
@@ -153,7 +165,7 @@ func (pool *ApplicationPool) podListOfState(state ApplicationPodState) []*Applic
 	pool.mu.RLock()
 	defer pool.mu.RUnlock()
 	pods := []*ApplicationPod{}
-	for _, p := range pool.pods[state] {
+	for _, p := range pool.podsByState[state] {
 		pods = append(pods, p)
 	}
 	return pods
@@ -163,7 +175,7 @@ func (pool *ApplicationPool) podList() []*ApplicationPod {
 	pool.mu.RLock()
 	defer pool.mu.RUnlock()
 	pods := []*ApplicationPod{}
-	for _, v := range pool.pods {
+	for _, v := range pool.podsByState {
 		for _, p := range v {
 			pods = append(pods, p)
 		}
@@ -172,144 +184,209 @@ func (pool *ApplicationPool) podList() []*ApplicationPod {
 }
 
 type ApplicationSessionSummary struct {
-	pendingCount  int32
-	startingCount int32
-	idleCount     int32
-	inUseCount    int32
-	timeoutCount  int32
-	closedCount   int32
-	deletingCount int32
-}
-
-// return sum of of all in use, idle, pending session, and all pending sessions
-func (pool *ApplicationPool) getTotalAndPendingSessionNum() (int, int) {
-	summary := pool.summarySession()
-	return int(summary.idleCount + summary.inUseCount + summary.pendingCount + summary.startingCount + summary.deletingCount), int(summary.pendingCount)
+	pendingCount  int
+	startingCount int
+	runningCount  int
+	timeoutCount  int
+	closingCount  int
 }
 
 func (pool *ApplicationPool) sessionLength() int {
 	pool.mu.RLock()
 	defer pool.mu.RUnlock()
-	return len(pool.sessions)
+	num := 0
+	for _, v := range pool.sessions {
+		num += len(v)
+	}
+	return num
 }
 
-func (pool *ApplicationPool) sessionList() []*fornaxv1.ApplicationSession {
+func (pool *ApplicationPool) sessionList() []*ApplicationSession {
 	pool.mu.RLock()
 	defer pool.mu.RUnlock()
-	keys := []*fornaxv1.ApplicationSession{}
+	sessions := []*ApplicationSession{}
 	for _, v := range pool.sessions {
-		keys = append(keys, v)
+		for _, s := range v {
+			sessions = append(sessions, s)
+		}
 	}
-	return keys
+	return sessions
 }
 
 func (pool *ApplicationPool) summarySession() ApplicationSessionSummary {
+	pool.mu.RLock()
+	defer pool.mu.RUnlock()
 	summary := ApplicationSessionSummary{}
-	sessions := pool.sessionList()
-	for _, v := range sessions {
-		if v.DeletionTimestamp == nil {
-			if v.Status.SessionStatus == fornaxv1.SessionStatusUnspecified || v.Status.SessionStatus == fornaxv1.SessionStatusPending {
-				summary.pendingCount += 1
-			} else if v.Status.SessionStatus == fornaxv1.SessionStatusAvailable {
-				summary.idleCount += 1
-			} else if v.Status.SessionStatus == fornaxv1.SessionStatusStarting {
-				summary.startingCount += 1
-			} else if v.Status.SessionStatus == fornaxv1.SessionStatusInUse {
-				summary.inUseCount += 1
-			} else if v.Status.SessionStatus == fornaxv1.SessionStatusClosed {
-				summary.closedCount += 1
-			} else if v.Status.SessionStatus == fornaxv1.SessionStatusTimeout {
-				summary.timeoutCount += 1
-			} else {
-				summary.pendingCount += 1
-			}
+	summary.closingCount = len(pool.sessions[SessionStateDeleting])
+	summary.runningCount = len(pool.sessions[SessionStateRunning])
+	summary.startingCount = len(pool.sessions[SessionStateStarting])
+
+	for _, s := range pool.sessions[SessionStatePending] {
+		timeoutDuration := DefaultSessionOpenTimeoutDuration
+		if s.session.Spec.OpenTimeoutSeconds > 0 {
+			timeoutDuration = time.Duration(s.session.Spec.OpenTimeoutSeconds) * time.Second
+		}
+		pendingTimeoutTimeStamp := time.Now().Add(-1 * timeoutDuration)
+		if s.session.CreationTimestamp.Time.Before(pendingTimeoutTimeStamp) {
+			summary.timeoutCount += 1
 		} else {
-			summary.deletingCount += 1
+			summary.pendingCount += 1
+		}
+	}
+
+	for _, s := range pool.sessions[SessionStateStarting] {
+		timeoutDuration := DefaultSessionOpenTimeoutDuration
+		if s.session.Spec.OpenTimeoutSeconds > 0 {
+			timeoutDuration = time.Duration(s.session.Spec.OpenTimeoutSeconds) * time.Second
+		}
+		pendingTimeoutTimeStamp := time.Now().Add(-1 * timeoutDuration)
+		if s.session.CreationTimestamp.Time.Before(pendingTimeoutTimeStamp) {
+			summary.timeoutCount += 1
+		} else {
+			summary.startingCount += 1
 		}
 	}
 	return summary
 }
 
-func (pool *ApplicationPool) getSession(key string) *fornaxv1.ApplicationSession {
+func (pool *ApplicationPool) getSession(key string) *ApplicationSession {
 	pool.mu.RLock()
 	defer pool.mu.RUnlock()
 	return pool._getSessionNoLock(key)
 }
 
-func (pool *ApplicationPool) _getSessionNoLock(key string) *fornaxv1.ApplicationSession {
-	if v, found := pool.sessions[key]; found {
-		return v
+func (pool *ApplicationPool) _getSessionNoLock(key string) *ApplicationSession {
+	for _, v := range pool.sessions {
+		if s, found := v[key]; found {
+			return s
+		}
 	}
 
 	return nil
 }
 
-func (pool *ApplicationPool) addSession(key string, session *fornaxv1.ApplicationSession) {
+func (pool *ApplicationPool) addSession(sessionId string, session *fornaxv1.ApplicationSession) {
 	pool.mu.Lock()
 	defer pool.mu.Unlock()
+	newState := SessionStatePending
+	if session.DeletionTimestamp != nil {
+		newState = SessionStateDeleting
+	} else if util.SessionIsOpen(session) {
+		newState = SessionStateRunning
+	} else if util.SessionIsStarting(session) {
+		newState = SessionStateStarting
+	} else if util.SessionIsPending(session) {
+		newState = SessionStatePending
+	} else if util.SessionIsClosing(session) {
+		newState = SessionStateDeleting
+	} else {
+		// do not add a terminal state session, instead of deleting if session exist in pool
+		pool._deleteSessionNoLock(session)
+		return
+	}
+
+	s := pool._getSessionNoLock(sessionId)
+	if s != nil {
+		if newState != s.state {
+			delete(pool.sessions[s.state], sessionId)
+		}
+	}
+
+	// update pool with new state
+	pool.sessions[newState][sessionId] = &ApplicationSession{
+		session: session,
+		state:   newState,
+	}
 	if session.Status.PodReference != nil {
 		podName := session.Status.PodReference.Name
 		pool._addOrUpdatePodNoLock(podName, PodStateAllocated, []string{string(session.GetUID())})
 	}
-	pool.sessions[key] = session
 }
 
 func (pool *ApplicationPool) deleteSession(session *fornaxv1.ApplicationSession) {
 	pool.mu.Lock()
 	defer pool.mu.Unlock()
+	pool._deleteSessionNoLock(session)
+}
+
+func (pool *ApplicationPool) _deleteSessionNoLock(session *fornaxv1.ApplicationSession) {
 	sessionId := string(session.GetUID())
 	if session.Status.PodReference != nil {
 		podName := session.Status.PodReference.Name
-		for _, podsOfState := range pool.pods {
+		for _, podsOfState := range pool.podsByState {
 			if pod, found := podsOfState[podName]; found {
 				delete(pod.sessions, sessionId)
 				if len(pod.sessions) == 0 && pod.state == PodStateAllocated {
 					// only allow from allocated => idle when delete a session from this pod, pod is in pending/deleting state should keep its state
 					delete(podsOfState, podName)
 					pod.state = PodStateIdle
-					pool.pods[PodStateIdle][podName] = pod
+					pool.podsByState[PodStateIdle][podName] = pod
 				}
 				break
 			}
 		}
 	}
-	delete(pool.sessions, sessionId)
+	for _, v := range pool.sessions {
+		delete(v, sessionId)
+	}
 }
 
-// groupSessionsByState return a list of session of different states,
+// getNonRunningSessions return a list of session of different states,
 // pending, not assigned to pod yet
 // deleting, delete requested
 // timeout, session timedout to get a pod, or session assigned to node, but timeout to get session state from node
-// active, session assigned to pod, waiting for started by pod or being used or waiting for connection
-func (pool *ApplicationPool) groupSessionsByState() (pendingSessions, deletingSessions, closingSessions, timeoutSessions, activeSessions []*fornaxv1.ApplicationSession) {
-	sessions := pool.sessionList()
-	for _, v := range sessions {
+func (pool *ApplicationPool) getNonRunningSessions() (pendingSessions, deletingSessions, timeoutSessions []*ApplicationSession) {
+	pool.mu.RLock()
+	defer pool.mu.RUnlock()
+
+	for _, s := range pool.sessions[SessionStatePending] {
 		timeoutDuration := DefaultSessionOpenTimeoutDuration
-		if v.Spec.OpenTimeoutSeconds > 0 {
-			timeoutDuration = time.Duration(v.Spec.OpenTimeoutSeconds) * time.Second
+		if s.session.Spec.OpenTimeoutSeconds > 0 {
+			timeoutDuration = time.Duration(s.session.Spec.OpenTimeoutSeconds) * time.Second
 		}
 		pendingTimeoutTimeStamp := time.Now().Add(-1 * timeoutDuration)
-		if util.SessionIsClosing(v) {
-			closingSessions = append(closingSessions, v)
-		} else if v.DeletionTimestamp != nil {
-			deletingSessions = append(deletingSessions, v)
+		if s.session.CreationTimestamp.Time.Before(pendingTimeoutTimeStamp) {
+			timeoutSessions = append(timeoutSessions, s)
 		} else {
-			if util.SessionIsPending(v) {
-				if v.CreationTimestamp.Time.Before(pendingTimeoutTimeStamp) {
-					timeoutSessions = append(timeoutSessions, v)
-				} else {
-					pendingSessions = append(pendingSessions, v)
-				}
-			} else if v.Status.SessionStatus == fornaxv1.SessionStatusStarting {
-				if v.CreationTimestamp.Time.Before(pendingTimeoutTimeStamp) {
-					timeoutSessions = append(timeoutSessions, v)
-				} else {
-					activeSessions = append(activeSessions, v)
-				}
-			} else if util.SessionIsOpen(v) {
-				activeSessions = append(activeSessions, v)
-			}
+			pendingSessions = append(pendingSessions, s)
 		}
 	}
-	return pendingSessions, deletingSessions, closingSessions, timeoutSessions, activeSessions
+
+	for _, s := range pool.sessions[SessionStateStarting] {
+		timeoutDuration := DefaultSessionOpenTimeoutDuration
+		if s.session.Spec.OpenTimeoutSeconds > 0 {
+			timeoutDuration = time.Duration(s.session.Spec.OpenTimeoutSeconds) * time.Second
+		}
+		pendingTimeoutTimeStamp := time.Now().Add(-1 * timeoutDuration)
+		if s.session.CreationTimestamp.Time.Before(pendingTimeoutTimeStamp) {
+			timeoutSessions = append(timeoutSessions, s)
+		} else {
+			pendingSessions = append(pendingSessions, s)
+		}
+	}
+
+	for _, s := range pool.sessions[SessionStateDeleting] {
+		deletingSessions = append(deletingSessions, s)
+	}
+
+	return pendingSessions, deletingSessions, timeoutSessions
+}
+
+// add active session into application's session pool and delete terminal session from pool
+// add session/delete session will update pod state according pod's session usage
+func updateSessionPool(pool *ApplicationPool, session *fornaxv1.ApplicationSession) {
+	sessionId := string(session.GetUID())
+	if util.SessionInTerminalState(session) {
+		pool.deleteSession(session)
+	} else {
+		// a trick to make sure pending session are sorted using micro second, api server truncate creation timestamp to second
+		session.CreationTimestamp = *util.NewCurrentMetaTime()
+		pool.addSession(sessionId, session)
+	}
+}
+
+func getSessionApplicationKey(session *fornaxv1.ApplicationSession) string {
+	applicationName := session.Spec.ApplicationName
+	namespace := session.Namespace
+	return fmt.Sprintf("%s/%s", namespace, applicationName)
 }

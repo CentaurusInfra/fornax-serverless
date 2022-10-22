@@ -19,17 +19,15 @@ package application
 import (
 	"context"
 	"fmt"
-	"reflect"
 	"sync"
 	"time"
 
 	fornaxv1 "centaurusinfra.io/fornax-serverless/pkg/apis/core/v1"
-	listerv1 "centaurusinfra.io/fornax-serverless/pkg/client/listers/core/v1"
+	fornaxstore "centaurusinfra.io/fornax-serverless/pkg/store"
+	storefactory "centaurusinfra.io/fornax-serverless/pkg/store/factory"
 	"centaurusinfra.io/fornax-serverless/pkg/util"
-	apierrors "k8s.io/apimachinery/pkg/api/errors"
-	"k8s.io/client-go/rest"
 
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/client-go/rest"
 	"k8s.io/klog/v2"
 )
 
@@ -74,16 +72,17 @@ func (ascm *ApplicationStatusChangeMap) getAndRemoveStatusChangeSnapshot() map[s
 }
 
 type ApplicationStatusManager struct {
-	applicationLister listerv1.ApplicationLister
-	statusUpdateCh    chan string
-	statusChanges     *ApplicationStatusChangeMap
-	kubeConfig        *rest.Config
+	ctx              context.Context
+	applicationStore fornaxstore.ApiStorageInterface
+	statusUpdateCh   chan string
+	statusChanges    *ApplicationStatusChangeMap
+	kubeConfig       *rest.Config
 }
 
-func NewApplicationStatusManager(appLister listerv1.ApplicationLister) *ApplicationStatusManager {
+func NewApplicationStatusManager(appStore fornaxstore.ApiStorageInterface) *ApplicationStatusManager {
 	return &ApplicationStatusManager{
-		applicationLister: appLister,
-		statusUpdateCh:    make(chan string, 500),
+		applicationStore: appStore,
+		statusUpdateCh:   make(chan string, 500),
 		statusChanges: &ApplicationStatusChangeMap{
 			changes: map[string]*fornaxv1.ApplicationStatus{},
 			mu:      sync.Mutex{},
@@ -92,9 +91,10 @@ func NewApplicationStatusManager(appLister listerv1.ApplicationLister) *Applicat
 	}
 }
 
-// Run receive application status from channel and update applications use api service client
-func (asm *ApplicationStatusManager) Run(ctx context.Context) {
+// AsyncStatusUpdateRun receive application status from channel and update applications use api service client
+func (asm *ApplicationStatusManager) AsyncUpdateApplicationStatusRun(ctx context.Context) {
 	klog.Info("Starting fornaxv1 application status manager")
+	asm.ctx = ctx
 
 	go func() {
 		defer klog.Info("Shutting down fornaxv1 application status manager")
@@ -113,7 +113,7 @@ func (asm *ApplicationStatusManager) Run(ctx context.Context) {
 				sessionStatuses := asm.statusChanges.getAndRemoveStatusChangeSnapshot()
 				failedApps := map[string]*fornaxv1.ApplicationStatus{}
 				for app, status := range sessionStatuses {
-					err := asm.updateApplicationStatus(app, status)
+					err := asm._updateApplicationStatus(app, status)
 					if err != nil {
 						failedApps[app] = status
 						klog.ErrorS(err, "Failed to update application status", "application", app)
@@ -138,7 +138,7 @@ func (asm *ApplicationStatusManager) Run(ctx context.Context) {
 	}()
 }
 
-func (asm *ApplicationStatusManager) UpdateApplicationStatus(application *fornaxv1.Application, newStatus *fornaxv1.ApplicationStatus) {
+func (asm *ApplicationStatusManager) AsyncUpdateApplicationStatus(application *fornaxv1.Application, newStatus *fornaxv1.ApplicationStatus) {
 	asm.statusChanges.addStatusChange(util.Name(application), newStatus, true)
 	if len(asm.statusUpdateCh) == 0 {
 		asm.statusUpdateCh <- util.Name(application)
@@ -146,26 +146,25 @@ func (asm *ApplicationStatusManager) UpdateApplicationStatus(application *fornax
 	return
 }
 
-// updateApplicationStatus attempts to update the Status of the given Application and return updated Application
-func (asm *ApplicationStatusManager) updateApplicationStatus(applicationKey string, newStatus *fornaxv1.ApplicationStatus) error {
-	var updateErr error
-	var updatedApplication *fornaxv1.Application
+func (asm *ApplicationStatusManager) UpdateApplicationStatus(application *fornaxv1.Application, newStatus *fornaxv1.ApplicationStatus) error {
+	return asm._updateApplicationStatus(util.Name(application), newStatus)
+}
 
-	apiServerClient := util.GetFornaxCoreApiClient(asm.kubeConfig)
-	application, updateErr := GetApplication(apiServerClient, applicationKey)
-	if updateErr != nil {
-		if apierrors.IsNotFound(updateErr) {
+// _updateApplicationStatus attempts to update the Status of the given Application and return updated Application
+func (asm *ApplicationStatusManager) _updateApplicationStatus(applicationKey string, newStatus *fornaxv1.ApplicationStatus) error {
+	var updateErr error
+	for i := 0; i <= UPDATE_RETRIES; i++ {
+		var updatedApplication *fornaxv1.Application
+		application, err := storefactory.GetApplicationCache(asm.applicationStore, applicationKey)
+		if err != nil {
+			return err
+		}
+
+		if application == nil {
+			// application already deleted
 			return nil
 		}
-		return updateErr
-	}
 
-	if reflect.DeepEqual(application.Status, *newStatus) {
-		return nil
-	}
-
-	client := apiServerClient.CoreV1().Applications(application.Namespace)
-	for i := 0; i <= UPDATE_RETRIES; i++ {
 		klog.Infof(fmt.Sprintf("Updating application status for %s, ", util.Name(application)) +
 			fmt.Sprintf("totalInstances %d->%d, ", application.Status.TotalInstances, newStatus.TotalInstances) +
 			fmt.Sprintf("desiredInstances %d->%d, ", application.Status.DesiredInstances, newStatus.DesiredInstances) +
@@ -174,36 +173,22 @@ func (asm *ApplicationStatusManager) updateApplicationStatus(applicationKey stri
 			fmt.Sprintf("allocatedInstances %d->%d, ", application.Status.AllocatedInstances, newStatus.AllocatedInstances) +
 			fmt.Sprintf("idleInstances %d->%d, ", application.Status.IdleInstances, newStatus.IdleInstances))
 
+		modifiedApplication := &fornaxv1.Application{}
+		key := fmt.Sprintf("%s/%s", fornaxv1.ApplicationGrvKey, applicationKey)
 		updatedApplication = application.DeepCopy()
 		updatedApplication.Status = *newStatus
-		updatedApplication, updateErr = client.UpdateStatus(context.TODO(), updatedApplication, metav1.UpdateOptions{})
-		if updateErr == nil {
-			break
+		if newStatus.TotalInstances == 0 {
+			util.RemoveFinalizer(&updatedApplication.ObjectMeta, fornaxv1.FinalizerApplicationPod)
 		} else {
-			// set it again, returned updatedApplication could be polluted if there is error
-			updatedApplication = application.DeepCopy()
-			updatedApplication.Status = *newStatus
+			util.AddFinalizer(&updatedApplication.ObjectMeta, fornaxv1.FinalizerApplicationPod)
 		}
 
-		if updateErr != nil {
-			return updateErr
+		updateErr = asm.applicationStore.EnsureUpdateAndDelete(asm.ctx, key, true, nil, updatedApplication, modifiedApplication)
+		if updateErr == nil {
+			// if version conflict, has to get new version and update again
+			break
 		}
 	}
 
-	// update finalizer
-	finalizers := updatedApplication.Finalizers
-	if newStatus.TotalInstances == 0 {
-		util.RemoveFinalizer(&updatedApplication.ObjectMeta, fornaxv1.FinalizerApplicationPod)
-	} else {
-		util.AddFinalizer(&updatedApplication.ObjectMeta, fornaxv1.FinalizerApplicationPod)
-	}
-	if len(updatedApplication.Finalizers) != len(finalizers) {
-		for i := 0; i <= UPDATE_RETRIES; i++ {
-			_, updateErr = client.Update(context.TODO(), updatedApplication, metav1.UpdateOptions{})
-			if updateErr == nil {
-				break
-			}
-		}
-	}
 	return updateErr
 }

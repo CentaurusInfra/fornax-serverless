@@ -39,6 +39,11 @@ import (
 )
 
 var (
+	addevents = int32(0)
+	updevents = int32(0)
+)
+
+var (
 	allTestApps         = TestApplicationArray{}
 	allTestSessions     = TestSessionArray{}
 	appSessionMap       = TestSessionMap{}
@@ -104,12 +109,9 @@ func NewCommand() *cobra.Command {
 }
 
 func Run(ctx context.Context, testConfig config.TestConfiguration) {
-	initApplicationSessionInformer(ctx)
 
-	RunTest := func(appName string) {
+	RunTest := func(namespace, appName, randAppName string) {
 		klog.Infof("--------App %s Test begin--------\n", appName)
-		namespace := "fornaxtest"
-		randAppName := rand.String(16)
 		for i := 1; i <= testConfig.NumOfTestCycle; i++ {
 			sessions := []*TestSession{}
 			cycleName := fmt.Sprintf("%s-cycle-%d", randAppName, i)
@@ -130,6 +132,9 @@ func Run(ctx context.Context, testConfig config.TestConfiguration) {
 	}
 	logs.InitLogs()
 
+	ns := "fornaxtest"
+	initApplicationSessionInformer(ctx, ns)
+
 	done := false
 	st := time.Now().UnixMilli()
 	go func() {
@@ -141,27 +146,32 @@ func Run(ctx context.Context, testConfig config.TestConfiguration) {
 				st:            st,
 				et:            et,
 			})
+			klog.Infof("Num of session created, %d", len(allTestSessions))
 			if done {
 				break
 			}
 		}
 	}()
 
-	wg := sync.WaitGroup{}
+	// start to test all apps
+	randAppName := rand.String(16)
+	wgAppTest := sync.WaitGroup{}
 	for i := 0; i < testConfig.NumOfApps; i++ {
-		wg.Add(1)
+		wgAppTest.Add(1)
 		appName := fmt.Sprintf("echoserver%d", i)
 		klog.Infof("Run test app %s", appName)
 		go func(app string) {
-			RunTest(app)
-			wg.Done()
+			RunTest(ns, app, randAppName)
+			wgAppTest.Done()
 		}(appName)
 	}
-	wg.Wait()
+	wgAppTest.Wait()
 	done = true
 
 	et := time.Now().UnixMilli()
 	klog.Infof("--------Test summary ----------\n")
+	fmt.Printf("Received %d add watch events\n", addevents)
+	fmt.Printf("Received %d upd watch events\n", updevents)
 	summaryAppTestResult(allTestApps, st, et)
 	summarySessionTestResult(allTestSessions, st, et)
 	os.Exit(0)

@@ -14,32 +14,33 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package factory
+package store
 
 import (
+	"encoding/json"
 	"fmt"
 
-	"centaurusinfra.io/fornax-serverless/pkg/nodeagent/store"
-	"centaurusinfra.io/fornax-serverless/pkg/nodeagent/store/sqlite"
 	"centaurusinfra.io/fornax-serverless/pkg/nodeagent/types"
+	"centaurusinfra.io/fornax-serverless/pkg/store/storage"
+	"centaurusinfra.io/fornax-serverless/pkg/store/storage/sqlite"
 )
 
 type NodeStore struct {
-	store.Store
+	storage.Store
 }
 
 type PodStore struct {
-	store.Store
+	storage.Store
 }
 
 type SessionStore struct {
-	store.Store
+	storage.Store
 }
 
 func NewNodeSqliteStore(options *sqlite.SQLiteStoreOptions) (*NodeStore, error) {
 	if store, err := sqlite.NewSqliteStore("Node", options,
-		func(text string) (interface{}, error) { return store.JsonToNode(text) },
-		func(obj interface{}) (string, error) { return store.JsonFromNode(obj.(*types.FornaxNodeWithRevision)) }); err != nil {
+		func(text []byte) (interface{}, error) { return JsonToNode(text) },
+		func(obj interface{}) ([]byte, error) { return JsonFromNode(obj.(*types.FornaxNodeWithRevision)) }); err != nil {
 		return nil, err
 	} else {
 		return &NodeStore{store}, nil
@@ -71,8 +72,8 @@ func (s *NodeStore) PutNode(node *types.FornaxNodeWithRevision) error {
 
 func NewPodSqliteStore(options *sqlite.SQLiteStoreOptions) (*PodStore, error) {
 	if store, err := sqlite.NewSqliteStore("Pod", options,
-		func(text string) (interface{}, error) { return store.JsonToPod(text) },
-		func(obj interface{}) (string, error) { return store.JsonFromPod(obj.(*types.FornaxPod)) }); err != nil {
+		func(text []byte) (interface{}, error) { return JsonToPod(text) },
+		func(obj interface{}) ([]byte, error) { return JsonFromPod(obj.(*types.FornaxPod)) }); err != nil {
 		return nil, err
 	} else {
 		return &PodStore{store}, nil
@@ -104,8 +105,8 @@ func (s *PodStore) PutPod(pod *types.FornaxPod) error {
 
 func NewSessionSqliteStore(options *sqlite.SQLiteStoreOptions) (*SessionStore, error) {
 	if store, err := sqlite.NewSqliteStore("Session", options,
-		func(text string) (interface{}, error) { return store.JsonToSession(text) },
-		func(obj interface{}) (string, error) { return store.JsonFromSession(obj.(*types.FornaxSession)) }); err != nil {
+		func(text []byte) (interface{}, error) { return JsonToSession(text) },
+		func(obj interface{}) ([]byte, error) { return JsonFromSession(obj.(*types.FornaxSession)) }); err != nil {
 		return nil, err
 	} else {
 		return &SessionStore{store}, nil
@@ -133,4 +134,57 @@ func (s *SessionStore) PutSession(session *types.FornaxSession) error {
 		return err
 	}
 	return nil
+}
+
+// use json to store node agent store object for now, consider using protobuf if meet performance issue
+func JsonToPod(data []byte) (*types.FornaxPod, error) {
+	res := types.FornaxPod{}
+	if err := json.Unmarshal([]byte(data), &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+func JsonFromPod(obj *types.FornaxPod) ([]byte, error) {
+	var bytes []byte
+	var err error
+	if bytes, err = json.Marshal(obj); err != nil {
+		return nil, err
+	}
+	return bytes, nil
+}
+
+// use json to store node agent store object for now, consider using protobuf if meet performance issue
+func JsonToNode(text []byte) (*types.FornaxNodeWithRevision, error) {
+	res := types.FornaxNodeWithRevision{}
+	if err := json.Unmarshal([]byte(text), &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+func JsonFromNode(obj *types.FornaxNodeWithRevision) ([]byte, error) {
+	var bytes []byte
+	var err error
+	if bytes, err = json.Marshal(obj); err != nil {
+		return nil, err
+	}
+	return bytes, nil
+}
+
+func JsonToSession(text []byte) (*types.FornaxSession, error) {
+	res := types.FornaxSession{}
+	if err := json.Unmarshal([]byte(text), &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+func JsonFromSession(obj *types.FornaxSession) ([]byte, error) {
+	var bytes []byte
+	var err error
+	if bytes, err = json.Marshal(obj); err != nil {
+		return nil, err
+	}
+	return bytes, nil
 }

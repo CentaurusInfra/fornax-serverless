@@ -25,92 +25,77 @@ import (
 	"time"
 
 	fornaxv1 "centaurusinfra.io/fornax-serverless/pkg/apis/core/v1"
-	fornaxclient "centaurusinfra.io/fornax-serverless/pkg/client/clientset/versioned"
-	"centaurusinfra.io/fornax-serverless/pkg/client/informers/externalversions"
-	listerv1 "centaurusinfra.io/fornax-serverless/pkg/client/listers/core/v1"
 	ie "centaurusinfra.io/fornax-serverless/pkg/fornaxcore/internal"
+	fornaxstore "centaurusinfra.io/fornax-serverless/pkg/store"
+	storefactory "centaurusinfra.io/fornax-serverless/pkg/store/factory"
 	"centaurusinfra.io/fornax-serverless/pkg/util"
 
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/apimachinery/pkg/util/wait"
-	"k8s.io/client-go/tools/cache"
+	"k8s.io/apimachinery/pkg/watch"
+	apistorage "k8s.io/apiserver/pkg/storage"
 	"k8s.io/client-go/util/workqueue"
 	"k8s.io/klog/v2"
 )
 
 const (
-	// The number of times we retry updating a Application's status.
+	// The number of times we retry updating an application's status.
 	DefaultApplicationSyncErrorRecycleDuration = 10 * time.Second
 
-	// The number of workers sync application
+	// The number of application workers
 	DefaultNumOfApplicationWorkers = 4
 )
 
 type ApplicationPool struct {
-	appName  string
-	mu       sync.RWMutex
-	pods     map[ApplicationPodState]map[string]*ApplicationPod
-	sessions map[string]*fornaxv1.ApplicationSession
+	appName     string
+	mu          sync.RWMutex
+	podsByState map[ApplicationPodState]map[string]*ApplicationPod
+	sessions    map[ApplicationSessionState]map[string]*ApplicationSession
 }
 
 func NewApplicationPool(appName string) *ApplicationPool {
 	return &ApplicationPool{
 		appName: appName,
 		mu:      sync.RWMutex{},
-		pods: map[ApplicationPodState]map[string]*ApplicationPod{
+		podsByState: map[ApplicationPodState]map[string]*ApplicationPod{
 			PodStatePending:   {},
 			PodStateIdle:      {},
 			PodStateAllocated: {},
 			PodStateDeleting:  {},
 		},
-		sessions: map[string]*fornaxv1.ApplicationSession{},
+		sessions: map[ApplicationSessionState]map[string]*ApplicationSession{
+			SessionStatePending:  {},
+			SessionStateStarting: {},
+			SessionStateRunning:  {},
+			SessionStateDeleting: {},
+		},
 	}
-}
-
-func GetApplication(apiServerClient fornaxclient.Interface, applicationKey string) (*fornaxv1.Application, error) {
-	namespace, name, err := cache.SplitMetaNamespaceKey(applicationKey)
-	if err != nil {
-		klog.ErrorS(err, "Application key is not a valid meta namespace key, skip", "application", applicationKey)
-		return nil, err
-	}
-	return apiServerClient.CoreV1().Applications(namespace).Get(context.Background(), name, metav1.GetOptions{})
-}
-
-func GetApplicationCache(lister listerv1.ApplicationLister, applicationKey string) (*fornaxv1.Application, error) {
-	namespace, name, err := cache.SplitMetaNamespaceKey(applicationKey)
-	if err != nil {
-		klog.ErrorS(err, "Application key is not a valid meta namespace key, skip", "application", applicationKey)
-		return nil, err
-	}
-	return lister.Applications(namespace).Get(name)
 }
 
 // ApplicationManager is responsible for synchronizing Application objects stored
 // in the system with actual running pods.
 type ApplicationManager struct {
-	mu sync.RWMutex
+	ctx context.Context
+	mu  sync.RWMutex
 
-	appKind        schema.GroupVersionKind
-	appSessionKind schema.GroupVersionKind
+	appKind          schema.GroupVersionKind
+	appSessionKind   schema.GroupVersionKind
+	applicationQueue workqueue.RateLimitingInterface
 
-	applicationLister      listerv1.ApplicationLister
-	aplicationListerSynced cache.InformerSynced
-	applicationIndexer     cache.Indexer
-	applicationQueue       workqueue.RateLimitingInterface
+	applicationStore fornaxstore.ApiStorageInterface
+	appStoreUpdate   <-chan fornaxstore.WatchEventWithOldObj
 
-	applicationSessionLister      listerv1.ApplicationSessionLister
-	aplicationSessionListerSynced cache.InformerSynced
-	applicationSessionIndexer     cache.Indexer
+	sessionStore       fornaxstore.ApiStorageInterface
+	sessionStoreUpdate <-chan fornaxstore.WatchEventWithOldObj
 
 	// A pool of pods grouped by application key
 	applicationPools     map[string]*ApplicationPool
 	podUpdateChannel     chan *ie.PodEvent
 	podManager           ie.PodManagerInterface
-	sessionManager       ie.SessionManagerInterface
 	sessionUpdateChannel chan *ie.SessionEvent
+	sessionManager       ie.SessionManagerInterface
 
 	applicationStatusManager *ApplicationStatusManager
 
@@ -119,14 +104,17 @@ type ApplicationManager struct {
 
 // NewApplicationManager init ApplicationInformer and ApplicationSessionInformer,
 // and start to listen to pod event from node
-func NewApplicationManager(ctx context.Context, podManager ie.PodManagerInterface, sessionManager ie.SessionManagerInterface) *ApplicationManager {
+func NewApplicationManager(ctx context.Context, podManager ie.PodManagerInterface, sessionManager ie.SessionManagerInterface, appStore, sessionStore fornaxstore.ApiStorageInterface) *ApplicationManager {
 	am := &ApplicationManager{
+		ctx:                  ctx,
 		applicationQueue:     workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "fornaxv1.Application"),
 		applicationPools:     map[string]*ApplicationPool{},
-		podUpdateChannel:     make(chan *ie.PodEvent, 500),
-		sessionUpdateChannel: make(chan *ie.SessionEvent, 500),
+		podUpdateChannel:     make(chan *ie.PodEvent, 1000),
 		podManager:           podManager,
+		sessionUpdateChannel: make(chan *ie.SessionEvent, 1000),
 		sessionManager:       sessionManager,
+		applicationStore:     appStore,
+		sessionStore:         sessionStore,
 	}
 	am.podManager.Watch(am.podUpdateChannel)
 	am.sessionManager.Watch(am.sessionUpdateChannel)
@@ -175,94 +163,95 @@ func (am *ApplicationManager) getOrCreateApplicationPool(applicationKey string) 
 	}
 }
 
-func (am *ApplicationManager) initApplicationInformer(ctx context.Context) {
-	apiServerClient := util.GetFornaxCoreApiClient(util.GetFornaxCoreKubeConfig())
-	appInformerFactory := externalversions.NewSharedInformerFactory(apiServerClient, 10*time.Minute)
-
-	applicationInformer := appInformerFactory.Core().V1().Applications()
-	applicationInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
-		AddFunc:    am.onApplicationAddEvent,
-		UpdateFunc: am.onApplicationUpdateEvent,
-		DeleteFunc: am.onApplicationDeleteEvent,
+func (am *ApplicationManager) initApplicationInformer(ctx context.Context) error {
+	wi, err := am.applicationStore.WatchWithOldObj(ctx, fornaxv1.ApplicationGrvKey, apistorage.ListOptions{
+		ResourceVersion:      "0",
+		ResourceVersionMatch: "",
+		Predicate:            apistorage.Everything,
+		Recursive:            true,
+		ProgressNotify:       true,
 	})
-	applicationInformer.Informer().AddIndexers(cache.Indexers{
-		"controllerUID": func(obj interface{}) ([]string, error) {
-			application, ok := obj.(*fornaxv1.Application)
-			if !ok {
-				return []string{}, nil
-			}
-			controllerRef := metav1.GetControllerOf(application)
-			if controllerRef == nil {
-				return []string{}, nil
-			}
-			return []string{string(controllerRef.UID)}, nil
-		},
-	})
-	am.applicationIndexer = applicationInformer.Informer().GetIndexer()
-	am.applicationLister = applicationInformer.Lister()
-	am.aplicationListerSynced = applicationInformer.Informer().HasSynced
-	am.applicationStatusManager = NewApplicationStatusManager(am.applicationLister)
-	am.applicationStatusManager.Run(ctx)
-	appInformerFactory.Start(ctx.Done())
+	if err != nil {
+		return err
+	}
+	am.appStoreUpdate = wi.ResultChanWithPrevobj()
+	return nil
 }
 
-func (am *ApplicationManager) initApplicationSessionInformer(ctx context.Context) {
-	apiServerClient := util.GetFornaxCoreApiClient(util.GetFornaxCoreKubeConfig())
-	sessionInformerFactory := externalversions.NewSharedInformerFactory(apiServerClient, 10*time.Minute)
-	applicationSessionInformer := sessionInformerFactory.Core().V1().ApplicationSessions()
-	applicationSessionInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
-		AddFunc:    am.onApplicationSessionAddEvent,
-		UpdateFunc: am.onApplicationSessionUpdateEvent,
-		DeleteFunc: am.onApplicationSessionDeleteEvent,
-	})
-	applicationSessionInformer.Informer().AddIndexers(cache.Indexers{
-		"controllerUID": func(obj interface{}) ([]string, error) {
-			session, ok := obj.(*fornaxv1.ApplicationSession)
-			if !ok {
-				return []string{}, nil
-			}
-			controllerRef := metav1.GetControllerOf(session)
-			if controllerRef == nil {
-				return []string{}, nil
-			}
-			return []string{string(controllerRef.UID)}, nil
-		},
-	})
-	am.applicationSessionIndexer = applicationSessionInformer.Informer().GetIndexer()
-	am.applicationSessionLister = applicationSessionInformer.Lister()
-	am.aplicationSessionListerSynced = applicationSessionInformer.Informer().HasSynced
-	sessionInformerFactory.Start(ctx.Done())
+func (am *ApplicationManager) onApplicationEventFromStorage(we fornaxstore.WatchEventWithOldObj) {
+	switch we.Type {
+	case watch.Added:
+		am.onApplicationAddEvent(we.Object)
+	case watch.Modified:
+		am.onApplicationUpdateEvent(we.OldObject, we.Object)
+	case watch.Deleted:
+		am.onApplicationDeleteEvent(we.Object)
+	}
 }
 
 // Run sync and watchs application, pod and session
 func (am *ApplicationManager) Run(ctx context.Context) {
 	klog.Info("Starting fornaxv1 application manager")
 
+	am.applicationStatusManager = NewApplicationStatusManager(am.applicationStore)
+
 	am.initApplicationInformer(ctx)
-	cache.WaitForNamedCacheSync(fornaxv1.ApplicationKind.Kind, ctx.Done(), am.aplicationListerSynced)
-
-	am.initApplicationSessionInformer(ctx)
-	cache.WaitForNamedCacheSync(fornaxv1.ApplicationSessionKind.Kind, ctx.Done(), am.aplicationSessionListerSynced)
-	klog.Info("Fornaxv1 application manager started")
-
 	go func() {
-		defer utilruntime.HandleCrash()
-		defer am.applicationQueue.ShutDown()
-		defer klog.Info("Shutting down fornaxv1 application manager")
-
 		for {
 			select {
 			case <-ctx.Done():
 				break
-			case update := <-am.podUpdateChannel:
-				am.onPodEventFromNode(update)
-			case update := <-am.sessionUpdateChannel:
-				am.onSessionEventFromNode(update)
+			case we := <-am.appStoreUpdate:
+				am.onApplicationEventFromStorage(we)
 			}
 		}
 	}()
 
+	am.initApplicationSessionInformer(ctx)
 	go func() {
+		for {
+			select {
+			case <-ctx.Done():
+				break
+			case we := <-am.sessionStoreUpdate:
+				am.onSessionEventFromStorage(we)
+			}
+		}
+	}()
+
+	klog.Info("Fornaxv1 application manager started")
+
+	for i := 0; i < DefaultNumOfApplicationWorkers; i++ {
+		go wait.UntilWithContext(ctx, am.worker, time.Second)
+
+		go func() {
+			defer klog.Info("Shutting down fornaxv1 application pod manager")
+			for {
+				select {
+				case <-ctx.Done():
+					break
+				case update := <-am.podUpdateChannel:
+					am.onPodEventFromNode(update)
+				}
+			}
+		}()
+
+		go func() {
+			defer klog.Info("Shutting down fornaxv1 application session manager")
+			for {
+				select {
+				case <-ctx.Done():
+					break
+				case update := <-am.sessionUpdateChannel:
+					am.onSessionEventFromNode(update)
+				}
+			}
+		}()
+	}
+
+	go func() {
+		defer utilruntime.HandleCrash()
+		defer am.applicationQueue.ShutDown()
 		ticker := time.NewTicker(HouseKeepingDuration)
 		for {
 			select {
@@ -273,10 +262,6 @@ func (am *ApplicationManager) Run(ctx context.Context) {
 			}
 		}
 	}()
-
-	for i := 0; i < DefaultNumOfApplicationWorkers; i++ {
-		go wait.UntilWithContext(ctx, am.worker, time.Second)
-	}
 }
 
 func (am *ApplicationManager) enqueueApplication(applicationKey string) {
@@ -288,7 +273,6 @@ func (am *ApplicationManager) onApplicationAddEvent(obj interface{}) {
 	application := obj.(*fornaxv1.Application)
 	applicationKey := util.Name(application)
 	klog.Infof("Creating application %s", applicationKey)
-
 	am.getOrCreateApplicationPool(applicationKey)
 	am.enqueueApplication(applicationKey)
 }
@@ -299,37 +283,17 @@ func (am *ApplicationManager) onApplicationUpdateEvent(old, cur interface{}) {
 	newCopy := cur.(*fornaxv1.Application)
 
 	applicationKey := util.Name(newCopy)
-	if newCopy.UID != oldCopy.UID {
-		am.onApplicationDeleteEvent(cache.DeletedFinalStateUnknown{
-			Key: applicationKey,
-			Obj: oldCopy,
-		})
-	}
-
-	// application status are update when session or pod changed, its own status change does not need sync,
 	// only sync when deleting or spec change
+	// application status are updated when session or pod changed, pod and session status change will trigger sync in their own event
 	if (newCopy.DeletionTimestamp != nil && oldCopy.DeletionTimestamp == nil) || !reflect.DeepEqual(oldCopy.Spec, newCopy.Spec) {
-		klog.Infof("Updating application %s", applicationKey)
+		klog.InfoS("Updating application", "app", applicationKey, "deleting", newCopy.DeletionTimestamp != nil)
 		am.enqueueApplication(applicationKey)
 	}
 }
 
 // callback from application informer when Application is deleted
 func (am *ApplicationManager) onApplicationDeleteEvent(obj interface{}) {
-	appliation, ok := obj.(*fornaxv1.Application)
-	if !ok {
-		tombstone, ok := obj.(cache.DeletedFinalStateUnknown)
-		if !ok {
-			klog.Errorf("couldn't get object from tombstone %#v", obj)
-			return
-		}
-		appliation, ok = tombstone.Obj.(*fornaxv1.Application)
-		if !ok {
-			klog.Errorf("tombstone contained object that is not a Application %#v", obj)
-			return
-		}
-	}
-
+	appliation := obj.(*fornaxv1.Application)
 	applicationKey := util.Name(appliation)
 	klog.Infof("Deleting application %s", applicationKey)
 	am.applicationQueue.Add(applicationKey)
@@ -362,16 +326,14 @@ func (am *ApplicationManager) processNextWorkItem(ctx context.Context) bool {
 }
 
 func (am *ApplicationManager) cleanupDeletedApplication(pool *ApplicationPool) error {
-	klog.InfoS("Cleanup a deleting Application, remove all session then pod", "application", pool.appName)
+	klog.InfoS("Cleanup a deleting Application, close all remaining session then deleting pod", "application", pool.appName)
 	numOfSession := pool.sessionLength()
 	if numOfSession > 0 {
-		klog.Infof("Delete remaining %d sessions of application %s", numOfSession, pool.appName)
 		err := am.cleanupSessionOfApplication(pool)
 		if err != nil {
 			return err
 		}
 	} else {
-		klog.Infof("Cleanup all pods of application %s", pool.appName)
 		err := am.cleanupPodOfApplication(pool)
 		if err != nil {
 			return err
@@ -380,8 +342,7 @@ func (am *ApplicationManager) cleanupDeletedApplication(pool *ApplicationPool) e
 
 	// if a application does not have any pod or session, remove it from application pool to save memory
 	if pool.podLength() == 0 && pool.sessionLength() == 0 {
-		klog.InfoS("Application pool is empty, remove", "application", pool.appName)
-		// remove this application from pool
+		klog.InfoS("No remaining pod and session for deleting application, cleanup is done", "application", pool.appName)
 		am.deleteApplicationPool(pool.appName)
 	}
 	return nil
@@ -392,9 +353,10 @@ func (am *ApplicationManager) cleanupDeletedApplication(pool *ApplicationPool) e
 // if a application is being deleted, it cleanup session and pods of this application
 func (am *ApplicationManager) syncApplication(ctx context.Context, applicationKey string) (syncErr error) {
 	klog.InfoS("Syncing application", "application", applicationKey)
-	// startTime := time.Now()
+	st := time.Now().UnixMicro()
 	defer func() {
-		klog.InfoS("Finished syncing application", "application", applicationKey)
+		et := time.Now().UnixMicro()
+		klog.InfoS("Done syncing application", "application", applicationKey, "took", et-st)
 		// TODO post metrics
 	}()
 	pool := am.getApplicationPool(applicationKey)
@@ -404,7 +366,7 @@ func (am *ApplicationManager) syncApplication(ctx context.Context, applicationKe
 
 	var numOfDesiredPod int
 	var action fornaxv1.DeploymentAction
-	application, syncErr := GetApplicationCache(am.applicationLister, applicationKey)
+	application, syncErr := storefactory.GetApplicationCache(am.applicationStore, applicationKey)
 	if syncErr != nil {
 		if apierrors.IsNotFound(syncErr) {
 			numOfDesiredPod = 0
@@ -421,12 +383,12 @@ func (am *ApplicationManager) syncApplication(ctx context.Context, applicationKe
 			// 1, assign pending session to idle pods firstly and cleanup timedout and deleting sessions
 			syncErr = am.deployApplicationSessions(pool, application)
 
-			// 2, determine how many more pods required for remaining pending sessions
+			// 2, find how many more pods required for remaining pending sessions
 			if syncErr == nil {
-				// get length in one method to make sure it has snapshot image at a moment, method is locking write operation
-				numOfOccupiedPod, numOfPendingPod, numOfIdlePod := pool.activeApplicationPodLength()
+				sessionSummary := pool.summarySession()
+				numOfOccupiedPod, numOfPendingPod, numOfIdlePod := pool.activePodNums()
 				numOfUnoccupiedPod := numOfPendingPod + numOfIdlePod
-				_, numOfPendingSession := pool.getTotalAndPendingSessionNum()
+				numOfPendingSession := sessionSummary.pendingCount
 				numOfDesiredUnoccupiedPod := am.calculateDesiredIdlePods(application, numOfOccupiedPod, numOfUnoccupiedPod, numOfPendingSession)
 				numOfDesiredPod = numOfOccupiedPod + numOfDesiredUnoccupiedPod
 				klog.InfoS("Syncing application pod", "application", applicationKey, "pending-sessions", numOfPendingSession, "active-pods", numOfOccupiedPod+numOfUnoccupiedPod, "pending-pods", numOfPendingPod, "idle-pods", numOfIdlePod, "desired-pending+idle-pods", numOfDesiredUnoccupiedPod)
@@ -446,11 +408,11 @@ func (am *ApplicationManager) syncApplication(ctx context.Context, applicationKe
 			syncErr = am.cleanupDeletedApplication(pool)
 		}
 
-		newStatus := am.calculateStatus(application, numOfDesiredPod, action, syncErr)
+		newStatus := am.calculateStatus(pool, application, numOfDesiredPod, action, syncErr)
 		am.applicationStatusManager.UpdateApplicationStatus(application, newStatus)
 	}
 
-	// Resync the Application if there is error, if no error but total pods number does not meet desired number,
+	// Requeue the Application if there is error, if no error but total pods number does not meet desired number,
 	// when event of pods created/deleted in this sync come back from nodes will trigger next sync, finally meet desired state
 	if syncErr != nil {
 		klog.ErrorS(syncErr, "Failed to sync application, requeue", "application", applicationKey)
@@ -543,17 +505,9 @@ func (am *ApplicationManager) calculateDesiredIdlePods(application *fornaxv1.App
 	return desiredCount
 }
 
-func (am *ApplicationManager) calculateStatus(application *fornaxv1.Application, desiredCount int, action fornaxv1.DeploymentAction, deploymentErr error) *fornaxv1.ApplicationStatus {
+func (am *ApplicationManager) calculateStatus(pool *ApplicationPool, application *fornaxv1.Application, desiredCount int, action fornaxv1.DeploymentAction, deploymentErr error) *fornaxv1.ApplicationStatus {
 	newStatus := application.Status.DeepCopy()
-	applicationKey, err := cache.MetaNamespaceKeyFunc(application)
-	if err != nil {
-		return newStatus
-	}
-
-	var poolSummary ApplicationPodSummary
-	if pool := am.getApplicationPool(applicationKey); pool != nil {
-		poolSummary = pool.summaryPod(am.podManager)
-	}
+	poolSummary := pool.summaryPod(am.podManager)
 
 	if application.Status.DesiredInstances == int32(desiredCount) &&
 		application.Status.TotalInstances == poolSummary.totalCount &&
@@ -603,10 +557,6 @@ func (am *ApplicationManager) calculateStatus(application *fornaxv1.Application,
 	// }
 
 	return newStatus
-}
-
-func (am *ApplicationManager) printAppSummary() {
-	klog.InfoS("app summary:", "#app", len(am.applicationPools), "application update queue", am.applicationQueue.Len())
 }
 
 func (am *ApplicationManager) HouseKeeping() error {

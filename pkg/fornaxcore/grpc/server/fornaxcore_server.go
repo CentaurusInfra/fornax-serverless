@@ -53,6 +53,7 @@ type grpcServer struct {
 
 	nodeMonitor ie.NodeMonitorInterface
 	fornaxcore_grpc.UnimplementedFornaxCoreServiceServer
+	messages chan *fornaxcore_grpc.FornaxCoreMessage
 }
 
 func (g *grpcServer) RunGrpcServer(ctx context.Context, nodeMonitor ie.NodeMonitorInterface, port int, certFile, keyFile string) error {
@@ -69,8 +70,6 @@ func (g *grpcServer) RunGrpcServer(ctx context.Context, nodeMonitor ie.NodeMonit
 			return err
 		}
 		opts = []grpc.ServerOption{grpc.Creds(creds)}
-	} else {
-
 	}
 
 	// start node agent grpc server
@@ -84,6 +83,16 @@ func (g *grpcServer) RunGrpcServer(ctx context.Context, nodeMonitor ie.NodeMonit
 		}
 	}()
 
+	go func() {
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case msg := <-g.messages:
+				g.handleMessages(msg)
+			}
+		}
+	}()
 	return nil
 }
 
@@ -135,35 +144,36 @@ func (g *grpcServer) GetMessage(identifier *fornaxcore_grpc.NodeIdentifier, serv
 }
 
 func (g *grpcServer) PutMessage(ctx context.Context, message *fornaxcore_grpc.FornaxCoreMessage) (*empty.Empty, error) {
+	g.messages <- message
+	return &emptypb.Empty{}, nil
+}
+
+func (g *grpcServer) handleMessages(message *fornaxcore_grpc.FornaxCoreMessage) {
 	var err error
 	var msg *fornaxcore_grpc.FornaxCoreMessage
 	switch message.GetMessageType() {
 	case fornaxcore_grpc.MessageType_NODE_REGISTER:
-		msg, err = g.nodeMonitor.OnRegistry(ctx, message)
+		msg, err = g.nodeMonitor.OnRegistry(message)
 	case fornaxcore_grpc.MessageType_NODE_READY:
-		msg, err = g.nodeMonitor.OnNodeReady(ctx, message)
+		msg, err = g.nodeMonitor.OnNodeReady(message)
 	case fornaxcore_grpc.MessageType_NODE_STATE:
-		msg, err = g.nodeMonitor.OnNodeStateUpdate(ctx, message)
+		msg, err = g.nodeMonitor.OnNodeStateUpdate(message)
 	case fornaxcore_grpc.MessageType_POD_STATE:
-		msg, err = g.nodeMonitor.OnPodStateUpdate(ctx, message)
+		msg, err = g.nodeMonitor.OnPodStateUpdate(message)
 	case fornaxcore_grpc.MessageType_SESSION_STATE:
-		msg, err = g.nodeMonitor.OnSessionUpdate(ctx, message)
+		msg, err = g.nodeMonitor.OnSessionUpdate(message)
 	default:
 		klog.Errorf(fmt.Sprintf("not supported message type %s, message %v", message.GetMessageType(), message))
 	}
-
 	if err != nil {
 		klog.ErrorS(err, "Failed to process a node message", "node", message.GetNodeIdentifier(), "msgType", message.GetMessageType())
 	}
-
 	if err == nodeagent.NodeRevisionOutOfOrderError {
 		g.DispatchNodeMessage(message.GetNodeIdentifier().GetIdentifier(), NewFullSyncRequest())
 	}
-
 	if msg != nil {
 		g.DispatchNodeMessage(message.GetNodeIdentifier().GetIdentifier(), msg)
 	}
-	return &emptypb.Empty{}, err
 }
 
 func (g *grpcServer) mustEmbedUnimplementedFornaxCoreServiceServer() {
@@ -173,7 +183,9 @@ func NewGrpcServer() *grpcServer {
 	return &grpcServer{
 		RWMutex:                              sync.RWMutex{},
 		nodeGetMessageChans:                  make(map[string]chan<- *fornaxcore_grpc.FornaxCoreMessage),
+		nodeMonitor:                          nil,
 		UnimplementedFornaxCoreServiceServer: fornaxcore_grpc.UnimplementedFornaxCoreServiceServer{},
+		messages:                             make(chan *fornaxcore_grpc.FornaxCoreMessage, 1000),
 	}
 }
 

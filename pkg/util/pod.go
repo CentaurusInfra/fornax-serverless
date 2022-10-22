@@ -170,14 +170,23 @@ func GetPodResourceList(v1pod *v1.Pod) *v1.ResourceList {
 	return &resourceList
 }
 
-func MergePod(oldPod, newPod *v1.Pod) {
-	MergeObjectMeta(&oldPod.ObjectMeta, &newPod.ObjectMeta)
+func MergePod(toPod, fromPod *v1.Pod) {
+	MergeObjectMeta(&toPod.ObjectMeta, &fromPod.ObjectMeta)
 
-	oldPod.Status = *newPod.Status.DeepCopy()
+	if PodIsTerminated(fromPod) {
+		if toPod.DeletionTimestamp == nil {
+			if fromPod.DeletionTimestamp != nil {
+				toPod.DeletionTimestamp = fromPod.DeletionTimestamp.DeepCopy()
+			} else {
+				toPod.DeletionTimestamp = NewCurrentMetaTime()
+			}
+		}
+	}
+	toPod.Status = *fromPod.Status.DeepCopy()
 
 	// pod spec could be modified by NodeAgent, especially container port mapping
-	if !reflect.DeepEqual(oldPod.Spec, newPod.Spec) {
-		oldPod.Spec = newPod.Spec
+	if !reflect.DeepEqual(toPod.Spec, fromPod.Spec) {
+		toPod.Spec = fromPod.Spec
 	}
 }
 

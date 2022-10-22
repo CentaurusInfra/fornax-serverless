@@ -24,6 +24,7 @@ import (
 	default_config "centaurusinfra.io/fornax-serverless/pkg/config"
 	ie "centaurusinfra.io/fornax-serverless/pkg/fornaxcore/internal"
 	fornaxpod "centaurusinfra.io/fornax-serverless/pkg/fornaxcore/pod"
+	"centaurusinfra.io/fornax-serverless/pkg/store/factory"
 	"centaurusinfra.io/fornax-serverless/pkg/util"
 	"github.com/google/uuid"
 
@@ -31,11 +32,9 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/errors"
 	"k8s.io/apimachinery/pkg/util/rand"
-	"k8s.io/client-go/tools/cache"
 	"k8s.io/klog/v2"
 	k8spodutil "k8s.io/kubernetes/pkg/api/v1/pod"
 )
@@ -445,61 +444,14 @@ func (am *ApplicationManager) getPodApplicationKey(pod *v1.Pod) (string, error) 
 		klog.Warningf("Pod %s does not have fornaxv1 application label:%s", util.Name(pod), fornaxv1.LabelFornaxCoreApplication)
 		return "", nil
 	} else {
-		namespace, name, err := cache.SplitMetaNamespaceKey(applicationLabel)
-		if err == nil {
-			application, err := am.applicationLister.Applications(namespace).Get(name)
-			if err != nil {
-				if apierrors.IsNotFound(err) {
-					return "", nil
-				}
-				return "", err
-			}
-
-			applicationKey, err := cache.MetaNamespaceKeyFunc(application)
-			if err != nil {
-				// not supposed to get here, as application is namespaced always, just handle function err anyway
-				klog.ErrorS(err, "Can not find application key", "application", application)
-				return "", err
-			}
-			return applicationKey, nil
-		} else {
-			// check application with same label
-			applications, err := am.applicationLister.List(labels.SelectorFromValidatedSet(labels.Set{fornaxv1.LabelFornaxCoreApplication: applicationLabel}))
-			if err != nil {
-				return "", err
-			}
-			var ownerApp *fornaxv1.Application
-			if len(applications) > 1 {
-				klog.Warning("More than one fornax application have same application label: %s", applicationLabel)
-				// check pod ownerreferences
-				if len(pod.GetOwnerReferences()) == 0 {
-					klog.Warning("Pod %s does not have a valid owner reference, treat it as a orphan pod", util.Name(pod))
-					return "", nil
-				}
-
-				for _, application := range applications {
-					uid := application.GetObjectMeta().GetUID()
-					for _, ref := range pod.GetOwnerReferences() {
-						if uid == ref.UID {
-							ownerApp = application
-							break
-						}
-					}
-					if ownerApp != nil {
-						break
-					}
-				}
-			} else {
-				ownerApp = applications[0]
-			}
-			applicationKey, err := cache.MetaNamespaceKeyFunc(ownerApp)
-			if err != nil {
-				// not supposed to get here, as application is namespaced and should have name
-				klog.ErrorS(err, "Can not find application key", "application", ownerApp)
-				return "", err
-			}
-			return applicationKey, nil
+		a, err := factory.GetApplicationCache(am.applicationStore, applicationLabel)
+		if err != nil {
+			return "", err
 		}
+		if a == nil {
+			return "", nil
+		}
+		return applicationLabel, nil
 	}
 }
 

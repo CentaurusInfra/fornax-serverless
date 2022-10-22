@@ -20,6 +20,7 @@ import (
 	"context"
 	"fmt"
 	"sort"
+	"sync/atomic"
 	"time"
 
 	"centaurusinfra.io/fornax-serverless/cmd/fornaxtest/config"
@@ -66,7 +67,7 @@ var (
 		ScalingPolicy: fornaxv1.ScalingPolicy{
 			MinimumInstance:         0,
 			MaximumInstance:         500000,
-			Burst:                   100,
+			Burst:                   10,
 			ScalingPolicyType:       "idle_session_number",
 			IdleSessionNumThreshold: &fornaxv1.IdelSessionNumThreshold{HighWaterMark: 0, LowWaterMark: 0},
 		},
@@ -78,12 +79,14 @@ var (
 		SessionData:                   "session-data",
 		KillInstanceWhenSessionClosed: false,
 		CloseGracePeriodSeconds:       &CloseGracePeriodSeconds,
-		OpenTimeoutSeconds:            10,
+		OpenTimeoutSeconds:            5,
 	}
 )
 
-func initApplicationSessionInformer(ctx context.Context) {
-	sessionInformerFactory := externalversions.NewSharedInformerFactory(util.GetFornaxCoreApiClient(util.GetFornaxCoreKubeConfig()), 10*time.Minute)
+func initApplicationSessionInformer(ctx context.Context, namespace string) {
+	sessionInformerFactory := externalversions.NewSharedInformerFactoryWithOptions(
+		util.GetFornaxCoreApiClient(util.GetFornaxCoreKubeConfig()), 0*time.Minute, externalversions.WithNamespace(namespace),
+	)
 	applicationSessionInformer := sessionInformerFactory.Core().V1().ApplicationSessions()
 	applicationSessionInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc:    onApplicationSessionAddEvent,
@@ -97,7 +100,8 @@ func initApplicationSessionInformer(ctx context.Context) {
 
 func onApplicationSessionAddEvent(obj interface{}) {
 	newCopy := obj.(*fornaxv1.ApplicationSession)
-	updateSessionStatus(newCopy)
+	go updateSessionStatus(newCopy, time.Now())
+	atomic.AddInt32(&addevents, 1)
 }
 
 // callback from Application informer when ApplicationSession is updated
@@ -108,21 +112,26 @@ func onApplicationSessionAddEvent(obj interface{}) {
 func onApplicationSessionUpdateEvent(old, cur interface{}) {
 	_ = old.(*fornaxv1.ApplicationSession)
 	newCopy := cur.(*fornaxv1.ApplicationSession)
-	updateSessionStatus(newCopy)
+	go updateSessionStatus(newCopy, time.Now())
+	atomic.AddInt32(&updevents, 1)
 }
 
-func updateSessionStatus(session *fornaxv1.ApplicationSession) {
+func updateSessionStatus(session *fornaxv1.ApplicationSession, revTime time.Time) {
 	appSessionMapLock.Lock()
 	defer appSessionMapLock.Unlock()
-	// availableTimeMilli := time.Now().UnixMilli()
-	availableTimeMilli := session.Status.AvailableTimeMicro / 1000
+	tms := revTime.UnixMilli()
 	if ts, found := appSessionMap[session.Name]; found {
 		if ts.status == fornaxv1.SessionStatusPending &&
 			(session.Status.SessionStatus == fornaxv1.SessionStatusAvailable ||
 				session.Status.SessionStatus == fornaxv1.SessionStatusClosed ||
 				session.Status.SessionStatus == fornaxv1.SessionStatusTimeout) {
 			ts.status = session.Status.SessionStatus
-			ts.availableTimeMilli = availableTimeMilli
+			ts.watchAvailableTimeMilli = tms
+			ts.internalAvailableTimeMilli = session.Status.AvailableTimeMicro / 1000
+		}
+
+		if ts.status == fornaxv1.SessionStatusPending || ts.status == fornaxv1.SessionStatusUnspecified {
+			ts.watchCreationTimeMilli = tms
 		}
 	}
 }
@@ -134,9 +143,9 @@ func onApplicationSessionDeleteEvent(obj interface{}) {
 
 func waitForSessionSetup(namespace, appName string, sessions TestSessionArray) {
 	if len(sessions) > 0 {
-		klog.Infof("waiting for %d sessions of app %s setup", len(sessions), appName)
+		// klog.Infof("waiting for %d sessions of app %s setup", len(sessions), appName)
 		for {
-			time.Sleep(10 * time.Millisecond)
+			time.Sleep(2 * time.Millisecond)
 			allSetup := true
 			for _, ts := range sessions {
 				if ts.status == fornaxv1.SessionStatusPending {
@@ -213,10 +222,12 @@ type TestApplication struct {
 }
 
 type TestSession struct {
-	session            *fornaxv1.ApplicationSession
-	creationTimeMilli  int64
-	availableTimeMilli int64
-	status             fornaxv1.SessionStatus
+	session                    *fornaxv1.ApplicationSession
+	apiCreationTimeMilli       int64
+	watchCreationTimeMilli     int64
+	internalAvailableTimeMilli int64
+	watchAvailableTimeMilli    int64
+	status                     fornaxv1.SessionStatus
 }
 
 type TestApplicationArray []*TestApplication
@@ -244,7 +255,7 @@ func (sn TestSessionArray) Len() int {
 
 //so, sort latency from smaller to lager value
 func (sn TestSessionArray) Less(i, j int) bool {
-	return sn[i].availableTimeMilli-sn[i].creationTimeMilli < sn[j].availableTimeMilli-sn[j].creationTimeMilli
+	return sn[i].watchAvailableTimeMilli-sn[i].apiCreationTimeMilli < sn[j].watchAvailableTimeMilli-sn[j].apiCreationTimeMilli
 }
 
 func (sn TestSessionArray) Swap(i, j int) {
@@ -310,46 +321,6 @@ func waitForSessionTearDown(namespace, appName string, sessions []*TestSession) 
 	}
 }
 
-func waitForSessionSetupOld(namespace, appName string, sessions TestSessionArray) {
-	if len(sessions) > 0 {
-		klog.Infof("waiting for %d sessions of app %s setup", len(sessions), appName)
-		for {
-			time.Sleep(1000 * time.Millisecond)
-			allSetup := true
-			for _, ts := range sessions {
-				if ts.status != fornaxv1.SessionStatusPending {
-					continue
-				}
-				sess, err := describeSession(namespace, ts.session.Name)
-				if err != nil || sess == nil {
-					allSetup = false
-					continue
-				}
-
-				switch sess.Status.SessionStatus {
-				case fornaxv1.SessionStatusAvailable:
-					ts.availableTimeMilli = sess.Status.AvailableTimeMicro / 1000
-					ts.status = sess.Status.SessionStatus
-				case fornaxv1.SessionStatusTimeout:
-					ts.status = sess.Status.SessionStatus
-				case fornaxv1.SessionStatusClosed:
-					ts.status = sess.Status.SessionStatus
-				default:
-					allSetup = false
-					continue
-				}
-			}
-
-			if allSetup {
-				// for _, v := range sessions {
-				//  klog.Infof("Session: %s took %d milli second to setup, status %s\n", v.session.Name, v.availableTimeMilli-v.creationTimeMilli, v.status)
-				// }
-				break
-			}
-		}
-	}
-}
-
 func createSessionTest(cycleName, namespace, appName string, testConfig config.TestConfiguration) []*TestSession {
 	application, err := describeApplication(namespace, appName)
 	if err != nil {
@@ -407,7 +378,7 @@ func createApplication(namespace, name string, appSpec *fornaxv1.ApplicationSpec
 
 func createSession(namespace, name, applicationName string, sessionSpec *fornaxv1.ApplicationSessionSpec) (*TestSession, error) {
 	client := util.GetFornaxCoreApiClient(kubeConfig)
-	appClient := client.CoreV1().ApplicationSessions(namespace)
+	sessionClient := client.CoreV1().ApplicationSessions(namespace)
 	spec := *sessionSpec.DeepCopy()
 	spec.ApplicationName = applicationName
 	session := &fornaxv1.ApplicationSession{
@@ -430,8 +401,8 @@ func createSession(namespace, name, applicationName string, sessionSpec *fornaxv
 	appSessionMapLock.Lock()
 	appSessionMap[ts.session.Name] = ts
 	appSessionMapLock.Unlock()
-	ts.creationTimeMilli = time.Now().UnixMilli()
-	session, err := appClient.Create(context.Background(), session, metav1.CreateOptions{})
+	ts.apiCreationTimeMilli = time.Now().UnixMilli()
+	session, err := sessionClient.Create(context.Background(), session, metav1.CreateOptions{})
 	if err != nil {
 		appSessionMapLock.Lock()
 		delete(appSessionMap, ts.session.Name)
@@ -497,32 +468,47 @@ func summaryAppTestResult(apps TestApplicationArray, st, et int64) {
 }
 
 func summarySessionTestResult(sessions TestSessionArray, st, et int64) {
-	failedSession := 0
-	timeoutSession := 0
+	timeoutSessions := []*TestSession{}
+	failedSessions := []*TestSession{}
 	successSession := 0
 	for _, v := range sessions {
 		if v.status == fornaxv1.SessionStatusClosed {
-			failedSession += 1
+			failedSessions = append(failedSessions, v)
 		}
 		if v.status == fornaxv1.SessionStatusAvailable {
 			successSession += 1
 		}
 		if v.status == fornaxv1.SessionStatusTimeout {
-			timeoutSession += 1
+			timeoutSessions = append(timeoutSessions, v)
 		}
 	}
 	if len(sessions) == 0 {
 		return
 	}
 	klog.Infof("--------%d sessions tested in %d ms, rate %d/s ----------", len(sessions), et-st, int64(len(sessions))*1000/(et-st))
-	klog.Infof("%d success, %d failed, %d timeout", successSession, failedSession, timeoutSession)
+	klog.Infof("%d success, %d failed, %d timeout", successSession, len(failedSessions), len(timeoutSessions))
 	sort.Sort(sessions)
 	p99 := sessions[len(sessions)*99/100]
 	p90 := sessions[len(sessions)*90/100]
 	p50 := sessions[len(sessions)*50/100]
-	klog.Infof("Session setup time: p99 %d milli seconds, %v", p99.availableTimeMilli-p99.creationTimeMilli, p99, util.Name(p99.session))
-	klog.Infof("Session setup time: p90 %d milli seconds", p90.availableTimeMilli-p90.creationTimeMilli)
-	klog.Infof("Session setup time: p50 %d milli seconds", p50.availableTimeMilli-p50.creationTimeMilli)
+	klog.Infof("Session setup time: p99 %d ms, st: %s, et: %s, iet: %s, %s",
+		p99.watchAvailableTimeMilli-p99.apiCreationTimeMilli,
+		time.UnixMilli(p99.apiCreationTimeMilli).String(),
+		time.UnixMilli(p99.watchAvailableTimeMilli).String(),
+		time.UnixMilli(p99.internalAvailableTimeMilli).String(),
+		util.Name(p99.session))
+	klog.Infof("Session setup time: p90 %d ms, st: %s, et: %s, iet: %s, %s",
+		p90.watchAvailableTimeMilli-p90.apiCreationTimeMilli,
+		time.UnixMilli(p90.apiCreationTimeMilli).String(),
+		time.UnixMilli(p90.watchAvailableTimeMilli).String(),
+		time.UnixMilli(p90.internalAvailableTimeMilli).String(),
+		util.Name(p90.session))
+	klog.Infof("Session setup time: p50 %d ms, st: %s, et: %s, iet: %s, %s",
+		p50.watchAvailableTimeMilli-p50.apiCreationTimeMilli,
+		time.UnixMilli(p50.apiCreationTimeMilli).String(),
+		time.UnixMilli(p50.watchAvailableTimeMilli).String(),
+		time.UnixMilli(p50.internalAvailableTimeMilli).String(),
+		util.Name(p50.session))
 
 	klog.Infof("-------- sessions rate counters--------")
 	for _, v := range testSessionCounters {
@@ -530,4 +516,11 @@ func summarySessionTestResult(sessions TestSessionArray, st, et int64) {
 		klog.Infof("--------ct: %s, %d sessions tested in %d ms, rate %d/s ----------", time.UnixMilli(v.et).Truncate(time.Second), v.numOfSessions, milliseconds, int64(v.numOfSessions)*1000/(milliseconds))
 	}
 
+	for _, v := range timeoutSessions {
+		klog.InfoS("timeout session", "s", util.Name(v.session))
+	}
+
+	for _, v := range failedSessions {
+		klog.InfoS("failed session", "s", util.Name(v.session))
+	}
 }

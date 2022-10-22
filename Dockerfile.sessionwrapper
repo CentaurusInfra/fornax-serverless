@@ -16,7 +16,6 @@ RUN go mod download
 
 # Build
 RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags="-w -s" -o /opt/bin/sessionwrapper ./cmd/sessionwrapper/main.go
-RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags="-w -s" -o /opt/bin/sessionwrapper-sleep ./cmd/sessionwrapper/sleep/main.go
 RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags="-w -s" -o /opt/bin/sessionwrapper-echoserver ./cmd/sessionwrapper/echoserver/main.go
 
 # This is for documentation purposes only.
@@ -34,7 +33,6 @@ EXPOSE 8080
 FROM gcr.io/distroless/static-debian11
 
 COPY --from=build /opt/bin/sessionwrapper /opt/bin/sessionwrapper
-COPY --from=build /opt/bin/sessionwrapper-sleep /opt/bin/sessionwrapper-sleep
 COPY --from=build /opt/bin/sessionwrapper-echoserver /opt/bin/sessionwrapper-echoserver
 
 # Run

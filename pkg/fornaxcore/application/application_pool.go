@@ -81,6 +81,17 @@ func (pool *ApplicationPool) _getPodNoLock(podName string) *ApplicationPod {
 func (pool *ApplicationPool) addOrUpdatePod(podName string, podState ApplicationPodState, sessionIds []string) *ApplicationPod {
 	pool.mu.Lock()
 	defer pool.mu.Unlock()
+	if p := pool._getPodNoLock(podName); p != nil {
+		// pod state should not be reverted to avoid race condition
+		if p.state == PodStateDeleting && podState != PodStateDeleting {
+			// do not change a pod state already marked as deleting pods
+			return p
+		}
+		if p.state != PodStatePending && podState == PodStatePending {
+			// do not change a pod state which already not pending
+			return p
+		}
+	}
 	return pool._addOrUpdatePodNoLock(podName, podState, sessionIds)
 }
 

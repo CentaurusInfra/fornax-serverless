@@ -277,6 +277,8 @@ func (am *ApplicationManager) deployApplicationSessions(pool *ApplicationPool, a
 				pool.addOrUpdatePod(ap.podName, PodStateAllocated, []string{string(as.session.GetUID())})
 				si += 1
 			}
+		} else {
+			klog.InfoS("A idle Pod does not exist in Pod manager at all, should be deleted", "application", pool.appName, "pod", util.Name(ap.podName))
 		}
 	}
 

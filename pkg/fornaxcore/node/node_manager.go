@@ -124,7 +124,7 @@ func (nm *nodeManager) SyncNodePodStates(nodeId string, podStates []*grpc.PodSta
 		reportedPods[podName] = true
 		podRev, err := strconv.Atoi(podState.GetPod().ResourceVersion)
 		if err == nil && int64(podRev) <= minimalNodeRevision {
-			// this pod is already updated in previous revision
+			// this pod is already updated in previously
 			continue
 		}
 		sessions := []*fornaxv1.ApplicationSession{}

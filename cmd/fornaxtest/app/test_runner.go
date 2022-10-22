@@ -146,6 +146,7 @@ func Run(ctx context.Context, testConfig config.TestConfiguration) {
 				st:            st,
 				et:            et,
 			})
+			klog.Infof("Num of session created, %d", len(allTestSessions))
 			if done {
 				break
 			}

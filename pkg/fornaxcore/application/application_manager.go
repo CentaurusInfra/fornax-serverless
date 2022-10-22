@@ -506,7 +506,6 @@ func (am *ApplicationManager) calculateDesiredIdlePods(application *fornaxv1.App
 }
 
 func (am *ApplicationManager) calculateStatus(pool *ApplicationPool, application *fornaxv1.Application, desiredCount int, action fornaxv1.DeploymentAction, deploymentErr error) *fornaxv1.ApplicationStatus {
-	klog.InfoS("calculate status for application", "app", pool.appName)
 	newStatus := application.Status.DeepCopy()
 	poolSummary := pool.summaryPod(am.podManager)
 

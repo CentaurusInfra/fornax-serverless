@@ -41,7 +41,7 @@ type PodScheduler interface {
 
 var _ PodScheduler = &podScheduler{}
 
-var NumOfNodesPerScheduler = 200
+var DefaultNumOfNodesPerScheduler = 200
 
 type NodeSortingMethod string
 
@@ -205,7 +205,6 @@ func (ps *podScheduler) schedulePod(pod *v1.Pod, candidateNodes []*SchedulableNo
 		for _, cond := range conditions {
 			goodNode = goodNode && cond.Apply(node, &allocatedResources)
 			if !goodNode {
-				klog.InfoS("Node does not meet pod condition", "condition", cond, "pod", util.Name(pod), "node", node.NodeId)
 				break
 			}
 		}
@@ -219,7 +218,7 @@ func (ps *podScheduler) schedulePod(pod *v1.Pod, candidateNodes []*SchedulableNo
 	}
 
 	if len(availableNodes) == 0 {
-		klog.InfoS("Can not find a node candidate for scheduling pod, retry later", "pod", util.Name(pod))
+		klog.InfoS("Can not find node met condition for pod, come back later", "pod", util.Name(pod), "required resource", util.GetPodResourceList(pod))
 		return InsufficientResourceError
 	} else {
 		// sort candidates to use first one,
@@ -333,12 +332,13 @@ func (cps *nodeChunkScheduler) schedulePod(pod *v1.Pod) error {
 }
 
 func (ps *podScheduler) initializeChunkSchedulers() {
+	numOfNodesPerScheduler := ps.policy.NumOfEvaluatedNodes
 	chunkSchedulers := []*nodeChunkScheduler{}
 	allNodes := ps.nodePool.GetNodes()
 	klog.InfoS("Reinitialize chunk schedulers", "available nodes", len(allNodes))
-	numOfSchedulers := int(math.Ceil(float64(len(allNodes)) / float64(NumOfNodesPerScheduler)))
+	numOfSchedulers := int(math.Ceil(float64(len(allNodes)) / float64(numOfNodesPerScheduler)))
 	for i := 0; i < numOfSchedulers; i++ {
-		nodes := allNodes[i*NumOfNodesPerScheduler : int(math.Min(float64((i+1)*NumOfNodesPerScheduler), float64(len(allNodes))))]
+		nodes := allNodes[i*numOfNodesPerScheduler : int(math.Min(float64((i+1)*numOfNodesPerScheduler), float64(len(allNodes))))]
 		cs := &nodeChunkScheduler{
 			mu:            sync.Mutex{},
 			nodes:         nodes,
@@ -384,7 +384,6 @@ func (ps *podScheduler) Run() {
 					// every pod start a routing to schedule, every pod start to loop chunck scheduler from a different position, if a it's scheduled, then break loop
 					go func(index int) {
 						pod := pods[index]
-						klog.InfoS("Schedule a pod", "pod", util.Name(pod), "num of scheduler", numOfScheduler)
 						var schedErr error
 						for i := 0; i < numOfScheduler; i++ {
 							scheduler := schedulers[(index+i)%numOfScheduler]

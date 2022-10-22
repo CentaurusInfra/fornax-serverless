@@ -90,8 +90,11 @@ func (nm *nodeMonitor) OnSessionUpdate(message *grpc.FornaxCoreMessage) (*grpc.F
 	if nodeWRev == nil {
 		return nil, nodeagent.NodeRevisionOutOfOrderError
 	}
-	if err := nm.validateNodeRevision(nodeWRev, revision, false); err != nil {
+	if err := nm.validateNodeRevision(nodeWRev, revision); err != nil {
 		return nil, err
+	}
+	if revision == nodeWRev.Revision {
+		klog.InfoS("Received a session with same revision of current node state, node probably send its state earlier with this revison, continue to handle single session state", "session", util.Name(session))
 	}
 
 	nodeWRev.Revision = revision
@@ -228,12 +231,11 @@ func (nm *nodeMonitor) OnPodStateUpdate(message *grpc.FornaxCoreMessage) (*grpc.
 	if nodeWRev == nil {
 		return nil, nodeagent.NodeRevisionOutOfOrderError
 	}
-	if err := nm.validateNodeRevision(nodeWRev, revision, false); err != nil {
+	if err := nm.validateNodeRevision(nodeWRev, revision); err != nil {
 		return nil, err
 	}
 	if revision == nodeWRev.Revision {
-		klog.InfoS("Received a same revision from node agent of pod, skip", "pod", podState.Pod.Name)
-		return nil, nil
+		klog.InfoS("Received a pod with same revision of current node, node probably send its state earlier with this revison, continue to handle single pod state", "pod", podState.Pod.Name)
 	}
 
 	sessions := []*fornaxv1.ApplicationSession{}
@@ -253,15 +255,14 @@ func (nm *nodeMonitor) OnPodStateUpdate(message *grpc.FornaxCoreMessage) (*grpc.
 	return nil, nil
 }
 
-func (nm *nodeMonitor) validateNodeRevision(nodeWRev *NodeWithRevision, revision int64, allowEqual bool) error {
+func (nm *nodeMonitor) validateNodeRevision(nodeWRev *NodeWithRevision, revision int64) error {
 	if nodeWRev == nil {
 		return nodeagent.NodeRevisionOutOfOrderError
 	}
 
 	currRevision := nodeWRev.Revision
 	if revision == currRevision+1 || revision == currRevision {
-	} else if revision == currRevision {
-		// klog.Infof("Received a same revision from node agent, revision: %d, skip", revision)
+		// ok
 	} else {
 		klog.Warningf("Received a disordred revision from node agent, fornax core revision: %d, received revision: %d", currRevision, revision)
 		return nodeagent.NodeRevisionOutOfOrderError
@@ -284,7 +285,7 @@ func (nm *nodeMonitor) updateOrCreateNode(nodeId string, v1node *v1.Node, revisi
 		nm.nodeManager.SyncNodePodStates(nodeId, podStates, 0)
 	} else {
 		minimalResourceRevision := nodeWRev.Revision
-		if err := nm.validateNodeRevision(nodeWRev, revision, true); err != nil {
+		if err := nm.validateNodeRevision(nodeWRev, revision); err != nil {
 			return err
 		}
 		nodeWRev.Revision = revision

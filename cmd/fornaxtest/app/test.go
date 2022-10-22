@@ -143,7 +143,7 @@ func onApplicationSessionDeleteEvent(obj interface{}) {
 
 func waitForSessionSetup(namespace, appName string, sessions TestSessionArray) {
 	if len(sessions) > 0 {
-		klog.Infof("waiting for %d sessions of app %s setup", len(sessions), appName)
+		// klog.Infof("waiting for %d sessions of app %s setup", len(sessions), appName)
 		for {
 			time.Sleep(2 * time.Millisecond)
 			allSetup := true

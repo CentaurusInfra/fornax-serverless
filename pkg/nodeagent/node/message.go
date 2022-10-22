@@ -24,7 +24,7 @@ import (
 func BuildFornaxGrpcNodeState(node *FornaxNode, revision int64) *grpc.FornaxCoreMessage {
 	podStates := []*grpc.PodState{}
 	for _, v := range node.Pods.List() {
-		s := pod.BuildFornaxcoreGrpcPodState(node.Revision, v)
+		s := pod.BuildFornaxcoreGrpcPodState(revision, v)
 		podStates = append(podStates, s.GetPodState())
 	}
 
@@ -46,7 +46,7 @@ func BuildFornaxGrpcNodeState(node *FornaxNode, revision int64) *grpc.FornaxCore
 func BuildFornaxGrpcNodeReady(node *FornaxNode, revision int64) *grpc.FornaxCoreMessage {
 	podStates := []*grpc.PodState{}
 	for _, v := range node.Pods.List() {
-		s := pod.BuildFornaxcoreGrpcPodState(node.Revision, v)
+		s := pod.BuildFornaxcoreGrpcPodState(revision, v)
 		podStates = append(podStates, s.GetPodState())
 	}
 	ns := grpc.NodeReady{

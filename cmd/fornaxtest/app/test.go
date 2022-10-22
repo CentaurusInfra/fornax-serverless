@@ -55,11 +55,11 @@ var (
 			Resources: v1.ResourceRequirements{
 				Limits: map[v1.ResourceName]resource.Quantity{
 					"memory": util.ResourceQuantity(50*1024*1024, v1.ResourceMemory),
-					"cpu":    util.ResourceQuantity(0.01*1000, v1.ResourceCPU),
+					"cpu":    util.ResourceQuantity(0.1*1000, v1.ResourceCPU),
 				},
 				Requests: map[v1.ResourceName]resource.Quantity{
 					"memory": util.ResourceQuantity(50*1024*1024, v1.ResourceMemory),
-					"cpu":    util.ResourceQuantity(0.01*1000, v1.ResourceCPU),
+					"cpu":    util.ResourceQuantity(0.1*1000, v1.ResourceCPU),
 				},
 			},
 		}},
@@ -84,8 +84,9 @@ var (
 )
 
 func initApplicationSessionInformer(ctx context.Context, namespace string) {
-	// sessionInformerFactory := externalversions.NewSharedInformerFactory(util.GetFornaxCoreApiClient(util.GetFornaxCoreKubeConfig()), 0*time.Minute)
-	sessionInformerFactory := externalversions.NewSharedInformerFactoryWithOptions(util.GetFornaxCoreApiClient(util.GetFornaxCoreKubeConfig()), 0*time.Minute, externalversions.WithNamespace(namespace))
+	sessionInformerFactory := externalversions.NewSharedInformerFactoryWithOptions(
+		util.GetFornaxCoreApiClient(util.GetFornaxCoreKubeConfig()), 0*time.Minute, externalversions.WithNamespace(namespace),
+	)
 	applicationSessionInformer := sessionInformerFactory.Core().V1().ApplicationSessions()
 	applicationSessionInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc:    onApplicationSessionAddEvent,

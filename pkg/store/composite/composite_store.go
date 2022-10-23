@@ -20,7 +20,6 @@ import (
 	"context"
 	"errors"
 	"reflect"
-	"runtime/debug"
 	"strconv"
 	"sync"
 	"time"
@@ -183,7 +182,6 @@ func (c *CompositeStore) GetList(ctx context.Context, key string, opts storage.L
 
 // GuaranteedUpdate implements storage.Interface
 func (c *CompositeStore) GuaranteedUpdate(ctx context.Context, key string, out runtime.Object, ignoreNotFound bool, preconditions *storage.Preconditions, tryUpdate storage.UpdateFunc, cachedExistingObject runtime.Object) error {
-	debug.PrintStack()
 	specOut := out.DeepCopyObject()
 
 	// ugly because we have to update etcd object's finalizer to make sure does not delete object with empty finalizer in persit store's GuaranteedUpdate method
@@ -264,7 +262,6 @@ func NewCompositeStore(
 	keyFunc func(obj runtime.Object) (string, error),
 	destroyFunc func(),
 ) *CompositeStore {
-	debug.PrintStack()
 	klog.InfoS("New or Get a composite store for", "resource", groupResource)
 	si := &CompositeStore{
 		specPersistStore:  persistStore,

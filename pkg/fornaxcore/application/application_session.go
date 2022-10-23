@@ -202,7 +202,7 @@ func (am *ApplicationManager) onApplicationSessionDeleteEvent(obj interface{}) {
 	}
 	oldCopy := pool.getSession(string(session.GetUID()))
 	if oldCopy != nil {
-		if util.SessionInTerminalState(oldCopy.session) || oldCopy.state != SessionStateDeleting {
+		if util.SessionInTerminalState(session) && oldCopy.state != SessionStateDeleting {
 			// a terminal state session should not in pool anymore, try again to delete session from pool
 			// set deletion timestamp to make sure this session put in deleting state
 			// update pool with a termianl state to a deletion
@@ -210,7 +210,11 @@ func (am *ApplicationManager) onApplicationSessionDeleteEvent(obj interface{}) {
 				oldCopy.session.DeletionTimestamp = util.NewCurrentMetaTime()
 			}
 		}
-		updateSessionPool(pool, oldCopy.session)
+		// if session is in pending or open state, set deletion timestamp, it will move session to SessionStatedeleting, and trigger cleanup properly
+		if session.DeletionTimestamp != nil {
+			session.DeletionTimestamp = util.NewCurrentMetaTime()
+		}
+		updateSessionPool(pool, session)
 		am.enqueueApplication(applicationKey)
 	} else {
 		// if application pool doees not have a cached copy, do not need to sync a deleted and non open session

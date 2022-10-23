@@ -27,7 +27,8 @@ import (
 )
 
 const (
-	NilSlotMemoryShrinkThrehold = 1000
+	NilSlotMemoryShrinkLowThrehold  = 1000
+	NilSlotMemoryShrinkHighThrehold = 2000
 )
 
 type objEvent struct {
@@ -46,20 +47,37 @@ type objState struct {
 }
 
 type objWithIndex struct {
-	key   string
-	obj   runtime.Object
-	index uint64
+	key     string
+	obj     runtime.Object
+	index   uint64
+	deleted bool
 }
 
 type objList []*objWithIndex
 
-func (list objList) shrink(length int64) objList {
+// shrink this list to specified length, by removing nil obj or obj is marked as deleted
+func (list objList) shrink(length uint64) objList {
+	diff := uint64(len(list)) - length
+	if diff <= 0 {
+		return list
+	}
 	newList := make([]*objWithIndex, length)
 	i := uint64(0)
 	for _, v := range list {
-		if v != nil {
-			newList[i] = v
-			v.index = i
+		if (v == nil || v.deleted) && diff > 0 {
+			// one nil or deleted object is removed, reduce 1 from diff
+			diff -= 1
+			continue
+		} else {
+			if i < length {
+				newList[i] = v
+			} else {
+				// append if array is not long enough
+				newList = append(newList, v)
+			}
+			if v != nil {
+				v.index = i
+			}
 			i += 1
 		}
 	}
@@ -68,16 +86,15 @@ func (list objList) shrink(length int64) objList {
 
 type objMapOrObj struct {
 	obj    *objWithIndex
-	objMap *memoryStoreMap
+	objMap *objStoreMap
 }
 
-type memoryStoreMap struct {
+type objStoreMap struct {
 	mu  sync.RWMutex
 	kvs map[string]objMapOrObj
-	num int64
 }
 
-func (mm *memoryStoreMap) count(keys []string) (int64, error) {
+func (mm *objStoreMap) count(keys []string) (int64, error) {
 	if len(keys) == 0 {
 		return mm._countItemsInMap(), nil
 	}
@@ -108,7 +125,7 @@ func (mm *memoryStoreMap) count(keys []string) (int64, error) {
 	return count, nil
 }
 
-func (mm *memoryStoreMap) _countItemsInMap() int64 {
+func (mm *objStoreMap) _countItemsInMap() int64 {
 	mm.mu.RLock()
 	defer mm.mu.RUnlock()
 	count := int64(0)
@@ -122,7 +139,7 @@ func (mm *memoryStoreMap) _countItemsInMap() int64 {
 	return count
 }
 
-func (mm *memoryStoreMap) _get(key string) *objMapOrObj {
+func (mm *objStoreMap) _get(key string) *objMapOrObj {
 	mm.mu.RLock()
 	defer mm.mu.RUnlock()
 	if o, f := mm.kvs[key]; f {
@@ -131,7 +148,7 @@ func (mm *memoryStoreMap) _get(key string) *objMapOrObj {
 	return nil
 }
 
-func (mm *memoryStoreMap) get(keys []string) *objWithIndex {
+func (mm *objStoreMap) get(keys []string) *objWithIndex {
 	if len(keys) == 0 {
 		return nil
 	}
@@ -154,7 +171,7 @@ func (mm *memoryStoreMap) get(keys []string) *objWithIndex {
 	return nil
 }
 
-func (mm *memoryStoreMap) _putObj(key string, obj *objWithIndex, expectedRV uint64) error {
+func (mm *objStoreMap) _putObj(key string, obj *objWithIndex, expectedRV uint64) error {
 	mm.mu.Lock()
 	defer mm.mu.Unlock()
 	if o, f := mm.kvs[key]; f {
@@ -179,7 +196,7 @@ func (mm *memoryStoreMap) _putObj(key string, obj *objWithIndex, expectedRV uint
 	return nil
 }
 
-func (mm *memoryStoreMap) _putObjMap(key string, objMap *memoryStoreMap) {
+func (mm *objStoreMap) _putObjMap(key string, objMap *objStoreMap) {
 	mm.mu.Lock()
 	defer mm.mu.Unlock()
 	mm.kvs[key] = objMapOrObj{
@@ -188,7 +205,7 @@ func (mm *memoryStoreMap) _putObjMap(key string, objMap *memoryStoreMap) {
 	}
 }
 
-func (mm *memoryStoreMap) put(keys []string, obj *objWithIndex, expectedRV uint64) error {
+func (mm *objStoreMap) put(keys []string, obj *objWithIndex, expectedRV uint64) error {
 	if len(keys) == 0 {
 		return fmt.Errorf("Empty keys are provided %v", keys)
 	}
@@ -200,7 +217,7 @@ func (mm *memoryStoreMap) put(keys []string, obj *objWithIndex, expectedRV uint6
 				thismm._putObj(keys[i], obj, expectedRV)
 			} else {
 				// add a map and move to next level
-				newmm := &memoryStoreMap{mu: sync.RWMutex{}, kvs: map[string]objMapOrObj{}}
+				newmm := &objStoreMap{mu: sync.RWMutex{}, kvs: map[string]objMapOrObj{}}
 				thismm._putObjMap(keys[i], newmm)
 				thismm = newmm
 			}
@@ -227,13 +244,13 @@ func (mm *memoryStoreMap) put(keys []string, obj *objWithIndex, expectedRV uint6
 	return nil
 }
 
-func (mm *memoryStoreMap) _del(key string) {
+func (mm *objStoreMap) _del(key string) {
 	mm.mu.Lock()
 	defer mm.mu.Unlock()
 	delete(mm.kvs, key)
 }
 
-func (mm *memoryStoreMap) del(keys []string) error {
+func (mm *objStoreMap) del(keys []string) error {
 	if len(keys) == 0 {
 		return fmt.Errorf("Empty keys are provided %v", keys)
 	}

@@ -25,6 +25,7 @@ import (
 	"k8s.io/apimachinery/pkg/watch"
 	"k8s.io/apiserver/pkg/storage"
 	apistorage "k8s.io/apiserver/pkg/storage"
+	"k8s.io/klog/v2"
 )
 
 type memoryStoreWatcher struct {
@@ -77,12 +78,10 @@ func (wc *memoryStoreWatcher) acceptAll() bool {
 // pasted objEvents should be already sorted according to event's rev
 func (wc *memoryStoreWatcher) run(rev uint64, existingObjEvents []*objEvent, eventWithOldObj bool) {
 	defer func() {
-		wc.stopped = true
-		close(wc.incomingChan)
-		close(wc.outgoingChan)
-		close(wc.outgoingChanWithOldObj)
+		if x := recover(); x != nil {
+			klog.InfoS("Watcher stopped", "cause", x)
+		}
 	}()
-
 	startingRev := rev
 	for _, event := range existingObjEvents {
 		wcEvent := wc.transformToWatchEvent(event)
@@ -97,12 +96,25 @@ func (wc *memoryStoreWatcher) run(rev uint64, existingObjEvents []*objEvent, eve
 		}
 	}
 
+	go func() {
+		defer func() {
+			wc.stopped = true
+			close(wc.incomingChan)
+			close(wc.outgoingChan)
+			close(wc.outgoingChanWithOldObj)
+		}()
+		for {
+			select {
+			case <-wc.ctx.Done():
+				return
+			case <-wc.stopChannel:
+				return
+			}
+		}
+	}()
+
 	for {
 		select {
-		case <-wc.ctx.Done():
-			return
-		case <-wc.stopChannel:
-			return
 		case event, ok := <-wc.incomingChan:
 			if !ok {
 				return

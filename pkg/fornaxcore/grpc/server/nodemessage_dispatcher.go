@@ -27,7 +27,7 @@ func (g *grpcServer) getNodeChan(node string) (chan<- *grpc.FornaxCoreMessage, e
 	g.RLock()
 	defer g.RUnlock()
 
-	ch, ok := g.nodeGetMessageChans[node]
+	ch, ok := g.nodeOutgoingChans[node]
 	if !ok {
 		return nil, fmt.Errorf("unknown destination")
 	}

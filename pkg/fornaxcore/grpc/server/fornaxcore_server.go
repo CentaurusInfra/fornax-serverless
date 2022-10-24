@@ -20,6 +20,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"math/rand"
 	"net"
 	"sync"
 
@@ -39,6 +40,7 @@ import (
 )
 
 const FornaxCoreChanSize = 2
+const DefaultNodePutMessageChanNum = 4
 
 type FornaxCoreServer interface {
 	fornaxcore_grpc.FornaxCoreServiceServer
@@ -49,11 +51,12 @@ var _ FornaxCoreServer = &grpcServer{}
 
 type grpcServer struct {
 	sync.RWMutex
-	nodeGetMessageChans map[string]chan<- *fornaxcore_grpc.FornaxCoreMessage
-
-	nodeMonitor ie.NodeMonitorInterface
 	fornaxcore_grpc.UnimplementedFornaxCoreServiceServer
-	messages chan *fornaxcore_grpc.FornaxCoreMessage
+	nodeMonitor             ie.NodeMonitorInterface
+	nodeOutgoingChans       map[string]chan<- *fornaxcore_grpc.FornaxCoreMessage
+	nodeIncommingChans      map[string]chan *fornaxcore_grpc.FornaxCoreMessage
+	nodeIncommingChansMutex sync.Mutex
+	nodeMessageHandlerChans []chan *fornaxcore_grpc.FornaxCoreMessage
 }
 
 func (g *grpcServer) RunGrpcServer(ctx context.Context, nodeMonitor ie.NodeMonitorInterface, port int, certFile, keyFile string) error {
@@ -83,27 +86,29 @@ func (g *grpcServer) RunGrpcServer(ctx context.Context, nodeMonitor ie.NodeMonit
 		}
 	}()
 
-	go func() {
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			case msg := <-g.messages:
-				g.handleMessages(msg)
+	for _, v := range g.nodeMessageHandlerChans {
+		go func(ch chan *fornaxcore_grpc.FornaxCoreMessage) {
+			for {
+				select {
+				case <-ctx.Done():
+					return
+				case msg := <-ch:
+					g.handleMessages(msg)
+				}
 			}
-		}
-	}()
+		}(v)
+	}
 	return nil
 }
 
 func (g *grpcServer) enlistNode(node string, ch chan<- *fornaxcore_grpc.FornaxCoreMessage) error {
 	g.Lock()
 	defer g.Unlock()
-	if _, ok := g.nodeGetMessageChans[node]; ok {
+	if _, ok := g.nodeOutgoingChans[node]; ok {
 		return fmt.Errorf("node %s already has channel", node)
 	}
 	g.nodeMonitor.OnNodeConnect(node)
-	g.nodeGetMessageChans[node] = ch
+	g.nodeOutgoingChans[node] = ch
 	return nil
 }
 
@@ -111,8 +116,8 @@ func (g *grpcServer) delistNode(node string) {
 	g.Lock()
 	defer g.Unlock()
 	g.nodeMonitor.OnNodeDisconnect(node)
-	close(g.nodeGetMessageChans[node])
-	delete(g.nodeGetMessageChans, node)
+	close(g.nodeOutgoingChans[node])
+	delete(g.nodeOutgoingChans, node)
 }
 
 func (g *grpcServer) GetMessage(identifier *fornaxcore_grpc.NodeIdentifier, server fornaxcore_grpc.FornaxCoreService_GetMessageServer) error {
@@ -143,8 +148,25 @@ func (g *grpcServer) GetMessage(identifier *fornaxcore_grpc.NodeIdentifier, serv
 	}
 }
 
+// get handeller channel to handle incomming message from this node, if not found,
+// randomly assign one channel in nodeMessageHandlerChans to this node and save it for following incomming messages from this node
+func (g *grpcServer) getNodeMessageHandlerChannel(nodeId string) chan *fornaxcore_grpc.FornaxCoreMessage {
+	g.nodeIncommingChansMutex.Lock()
+	defer g.nodeIncommingChansMutex.Unlock()
+	if messageCh, found := g.nodeIncommingChans[nodeId]; found {
+		return messageCh
+	} else {
+		i := rand.Intn(len(g.nodeMessageHandlerChans))
+		channel := g.nodeMessageHandlerChans[i]
+		g.nodeIncommingChans[nodeId] = channel
+		return channel
+	}
+}
+
+// PutMessage send node's message to handler to process message and return
 func (g *grpcServer) PutMessage(ctx context.Context, message *fornaxcore_grpc.FornaxCoreMessage) (*empty.Empty, error) {
-	g.messages <- message
+	messageCh := g.getNodeMessageHandlerChannel(message.GetNodeIdentifier().GetIdentifier())
+	messageCh <- message
 	return &emptypb.Empty{}, nil
 }
 
@@ -180,12 +202,18 @@ func (g *grpcServer) mustEmbedUnimplementedFornaxCoreServiceServer() {
 }
 
 func NewGrpcServer() *grpcServer {
+	putMessageChans := []chan *fornaxcore_grpc.FornaxCoreMessage{}
+	for i := 0; i < DefaultNodePutMessageChanNum; i++ {
+		putMessageChans = append(putMessageChans, make(chan *fornaxcore_grpc.FornaxCoreMessage, 1000))
+	}
+
 	return &grpcServer{
 		RWMutex:                              sync.RWMutex{},
-		nodeGetMessageChans:                  make(map[string]chan<- *fornaxcore_grpc.FornaxCoreMessage),
+		nodeOutgoingChans:                    make(map[string]chan<- *fornaxcore_grpc.FornaxCoreMessage),
+		nodeIncommingChans:                   make(map[string]chan *fornaxcore_grpc.FornaxCoreMessage),
 		nodeMonitor:                          nil,
 		UnimplementedFornaxCoreServiceServer: fornaxcore_grpc.UnimplementedFornaxCoreServiceServer{},
-		messages:                             make(chan *fornaxcore_grpc.FornaxCoreMessage, 1000),
+		nodeMessageHandlerChans:              putMessageChans,
 	}
 }
 

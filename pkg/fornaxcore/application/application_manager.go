@@ -568,7 +568,7 @@ func (am *ApplicationManager) HouseKeeping() error {
 		klog.InfoS("Application summary", "app", appKey, "pod", podSummary, "session", sessionSummary)
 
 		// starting and pending session could timeout
-		if sessionSummary.pendingCount > 0 || sessionSummary.startingCount > 0 {
+		if sessionSummary.pendingCount > 0 || sessionSummary.startingCount > 0 || sessionSummary.deletingCount > 0 {
 			// let syncApplication to take care of timeout sessions, session deployment logic should be handled only in application worker to avoid race condition
 			am.enqueueApplication(appKey)
 		}

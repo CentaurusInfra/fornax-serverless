@@ -39,12 +39,15 @@ import (
 )
 
 var (
+	delevents = int32(0)
 	addevents = int32(0)
 	updevents = int32(0)
 )
 
 var (
 	allTestApps         = TestApplicationArray{}
+	appMap              = TestAppMap{}
+	appMapLock          = sync.Mutex{}
 	allTestSessions     = TestSessionArray{}
 	appSessionMap       = TestSessionMap{}
 	appSessionMapLock   = sync.Mutex{}
@@ -109,50 +112,48 @@ func NewCommand() *cobra.Command {
 }
 
 func Run(ctx context.Context, testConfig config.TestConfiguration) {
-
-	RunTest := func(namespace, appName, randAppName string) {
-		klog.Infof("--------App %s Test begin--------\n", appName)
-		for i := 1; i <= testConfig.NumOfTestCycle; i++ {
-			sessions := []*TestSession{}
-			cycleName := fmt.Sprintf("%s-cycle-%d", randAppName, i)
-			switch testConfig.TestCase {
-			case config.AppFullCycleTest:
-				sessions = runAppFullCycleTest(cycleName, namespace, appName, testConfig)
-			case config.SessionFullCycleTest:
-				sessions = runSessionFullCycleTest(cycleName, namespace, appName, testConfig)
-			case config.SessionCreateTest:
-				sessions = createSessionTest(cycleName, namespace, appName, testConfig)
-			case config.AppCreateTest:
-			}
-			appSessionMapLock.Lock()
-			allTestSessions = append(allTestSessions, sessions...)
-			appSessionMapLock.Unlock()
-		}
-		klog.Infof("--------App %s Test end----------\n\n", appName)
-	}
 	logs.InitLogs()
 
 	ns := "fornaxtest"
+	initApplicationInformer(ctx, ns)
 	initApplicationSessionInformer(ctx, ns)
 
 	done := false
 	st := time.Now().UnixMilli()
-	go func() {
-		for {
-			time.Sleep(1 * time.Second)
-			et := time.Now().UnixMilli()
-			testSessionCounters = append(testSessionCounters, &TestSessionCounter{
-				numOfSessions: len(allTestSessions),
-				st:            st,
-				et:            et,
-			})
-			klog.Infof("Num of session created, %d", len(allTestSessions))
-			if done {
-				break
+	if testConfig.TestCase == config.SessionFullCycleTest || testConfig.TestCase == config.SessionCreateTest {
+		go func() {
+			for {
+				time.Sleep(1 * time.Second)
+				et := time.Now().UnixMilli()
+				testSessionCounters = append(testSessionCounters, &TestSessionCounter{
+					numOfSessions: len(allTestSessions),
+					st:            st,
+					et:            et,
+				})
+				klog.Infof("Num of session created, %d", len(allTestSessions))
+				if done {
+					break
+				}
+			}
+		}()
+	}
+
+	RunTest := func(namespace, appName, randAppName string) {
+		klog.Infof("--------App %s Test begin--------\n", appName)
+		for i := 1; i <= testConfig.NumOfTestCycle; i++ {
+			cycleName := fmt.Sprintf("%s-cycle-%d", randAppName, i)
+			switch testConfig.TestCase {
+			case config.AppFullCycleTest:
+				runAppFullCycleTest(cycleName, namespace, appName, testConfig)
+			case config.SessionFullCycleTest:
+				runSessionFullCycleTest(cycleName, namespace, appName, testConfig)
+			case config.SessionCreateTest:
+				createSessionTest(cycleName, namespace, appName, testConfig)
+			case config.AppCreateTest:
 			}
 		}
-	}()
-
+		klog.Infof("--------App %s Test end----------\n\n", appName)
+	}
 	// start to test all apps
 	randAppName := rand.String(16)
 	wgAppTest := sync.WaitGroup{}
@@ -172,6 +173,7 @@ func Run(ctx context.Context, testConfig config.TestConfiguration) {
 	klog.Infof("--------Test summary ----------\n")
 	fmt.Printf("Received %d add watch events\n", addevents)
 	fmt.Printf("Received %d upd watch events\n", updevents)
+	fmt.Printf("Received %d del watch events\n", delevents)
 	summaryAppTestResult(allTestApps, st, et)
 	summarySessionTestResult(allTestSessions, st, et)
 	os.Exit(0)

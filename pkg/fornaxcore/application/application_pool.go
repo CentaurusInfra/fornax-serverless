@@ -188,7 +188,7 @@ type ApplicationSessionSummary struct {
 	startingCount int
 	runningCount  int
 	timeoutCount  int
-	closingCount  int
+	deletingCount int
 }
 
 func (pool *ApplicationPool) sessionLength() int {
@@ -217,7 +217,7 @@ func (pool *ApplicationPool) summarySession() ApplicationSessionSummary {
 	pool.mu.RLock()
 	defer pool.mu.RUnlock()
 	summary := ApplicationSessionSummary{}
-	summary.closingCount = len(pool.sessions[SessionStateDeleting])
+	summary.deletingCount = len(pool.sessions[SessionStateDeleting])
 	summary.runningCount = len(pool.sessions[SessionStateRunning])
 	summary.startingCount = len(pool.sessions[SessionStateStarting])
 

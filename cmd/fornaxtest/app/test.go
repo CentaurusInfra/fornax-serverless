@@ -83,24 +83,65 @@ var (
 	}
 )
 
-func initApplicationSessionInformer(ctx context.Context, namespace string) {
-	sessionInformerFactory := externalversions.NewSharedInformerFactoryWithOptions(
+func initApplicationInformer(ctx context.Context, namespace string) {
+	informerFactory := externalversions.NewSharedInformerFactoryWithOptions(
 		util.GetFornaxCoreApiClient(util.GetFornaxCoreKubeConfig()), 0*time.Minute, externalversions.WithNamespace(namespace),
 	)
-	applicationSessionInformer := sessionInformerFactory.Core().V1().ApplicationSessions()
-	applicationSessionInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
+	applicationInformer := informerFactory.Core().V1().Applications()
+	applicationInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
+		AddFunc:    onApplicationAddEvent,
+		UpdateFunc: onApplicationUpdateEvent,
+		DeleteFunc: onApplicationDeleteEvent,
+	})
+	informerFactory.Start(ctx.Done())
+	synced := applicationInformer.Informer().HasSynced
+	cache.WaitForNamedCacheSync(fornaxv1.ApplicationKind.Kind, ctx.Done(), synced)
+}
+
+func onApplicationAddEvent(obj interface{}) {
+	app := obj.(*fornaxv1.Application)
+	updateApplicationStatus(app, time.Now())
+	atomic.AddInt32(&addevents, 1)
+}
+
+func onApplicationUpdateEvent(old, cur interface{}) {
+	_ = old.(*fornaxv1.Application)
+	newCopy := cur.(*fornaxv1.Application)
+	updateApplicationStatus(newCopy, time.Now())
+	atomic.AddInt32(&updevents, 1)
+}
+
+func onApplicationDeleteEvent(obj interface{}) {
+	_ = obj.(*fornaxv1.Application)
+	atomic.AddInt32(&delevents, 1)
+}
+
+func updateApplicationStatus(app *fornaxv1.Application, revTime time.Time) {
+	appMapLock.Lock()
+	defer appMapLock.Unlock()
+	if ta, found := appMap[util.Name(app)]; found {
+		ta.application = app
+	}
+}
+
+func initApplicationSessionInformer(ctx context.Context, namespace string) {
+	informerFactory := externalversions.NewSharedInformerFactoryWithOptions(
+		util.GetFornaxCoreApiClient(util.GetFornaxCoreKubeConfig()), 0*time.Minute, externalversions.WithNamespace(namespace),
+	)
+	sessionInformer := informerFactory.Core().V1().ApplicationSessions()
+	sessionInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc:    onApplicationSessionAddEvent,
 		UpdateFunc: onApplicationSessionUpdateEvent,
 		DeleteFunc: onApplicationSessionDeleteEvent,
 	})
-	sessionInformerFactory.Start(ctx.Done())
-	synced := applicationSessionInformer.Informer().HasSynced
+	informerFactory.Start(ctx.Done())
+	synced := sessionInformer.Informer().HasSynced
 	cache.WaitForNamedCacheSync(fornaxv1.ApplicationSessionKind.Kind, ctx.Done(), synced)
 }
 
 func onApplicationSessionAddEvent(obj interface{}) {
 	newCopy := obj.(*fornaxv1.ApplicationSession)
-	go updateSessionStatus(newCopy, time.Now())
+	updateSessionStatus(newCopy, time.Now())
 	atomic.AddInt32(&addevents, 1)
 }
 
@@ -112,7 +153,7 @@ func onApplicationSessionAddEvent(obj interface{}) {
 func onApplicationSessionUpdateEvent(old, cur interface{}) {
 	_ = old.(*fornaxv1.ApplicationSession)
 	newCopy := cur.(*fornaxv1.ApplicationSession)
-	go updateSessionStatus(newCopy, time.Now())
+	updateSessionStatus(newCopy, time.Now())
 	atomic.AddInt32(&updevents, 1)
 }
 
@@ -128,6 +169,7 @@ func updateSessionStatus(session *fornaxv1.ApplicationSession, revTime time.Time
 			ts.status = session.Status.SessionStatus
 			ts.watchAvailableTimeMilli = tms
 			ts.internalAvailableTimeMilli = session.Status.AvailableTimeMicro / 1000
+			allTestSessions = append(allTestSessions, ts)
 		}
 
 		if ts.status == fornaxv1.SessionStatusPending || ts.status == fornaxv1.SessionStatusUnspecified {
@@ -136,9 +178,9 @@ func updateSessionStatus(session *fornaxv1.ApplicationSession, revTime time.Time
 	}
 }
 
-// callback from Application informer when ApplicationSession is physically deleted
 func onApplicationSessionDeleteEvent(obj interface{}) {
-	// no op
+	_ = obj.(*fornaxv1.ApplicationSession)
+	atomic.AddInt32(&delevents, 1)
 }
 
 func waitForSessionSetup(namespace, appName string, sessions TestSessionArray) {
@@ -199,19 +241,13 @@ func cleanupAppFullCycleTest(namespace, appName string, sessions []*TestSession)
 func createAndWaitForApplicationSetup(namespace, appName string, testConfig config.TestConfiguration) *fornaxv1.Application {
 	appSpec := SessionWrapperEchoServerSpec.DeepCopy()
 	appSpec.ScalingPolicy.MinimumInstance = uint32(testConfig.NumOfInitPodsPerApp)
-	application, err := createApplication(namespace, appName, appSpec)
+	ta, err := createApplication(namespace, appName, appSpec)
 	if err != nil {
 		klog.ErrorS(err, "Failed to create application", "name", appName)
 		return nil
 	}
-	ta := &TestApplication{
-		application:        application,
-		creationTimeMilli:  time.Now().UnixMilli(),
-		availableTimeMilli: 0,
-		warmUpInstances:    int(appSpec.ScalingPolicy.MinimumInstance),
-	}
 	waitForAppSetup(ta)
-	return application
+	return ta.application
 }
 
 type TestApplication struct {
@@ -245,6 +281,8 @@ func (sn TestApplicationArray) Swap(i, j int) {
 	sn[i], sn[j] = sn[j], sn[i]
 }
 
+type TestAppMap map[string]*TestApplication
+
 type TestSessionMap map[string]*TestSession
 
 type TestSessionArray []*TestSession
@@ -271,6 +309,9 @@ func createAndWaitForSessionSetup(application *fornaxv1.Application, namespace, 
 		if err == nil && ts != nil {
 			sessions = append(sessions, ts)
 		}
+		if err != nil {
+			klog.ErrorS(err, "Create session", "name", sessName)
+		}
 	}
 
 	waitForSessionSetup(namespace, appName, sessions)
@@ -283,20 +324,14 @@ func waitForAppSetup(ta *TestApplication) {
 		allTestApps = append(allTestApps, ta)
 		klog.Infof("waiting for %d pods of app %s setup", ta.warmUpInstances, ta.application.Name)
 		for {
-			time.Sleep(100 * time.Millisecond)
-			application, err := describeApplication(ta.application.Namespace, ta.application.Name)
-			if err != nil {
-				continue
-			}
-
-			if int(application.Status.IdleInstances) >= ta.warmUpInstances {
+			if int(ta.application.Status.IdleInstances) >= ta.warmUpInstances {
 				ct := ta.creationTimeMilli
 				at := time.Now().UnixMilli()
-				ta.availableTimeMilli = at
-				klog.Infof("Application: %s took %d milli second to setup %d instances\n", application.Name, at-ct, ta.warmUpInstances)
+				klog.Infof("Application: %s took %d milli second to setup %d instances\n", ta.application.Name, at-ct, ta.warmUpInstances)
 				ta.availableTimeMilli = at
 				break
 			}
+			time.Sleep(100 * time.Millisecond)
 			continue
 		}
 	}
@@ -304,7 +339,6 @@ func waitForAppSetup(ta *TestApplication) {
 
 func waitForSessionTearDown(namespace, appName string, sessions []*TestSession) {
 	if len(sessions) > 0 {
-		klog.Infof("waiting for %d sessions of app %s teardown", len(sessions), appName)
 		for {
 			time.Sleep(10 * time.Millisecond)
 			app, err := describeApplication(namespace, appName)
@@ -356,7 +390,7 @@ func cleanupSessionFullCycleTest(namespace, appName string, sessions []*TestSess
 	waitForSessionTearDown(namespace, appName, sessions)
 }
 
-func createApplication(namespace, name string, appSpec *fornaxv1.ApplicationSpec) (*fornaxv1.Application, error) {
+func createApplication(namespace, name string, appSpec *fornaxv1.ApplicationSpec) (*TestApplication, error) {
 	client := util.GetFornaxCoreApiClient(kubeConfig)
 	appClient := client.CoreV1().Applications(namespace)
 	application := &fornaxv1.Application{
@@ -372,8 +406,18 @@ func createApplication(namespace, name string, appSpec *fornaxv1.ApplicationSpec
 		Spec:   *appSpec.DeepCopy(),
 		Status: fornaxv1.ApplicationStatus{},
 	}
+	appMapLock.Lock()
+	ta := &TestApplication{
+		application:        application,
+		creationTimeMilli:  time.Now().UnixMilli(),
+		availableTimeMilli: 0,
+		warmUpInstances:    int(appSpec.ScalingPolicy.MinimumInstance),
+	}
+	appMap[util.Name(application)] = ta
+	appMapLock.Unlock()
+	_, err := appClient.Create(context.Background(), application, metav1.CreateOptions{})
 	klog.InfoS("Application created", "application", util.Name(application), "initial pods", application.Spec.ScalingPolicy.MinimumInstance)
-	return appClient.Create(context.Background(), application, metav1.CreateOptions{})
+	return ta, err
 }
 
 func createSession(namespace, name, applicationName string, sessionSpec *fornaxv1.ApplicationSessionSpec) (*TestSession, error) {

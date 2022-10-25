@@ -19,6 +19,7 @@ package nodemonitor
 import (
 	"encoding/json"
 	"sync"
+	"time"
 
 	fornaxv1 "centaurusinfra.io/fornax-serverless/pkg/apis/core/v1"
 	default_config "centaurusinfra.io/fornax-serverless/pkg/config"
@@ -78,13 +79,18 @@ func (nm *nodeMonitor) OnSessionUpdate(message *grpc.FornaxCoreMessage) (*grpc.F
 	sessionState := message.GetSessionState()
 	revision := sessionState.GetNodeRevision()
 	nodeId := message.GetNodeIdentifier().GetIdentifier()
-
 	session := &fornaxv1.ApplicationSession{}
 	if err := json.Unmarshal(sessionState.GetSessionData(), session); err != nil {
 		klog.ErrorS(err, "Malformed SessionData, is not a valid fornaxv1.ApplicationSession object")
 		return nil, err
 	}
 	klog.InfoS("Received a session state", "node", nodeId, "session", util.Name(session), "node revision", revision, "status", session.Status)
+	st := time.Now().UnixMicro()
+	defer func() {
+		et := time.Now().UnixMicro()
+		klog.InfoS("Done update session state", "session", util.Name(session), "took-micro", et-st)
+		// TODO post metrics
+	}()
 
 	nodeWRev := nm.nodes.get(nodeId)
 	if nodeWRev == nil {
@@ -220,12 +226,12 @@ func (nm *nodeMonitor) OnPodStateUpdate(message *grpc.FornaxCoreMessage) (*grpc.
 	revision := podState.GetNodeRevision()
 	nodeId := message.GetNodeIdentifier()
 	klog.InfoS("Received a pod state", "pod", util.Name(podState.GetPod()), "fornax state", podState.GetState(), "pod phase", podState.GetPod().Status.Phase, "condition", k8spodutil.IsPodReady(podState.GetPod()), "node revision", revision)
-
-	_, found := podState.GetPod().Labels[fornaxv1.LabelFornaxCoreNode]
-	if !found {
-		klog.Errorf("Pod miss node label: %s", fornaxv1.LabelFornaxCoreNode)
-		return nil, nodeagent.ObjectMissingNodeLabelError
-	}
+	st := time.Now().UnixMicro()
+	defer func() {
+		et := time.Now().UnixMicro()
+		klog.InfoS("Done update pod state", "pod", util.Name(podState.GetPod()), "took-micro", et-st)
+		// TODO post metrics
+	}()
 
 	nodeWRev := nm.nodes.get(nodeId.GetIdentifier())
 	if nodeWRev == nil {

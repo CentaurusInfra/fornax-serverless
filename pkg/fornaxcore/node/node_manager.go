@@ -60,7 +60,7 @@ func (nm *nodeManager) UpdateSessionState(nodeIdentifier string, session *fornax
 	podName := session.Status.PodReference.Name
 	pod := nm.podManager.FindPod(podName)
 	if pod != nil {
-		nm.sessionManager.NotifySessionStatusFromNode(nodeIdentifier, pod, []*fornaxv1.ApplicationSession{session})
+		nm.sessionManager.OnSessionStatusFromNode(nodeIdentifier, pod, session)
 	} else {
 		klog.InfoS("Pod does not exist in pod manager, can not update session info", "session", util.Name(session), "pod", podName)
 	}
@@ -98,7 +98,9 @@ func (nm *nodeManager) UpdatePodState(nodeId string, pod *v1.Pod, sessions []*fo
 			return err
 		}
 		nodeWS.Pods.Add(podName)
-		nm.sessionManager.NotifySessionStatusFromNode(nodeId, updatedPod, sessions)
+		for _, session := range sessions {
+			nm.sessionManager.OnSessionStatusFromNode(nodeId, updatedPod, session)
+		}
 	} else {
 		// not supposed to happend node state is send when node register
 		klog.InfoS("Node does not exist, ask node full sync", "node", nodeId)

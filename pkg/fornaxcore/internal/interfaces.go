@@ -17,11 +17,14 @@ limitations under the License.
 package internal
 
 import (
+	"context"
 	"time"
 
 	fornaxv1 "centaurusinfra.io/fornax-serverless/pkg/apis/core/v1"
 	"centaurusinfra.io/fornax-serverless/pkg/collection"
 	"centaurusinfra.io/fornax-serverless/pkg/fornaxcore/grpc"
+	fornaxstore "centaurusinfra.io/fornax-serverless/pkg/store"
+
 	v1 "k8s.io/api/core/v1"
 )
 
@@ -66,10 +69,10 @@ type NodeManagerInterface interface {
 // and update session status using session state reported back from node agent
 type SessionManagerInterface interface {
 	UpdateSessionStatus(session *fornaxv1.ApplicationSession, newStatus *fornaxv1.ApplicationSessionStatus) error
-	NotifySessionStatusFromNode(nodeId string, pod *v1.Pod, sessions []*fornaxv1.ApplicationSession)
+	OnSessionStatusFromNode(nodeId string, pod *v1.Pod, session *fornaxv1.ApplicationSession) error
 	OpenSession(pod *v1.Pod, session *fornaxv1.ApplicationSession) error
 	CloseSession(pod *v1.Pod, session *fornaxv1.ApplicationSession) error
-	Watch(watcher chan<- *SessionEvent)
+	Watch(ctx context.Context) (<-chan fornaxstore.WatchEventWithOldObj, error)
 }
 
 // NodeInfoProviderInterface provide method to watch and list NodeEvent

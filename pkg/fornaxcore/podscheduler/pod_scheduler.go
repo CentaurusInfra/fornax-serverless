@@ -189,7 +189,7 @@ func (ps *podScheduler) schedulePod(pod *v1.Pod, candidateNodes []*SchedulableNo
 	st := time.Now().UnixMicro()
 	defer func() {
 		et := time.Now().UnixMicro()
-		klog.InfoS("Schedule pod took", "pod", util.Name(pod), "ms", et-st)
+		klog.InfoS("Schedule pod", "pod", util.Name(pod), "took-micro", et-st)
 	}()
 	if pod.DeletionTimestamp != nil {
 		klog.InfoS("Pod has a deletion timestamp, remove it from queue", "pod", util.Name(pod))

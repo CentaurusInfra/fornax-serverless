@@ -72,7 +72,7 @@ func main() {
 
 	// start application manager at last as it require api server
 	klog.Info("starting application manager")
-	appManager := application.NewApplicationManager(ctx, podManager, sessionManager, appStatusStore, appSessionStore)
+	appManager := application.NewApplicationManager(ctx, podManager, sessionManager, appStatusStore)
 	appManager.Run(ctx)
 
 	// start fornaxcore grpc server to listen nodes

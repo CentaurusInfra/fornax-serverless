@@ -23,14 +23,11 @@ import (
 	"time"
 
 	fornaxv1 "centaurusinfra.io/fornax-serverless/pkg/apis/core/v1"
-	ie "centaurusinfra.io/fornax-serverless/pkg/fornaxcore/internal"
 	fornaxstore "centaurusinfra.io/fornax-serverless/pkg/store"
-	storefactory "centaurusinfra.io/fornax-serverless/pkg/store/factory"
 	"centaurusinfra.io/fornax-serverless/pkg/util"
 
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/watch"
-	apistorage "k8s.io/apiserver/pkg/storage"
 	"k8s.io/klog/v2"
 )
 
@@ -55,17 +52,11 @@ type ApplicationSession struct {
 }
 
 func (am *ApplicationManager) initApplicationSessionInformer(ctx context.Context) error {
-	wi, err := am.sessionStore.WatchWithOldObj(ctx, fornaxv1.ApplicationSessionGrvKey, apistorage.ListOptions{
-		ResourceVersion:      "0",
-		ResourceVersionMatch: "",
-		Predicate:            apistorage.Everything,
-		Recursive:            true,
-		ProgressNotify:       true,
-	})
+	channel, err := am.sessionManager.Watch(ctx)
 	if err != nil {
 		return err
 	}
-	am.sessionStoreUpdate = wi.ResultChanWithPrevobj()
+	am.sessionUpdateChanel = channel
 	return nil
 }
 
@@ -78,55 +69,6 @@ func (am *ApplicationManager) onSessionEventFromStorage(we fornaxstore.WatchEven
 	case watch.Deleted:
 		am.onApplicationSessionDeleteEvent(we.Object, false)
 	}
-}
-
-// treat node as authority for session status, session status from node could be Starting, Available, Closed,
-// use status from node to update storge status, session will be deleted if session is already closed
-// if a session from node does not exist in pool, add it
-func (am *ApplicationManager) onSessionEventFromNode(se *ie.SessionEvent) error {
-	pod := se.Pod
-	session := se.Session
-
-	storeCopy, err := storefactory.GetApplicationSessionCache(am.sessionStore, util.Name(session))
-	if err != nil {
-		return err
-	}
-	if storeCopy == nil {
-		// it should not happen as session from node should be created in store already, unless store corruption
-		if util.SessionIsClosed(session) {
-			// if session already closed, no need to add it, instead of treat it as deleted session
-			am.onApplicationSessionDeleteEvent(session, true)
-		} else {
-			storefactory.CreateApplicationSession(am.ctx, am.sessionStore, session)
-		}
-	} else {
-		if util.SessionIsOpen(session) && storeCopy.DeletionTimestamp != nil {
-			// session was requested to delete, ask node to close session
-			session.DeletionTimestamp = storeCopy.DeletionTimestamp
-			am.sessionManager.CloseSession(pod, session)
-		}
-		// set available and close time received in fornax core, for perf benchmark
-		if session.Status.SessionStatus == fornaxv1.SessionStatusAvailable {
-			session.Status.AvailableTime = util.NewCurrentMetaTimeNormallized()
-			session.Status.AvailableTimeMicro = time.Now().UnixMicro()
-		}
-		if session.Status.SessionStatus == fornaxv1.SessionStatusClosed {
-			session.Status.CloseTime = util.NewCurrentMetaTimeNormallized()
-		}
-
-		am.sessionManager.UpdateSessionStatus(storeCopy.DeepCopy(), session.Status.DeepCopy())
-	}
-
-	// termiante pod after sesion is closed, do this here before update session status to avoid race condition that
-	// session removed from pod and pod is set idle and be picked up by other session
-	if session.Spec.KillInstanceWhenSessionClosed && session.Status.SessionStatus == fornaxv1.SessionStatusClosed && util.PodNotTerminated(pod) {
-		klog.InfoS("Terminate a pod as KillInstanceWhenSessionClosed is true", "pod", util.Name(pod), "session", util.Name(session))
-		applicationKey := getSessionApplicationKey(session)
-		pool := am.getOrCreateApplicationPool(applicationKey)
-		am.deleteApplicationPod(pool, util.Name(pod), false)
-	}
-
-	return nil
 }
 
 func (am *ApplicationManager) changeSessionStatus(session *fornaxv1.ApplicationSession, status fornaxv1.SessionStatus) error {
@@ -184,6 +126,16 @@ func (am *ApplicationManager) onApplicationSessionUpdateEvent(old, cur interface
 		}
 		am.enqueueApplication(applicationKey)
 	}
+
+	// termiante pod after sesion is closed, do this here before update session status to avoid race condition that
+	// session removed from pod and pod is set idle and be picked up by other session
+	// if newCopy.Spec.KillInstanceWhenSessionClosed && newCopy.Status.SessionStatus == fornaxv1.SessionStatusClosed && util.PodNotTerminated(pod) {
+	//  klog.InfoS("Terminate a pod as KillInstanceWhenSessionClosed is true", "pod", util.Name(pod), "session", util.Name(session))
+	//  applicationKey := getSessionApplicationKey(session)
+	//  pool := am.getOrCreateApplicationPool(applicationKey)
+	//  am.deleteApplicationPod(pool, util.Name(pod), false)
+	// }
+	//
 }
 
 // callback from Application informer when ApplicationSession is physically deleted
@@ -302,16 +254,16 @@ func (am *ApplicationManager) deleteApplicationSession(pool *ApplicationPool, s 
 	}
 
 	if util.SessionIsClosing(s.session) {
-		klog.InfoS("Cleanup a session is in closing state", "session", util.Name(s.session))
+		// klog.InfoS("Cleanup a session is in closing state", "session", util.Name(s.session))
 		return nil
 	} else if util.SessionIsOpen(s.session) {
 		if s.session.Status.PodReference != nil {
 			podName := s.session.Status.PodReference.Name
 			pod := am.podManager.FindPod(podName)
 			if pod != nil {
-				am.changeSessionStatus(s.session, fornaxv1.SessionStatusClosing)
 				// ideally this state should report back from node, set it here to avoid calling node to close session multiple times
 				// if node report back different status, then app will call close session again
+				am.changeSessionStatus(s.session, fornaxv1.SessionStatusClosing)
 				err := am.sessionManager.CloseSession(pod, s.session)
 				if err != nil {
 					return err
@@ -322,7 +274,6 @@ func (am *ApplicationManager) deleteApplicationSession(pool *ApplicationPool, s 
 		}
 	} else {
 		if util.SessionIsPending(s.session) {
-			// in pending state, set it timeout and delete it from pool
 			if err := am.changeSessionStatus(s.session, fornaxv1.SessionStatusTimeout); err != nil {
 				return err
 			}

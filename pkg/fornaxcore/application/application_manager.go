@@ -89,10 +89,10 @@ type ApplicationManager struct {
 	applicationStore fornaxstore.ApiStorageInterface
 	appStoreUpdate   <-chan fornaxstore.WatchEventWithOldObj
 
-	podUpdateChannel    chan *ie.PodEvent
-	podManager          ie.PodManagerInterface
-	sessionManager      ie.SessionManagerInterface
-	sessionUpdateChanel <-chan fornaxstore.WatchEventWithOldObj
+	podUpdateChannel     chan *ie.PodEvent
+	podManager           ie.PodManagerInterface
+	sessionManager       ie.SessionManagerInterface
+	sessionUpdateChannel <-chan fornaxstore.WatchEventWithOldObj
 
 	applicationStatusManager *ApplicationStatusManager
 }
@@ -204,7 +204,7 @@ func (am *ApplicationManager) Run(ctx context.Context) {
 			select {
 			case <-ctx.Done():
 				break
-			case we := <-am.sessionUpdateChanel:
+			case we := <-am.sessionUpdateChannel:
 				am.onSessionEventFromStorage(we)
 			}
 		}

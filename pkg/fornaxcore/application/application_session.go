@@ -56,7 +56,7 @@ func (am *ApplicationManager) initApplicationSessionInformer(ctx context.Context
 	if err != nil {
 		return err
 	}
-	am.sessionUpdateChanel = channel
+	am.sessionUpdateChannel = channel
 	return nil
 }
 

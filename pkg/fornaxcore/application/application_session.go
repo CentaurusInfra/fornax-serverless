@@ -116,6 +116,16 @@ func (am *ApplicationManager) onApplicationSessionUpdateEvent(old, cur interface
 
 	applicationKey := getSessionApplicationKey(newCopy)
 	pool := am.getOrCreateApplicationPool(applicationKey)
+
+	// termiante pod after sesion is closed, do this before update session pool to avoid race condition that
+	// session removed from pod and pod is set idle and be picked up by other session
+  // TODO, consider to let node agent to close pod
+	if newCopy.Spec.KillInstanceWhenSessionClosed && newCopy.Status.SessionStatus == fornaxv1.SessionStatusClosed && newCopy.Status.PodReference != nil {
+		podName := newCopy.Status.PodReference.Name
+		klog.InfoS("Terminate a pod as KillInstanceWhenSessionClosed is true", "pod", podName, "session", util.Name(newCopy))
+		am.deleteApplicationPod(pool, podName, false)
+	}
+
 	if v := pool.getSession(string(newCopy.GetUID())); v != nil {
 		oldCopy = v.session.DeepCopy()
 		updateSessionPool(pool, newCopy)
@@ -126,16 +136,6 @@ func (am *ApplicationManager) onApplicationSessionUpdateEvent(old, cur interface
 		}
 		am.enqueueApplication(applicationKey)
 	}
-
-	// termiante pod after sesion is closed, do this here before update session status to avoid race condition that
-	// session removed from pod and pod is set idle and be picked up by other session
-	// if newCopy.Spec.KillInstanceWhenSessionClosed && newCopy.Status.SessionStatus == fornaxv1.SessionStatusClosed && util.PodNotTerminated(pod) {
-	//  klog.InfoS("Terminate a pod as KillInstanceWhenSessionClosed is true", "pod", util.Name(pod), "session", util.Name(session))
-	//  applicationKey := getSessionApplicationKey(session)
-	//  pool := am.getOrCreateApplicationPool(applicationKey)
-	//  am.deleteApplicationPod(pool, util.Name(pod), false)
-	// }
-	//
 }
 
 // callback from Application informer when ApplicationSession is physically deleted

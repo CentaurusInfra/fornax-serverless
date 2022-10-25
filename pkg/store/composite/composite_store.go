@@ -83,7 +83,7 @@ func (c *CompositeStore) Create(ctx context.Context, key string, obj runtime.Obj
 
 	// status copy must be recreated if a spec is created
 	newSpecObj := specOut.DeepCopyObject()
-	err = c.statusMemoryStore.CreateOrReplace(ctx, key, statusOut, newSpecObj)
+	err = c.statusMemoryStore.CreateOrReplace(ctx, key, newSpecObj, statusOut)
 	if err == nil {
 		// set output with status
 		outVal, _ := conversion.EnforcePtr(out)
@@ -299,13 +299,13 @@ func (c *CompositeStore) Run(ctx context.Context) {
 					case mwche := <-mwch:
 						if mwche.Type == watch.Bookmark {
 							obj := mwche.Object
-							rev, err = store.ObjectResourceVersion(obj)
+							rev, err = store.GetObjectResourceVersion(obj)
 							return errors.New("rewatch")
 						} else if mwche.Type == watch.Error {
 							return errors.New("rewatch")
 						} else {
 							obj := mwche.Object.DeepCopyObject()
-							orev, err := store.ObjectResourceVersion(obj)
+							orev, err := store.GetObjectResourceVersion(obj)
 							if err != nil {
 								continue
 							} else {
@@ -363,7 +363,7 @@ func (c *CompositeStore) Run(ctx context.Context) {
 							return errors.New("rewatch")
 						} else {
 							statusObj := mwche.Object.DeepCopyObject()
-							orev, err := store.ObjectResourceVersion(statusObj)
+							orev, err := store.GetObjectResourceVersion(statusObj)
 							if err != nil {
 								continue
 							} else {

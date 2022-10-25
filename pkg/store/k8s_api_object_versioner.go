@@ -33,10 +33,10 @@ type APIObjectVersioner struct{}
 
 // UpdateObject implements Versioner
 func (a APIObjectVersioner) UpdateObject(obj runtime.Object, resourceVersion uint64) error {
-	return UpdateObjectResourceVersion(obj, resourceVersion)
+	return SetObjectResourceVersion(obj, resourceVersion)
 }
 
-func UpdateObjectResourceVersion(obj runtime.Object, resourceVersion uint64) error {
+func SetObjectResourceVersion(obj runtime.Object, resourceVersion uint64) error {
 	accessor, err := meta.Accessor(obj)
 	if err != nil {
 		return err
@@ -86,10 +86,10 @@ func PrepareObjectForStorage(obj runtime.Object) error {
 
 // ObjectResourceVersion implements Versioner
 func (a APIObjectVersioner) ObjectResourceVersion(obj runtime.Object) (uint64, error) {
-	return ObjectResourceVersion(obj)
+	return GetObjectResourceVersion(obj)
 }
 
-func ObjectResourceVersion(obj runtime.Object) (uint64, error) {
+func GetObjectResourceVersion(obj runtime.Object) (uint64, error) {
 	accessor, err := meta.Accessor(obj)
 	if err != nil {
 		return 0, err
@@ -131,12 +131,12 @@ func (a APIObjectVersioner) CompareResourceVersion(lhs, rhs runtime.Object) int 
 }
 
 func CompareResourceVersion(lhs, rhs runtime.Object) int {
-	lhsVersion, err := ObjectResourceVersion(lhs)
+	lhsVersion, err := GetObjectResourceVersion(lhs)
 	if err != nil {
 		// coder error
 		panic(err)
 	}
-	rhsVersion, err := ObjectResourceVersion(rhs)
+	rhsVersion, err := GetObjectResourceVersion(rhs)
 	if err != nil {
 		// coder error
 		panic(err)

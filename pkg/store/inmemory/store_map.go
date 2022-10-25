@@ -26,11 +26,6 @@ import (
 	"k8s.io/apiserver/pkg/storage"
 )
 
-const (
-	NilSlotMemoryShrinkLowThrehold  = 1000
-	NilSlotMemoryShrinkHighThrehold = 2000
-)
-
 type objEvent struct {
 	key       string
 	obj       runtime.Object
@@ -40,12 +35,6 @@ type objEvent struct {
 	isCreated bool
 }
 
-type objState struct {
-	obj  runtime.Object
-	meta *storage.ResponseMeta
-	rev  uint64
-}
-
 type objWithIndex struct {
 	key     string
 	obj     runtime.Object
@@ -53,19 +42,28 @@ type objWithIndex struct {
 	deleted bool
 }
 
-type objList []*objWithIndex
+type objList struct {
+	objs         []*objWithIndex
+	lastObjIndex uint64
+}
 
 // shrink this list to specified length, by removing nil obj or obj is marked as deleted
-func (list objList) shrink(length uint64) objList {
-	diff := uint64(len(list)) - length
+func (list *objList) Len() int {
+	return (len(list.objs))
+}
+
+// shrink this list to specified length, by removing nil obj or obj is marked as deleted
+func (list *objList) shrink(length uint64) {
+	diff := uint64(list.Len()) - length
 	if diff <= 0 {
-		return list
+		return
 	}
 	newList := make([]*objWithIndex, length)
 	i := uint64(0)
-	for _, v := range list {
+	lastIndex := uint64(0)
+	for _, v := range list.objs {
 		if (v == nil || v.deleted) && diff > 0 {
-			// one nil or deleted object is removed, reduce 1 from diff
+			// skip one nil or deleted object, reduce 1 from diff
 			diff -= 1
 			continue
 		} else {
@@ -77,11 +75,19 @@ func (list objList) shrink(length uint64) objList {
 			}
 			if v != nil {
 				v.index = i
+				lastIndex = i
 			}
 			i += 1
 		}
 	}
-	return newList
+	list.objs = newList
+	list.lastObjIndex = lastIndex
+}
+
+func (list *objList) grow(length uint64) {
+	newList := make([]*objWithIndex, uint64(list.Len())+length)
+	copy(newList, list.objs)
+	list.objs = newList
 }
 
 type objMapOrObj struct {
@@ -176,7 +182,7 @@ func (mm *objStoreMap) _putObj(key string, obj *objWithIndex, expectedRV uint64)
 	defer mm.mu.Unlock()
 	if o, f := mm.kvs[key]; f {
 		if o.obj != nil {
-			objRv, err := store.ObjectResourceVersion(o.obj.obj)
+			objRv, err := store.GetObjectResourceVersion(o.obj.obj)
 			if err != nil {
 				return err
 			}

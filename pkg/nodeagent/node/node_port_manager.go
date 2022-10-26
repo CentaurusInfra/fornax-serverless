@@ -72,7 +72,7 @@ func (pm *HostPortRange) deallocateHostPort(containerPorts []*v1.ContainerPort) 
 
 //allocateHostPort find not used host port range and set unique host port for each container port from this range,
 // and mark range is used, if it can not allocate host port for all containter port, it rollback and return InSufficientHostPortError
-func (pm *HostPortRange) allocateHostPort(node *v1.Node, containerPorts []*v1.ContainerPort) error {
+func (pm *HostPortRange) allocateHostPort(containerPorts []*v1.ContainerPort) error {
 	pm.mu.Lock()
 	defer pm.mu.Unlock()
 	i := 0
@@ -90,7 +90,6 @@ func (pm *HostPortRange) allocateHostPort(node *v1.Node, containerPorts []*v1.Co
 			for j := 0; j < int(slot.rangeSize) && i < len(containerPorts); j++ {
 				port := containerPorts[i]
 				port.HostPort = slot.nextPortNum
-				port.HostIP = node.Status.Addresses[0].Address
 				slot.nextPortNum += 1
 				slot.allocatedPorts += 1
 				i += 1
@@ -160,26 +159,29 @@ func (npm *nodePortManager) AllocatePodPortMapping(node *v1.Node, pod *v1.Pod) e
 		}
 	}
 
-	err := npm.portRange.allocateHostPort(node, containerPorts)
+	err := npm.portRange.allocateHostPort(containerPorts)
 	if err != nil {
 		return err
 	}
 	conts := []v1.Container{}
-	for _, v := range pod.Spec.Containers {
-		cont := v.DeepCopy()
+	for _, cont := range pod.Spec.Containers {
+		updatedContSpec := cont.DeepCopy()
 		ports := []v1.ContainerPort{}
-		for _, v := range cont.Ports {
-			port := v.DeepCopy()
-			for _, v := range containerPorts {
-				if v.ContainerPort == port.ContainerPort {
-					port.HostPort = v.HostPort
-					port.HostIP = v.HostIP
+		for _, contPort := range updatedContSpec.Ports {
+			for _, addr := range node.Status.Addresses {
+				hostIp := addr.Address
+				port := contPort.DeepCopy()
+				for _, v := range containerPorts {
+					if v.ContainerPort == port.ContainerPort {
+						port.HostPort = v.HostPort
+						port.HostIP = hostIp
+					}
 				}
+				ports = append(ports, *port)
 			}
-			ports = append(ports, *port)
 		}
-		cont.Ports = ports
-		conts = append(conts, *cont)
+		updatedContSpec.Ports = ports
+		conts = append(conts, *updatedContSpec)
 	}
 	pod.Spec.Containers = conts
 

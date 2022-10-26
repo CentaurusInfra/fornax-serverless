@@ -72,6 +72,10 @@ func (s *sqLiteStore) DelObject(identifier string) error {
 	defer stmt.Close()
 
 	_, err = stmt.Exec(identifier)
+	if err != nil {
+		tx.Rollback()
+		return err
+	}
 	tx.Commit()
 
 	if err != nil {
@@ -98,6 +102,7 @@ func (s *sqLiteStore) PutObject(identifier string, obj interface{}) error {
 	defer stmt.Close()
 	_, err = stmt.Exec(identifier, sqlobjtext)
 	if err != nil {
+		tx.Rollback()
 		return err
 	}
 	tx.Commit()

@@ -76,6 +76,7 @@ type nodeMonitor struct {
 
 // OnSessionUpdate implements server.NodeMonitor
 func (nm *nodeMonitor) OnSessionUpdate(message *grpc.FornaxCoreMessage) (*grpc.FornaxCoreMessage, error) {
+	st := time.Now().UnixMicro()
 	sessionState := message.GetSessionState()
 	revision := sessionState.GetNodeRevision()
 	nodeId := message.GetNodeIdentifier().GetIdentifier()
@@ -84,12 +85,9 @@ func (nm *nodeMonitor) OnSessionUpdate(message *grpc.FornaxCoreMessage) (*grpc.F
 		klog.ErrorS(err, "Malformed SessionData, is not a valid fornaxv1.ApplicationSession object")
 		return nil, err
 	}
-	klog.InfoS("Received a session state", "node", nodeId, "session", util.Name(session), "node revision", revision, "status", session.Status)
-	st := time.Now().UnixMicro()
 	defer func() {
 		et := time.Now().UnixMicro()
-		klog.InfoS("Done update session state", "session", util.Name(session), "took-micro", et-st)
-		// TODO post metrics
+		klog.InfoS("Done Received a session state", "node", nodeId, "session", util.Name(session), "node revision", revision, "status", session.Status, "took-micro", et-st)
 	}()
 
 	nodeWRev := nm.nodes.get(nodeId)

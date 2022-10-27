@@ -20,17 +20,21 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"sync"
 
 	"centaurusinfra.io/fornax-serverless/pkg/store/storage"
 	_ "github.com/mattn/go-sqlite3"
 )
 
 type sqLiteStore struct {
+	mu                 sync.Mutex
 	options            *SQLiteStoreOptions
 	DB                 *sql.DB
 	Table              string
 	TextToObjectFunc   storage.TextToObjectFunc
 	TextFromObjectFunc storage.TextFromObjectFunc
+	putStmt            *sql.Stmt
+	delStmt            *sql.Stmt
 }
 
 func (s *sqLiteStore) ListObject() ([]interface{}, error) {
@@ -65,11 +69,10 @@ func (s *sqLiteStore) DelObject(identifier string) error {
 	if err != nil {
 		return err
 	}
-	stmt, err := s.DB.Prepare(fmt.Sprintf("delete from %s where identifier = ?", s.Table))
+	stmt, err := s.getDelStmt()
 	if err != nil {
 		return err
 	}
-	defer stmt.Close()
 
 	_, err = stmt.Exec(identifier)
 	if err != nil {
@@ -78,9 +81,6 @@ func (s *sqLiteStore) DelObject(identifier string) error {
 	}
 	tx.Commit()
 
-	if err != nil {
-		return err
-	}
 	return nil
 }
 
@@ -95,11 +95,10 @@ func (s *sqLiteStore) PutObject(identifier string, obj interface{}) error {
 		return err
 	}
 
-	stmt, err := tx.Prepare(fmt.Sprintf("insert or replace into %s(identifier, content) values(?, ?)", s.Table))
+	stmt, err := s.getPutStmt()
 	if err != nil {
 		return err
 	}
-	defer stmt.Close()
 	_, err = stmt.Exec(identifier, sqlobjtext)
 	if err != nil {
 		tx.Rollback()
@@ -108,6 +107,34 @@ func (s *sqLiteStore) PutObject(identifier string, obj interface{}) error {
 	tx.Commit()
 
 	return nil
+}
+
+func (s *sqLiteStore) getPutStmt() (*sql.Stmt, error) {
+	if s.putStmt != nil {
+		return s.putStmt, nil
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	stmt, err := s.DB.Prepare(fmt.Sprintf("insert or replace into %s(identifier, content) values(?, ?)", s.Table))
+	if err != nil {
+		return nil, err
+	}
+	s.putStmt = stmt
+	return stmt, err
+}
+
+func (s *sqLiteStore) getDelStmt() (*sql.Stmt, error) {
+	if s.delStmt != nil {
+		return s.delStmt, nil
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	stmt, err := s.DB.Prepare(fmt.Sprintf("delete from %s where identifier = ?", s.Table))
+	if err != nil {
+		return nil, err
+	}
+	s.delStmt = stmt
+	return stmt, err
 }
 
 func (s *sqLiteStore) GetObject(identifier string) (interface{}, error) {
@@ -173,6 +200,7 @@ func (s *sqLiteStore) initTable() error {
 
 func NewSqliteStore(table string, options *SQLiteStoreOptions, toObjectFunc storage.TextToObjectFunc, fromObjectFunc storage.TextFromObjectFunc) (*sqLiteStore, error) {
 	store := &sqLiteStore{
+		mu:      sync.Mutex{},
 		options: options,
 	}
 	store.Table = table

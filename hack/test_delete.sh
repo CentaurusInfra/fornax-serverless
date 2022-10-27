@@ -4,14 +4,14 @@ source ./hack/fornax_curl.zshrc
 # declare num=0
 delete_app_session_by_range() {
   source ./hack/fornax_curl.zshrc
-  for i in {1..100}
+  for i in {0..100}
   do
     echo "Loop spin:" $i
-    echo "n is $num"
-    app_session_name='echo-session-'$i
+    app_session_name='echoserver'$i
     sudo echo "Application Session Name is : $app_session_name"
     sudo echo "app session name is: $app_session_name"
-    kubectl --kubeconfig kubeconfig delete applicationsession --namespace game1 $app_session_name
+    # kubectl --kubeconfig kubeconfig delete applicationsession --namespace game1 $app_session_name
+    kubectl delete application --kubeconfig kubeconfig --namespace fornaxtest $app_session_name
     #sleep 1
   done
 }

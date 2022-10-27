@@ -12,14 +12,14 @@ remove_execute_file() {
             continue
         fi
 
-        if [[ $name == *"davidzhu-fornaxcore"* ]]; then
+        if [[ $name == *"fornaxcore"* ]]; then
             echo "remove fornaxcore file from instance: $name"
             gcloud compute ssh ubuntu@$name --command="cd $HOME/go/src/centaurusinfra.io/fornax-serverless/bin && rm fornaxcore" --project=quark-serverless --zone=us-central1-a
             gcloud compute ssh ubuntu@$name --command="cd $HOME/go/src/centaurusinfra.io/fornax-serverless/bin && rm fornaxtest" --project=quark-serverless --zone=us-central1-a
             sleep 1
         fi
 
-        if [[ $name == *"davidzhu-nodeagent"* ]]; then
+        if [[ $name == *"nodeagent"* ]]; then
             echo "remove nodeagent file from instance: $name"
             gcloud compute ssh ubuntu@$name --command="cd $HOME/go/src/centaurusinfra.io/fornax-serverless/bin && rm nodeagent" --project=quark-serverless --zone=us-central1-a &
             sleep 1
@@ -33,12 +33,12 @@ stop_fornaxcore_nodeagent_service() {
     names=`gcloud compute instances list --project quark-serverless --format="table(name)" | awk '{print $1}'`
     for name in $names
     do
-        if [[ $name == *"davidzhu-fornaxcore"* ]]; then
+        if [[ $name == *"fornaxcore"* ]]; then
             echo "remove fornaxcore file from instance: $name"
             gcloud compute ssh ubuntu@$name --command="pkill -9 fornaxcore" --project=quark-serverless --zone=us-central1-a &
         fi
 
-        if [[ $name == *"davidzhu-nodeagent"* ]]; then
+        if [[ $name == *"nodeagent"* ]]; then
             echo "remove nodeagent file from instance: $name"
             gcloud compute ssh ubuntu@$name --command="sudo pkill -9 nodeagent" --project=quark-serverless --zone=us-central1-a &
             sleep 1
@@ -57,13 +57,13 @@ copy_execute_file() {
             continue
         fi
 
-        if [[ $name == *"davidzhu-fornaxcore"* ]]; then
+        if [[ $name == *"fornaxcore"* ]]; then
             echo "copy fornaxcore file to instance: $name"
             scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -r $HOME/go/src/centaurusinfra.io/fornax-serverless/bin/fornaxcore  ubuntu@$name:$HOME/go/src/centaurusinfra.io/fornax-serverless/bin/
             scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -r $HOME/go/src/centaurusinfra.io/fornax-serverless/bin/fornaxtest  ubuntu@$name:$HOME/go/src/centaurusinfra.io/fornax-serverless/bin/
         fi
 
-        if [[ $name == *"davidzhu-nodeagent"* ]]; then
+        if [[ $name == *"nodeagent"* ]]; then
             echo "copy nodeagent file to instance: $name"
             scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -r $HOME/go/src/centaurusinfra.io/fornax-serverless/bin/nodeagent  ubuntu@$name:$HOME/go/src/centaurusinfra.io/fornax-serverless/bin/
         fi

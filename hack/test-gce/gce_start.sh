@@ -11,7 +11,7 @@ start_instance_by_filter() {
         continue
     fi
 
-    if [[ $name == *"davidzhu-fornaxcore"* ]] || [[ $name == *"davidzhu-nodeagent"* ]]; then
+    if [[ $name == *"fornaxcore"* ]] || [[ $name == *"nodeagent"* ]]; then
         echo "start instance name: $name"
         gcloud compute instances start $name --async --project=quark-serverless --zone=us-central1-a --quiet &
         sleep 1

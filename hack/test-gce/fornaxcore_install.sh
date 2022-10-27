@@ -6,8 +6,7 @@ set -e
 GO_VERSION=${GO_VERSION:-"1.18.7"}
 
 pushd $HOME
-# echo -e "## SETTING UP THE HOSTNAME FORNAXCORE-A\n"
-# sudo hostnamectl set-hostname fornaxcore-a
+
 echo -e "## DISABLING FIREWALL\n"
 sudo ufw disable
 sudo swapoff -a
@@ -70,7 +69,7 @@ kubectl_install(){
 
 fornaxcore_build(){
     echo -e "## CLONE FORNAXCORE SOURCE CODE"
-    mkdir ~/go
+    mkdir -p ~/go
     cd go
 	mkdir -p bin src pkg
 	cd src
@@ -85,7 +84,6 @@ fornaxcore_build(){
 	echo '## RUN FORNAXCORE'
     # run fornaxcore on the background
 	nohup ./bin/fornaxcore --etcd-servers=http://127.0.0.1:2379 --secure-port=9443 --standalone-debug-mode --bind-address=127.0.0.1 >> fornaxcore.logs 2>&1 &
-	# ./bin/fornaxcore --etcd-servers=http://127.0.0.1:2379 --secure-port=9443 --standalone-debug-mode --bind-address=127.0.0.1 
     echo -e "## DONE\n"
 }
 

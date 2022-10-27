@@ -20,7 +20,6 @@ delete_instance_by_number() {
         gcloud compute instances delete $instance_name --zone=us-central1-a --quiet &
 
     done
-    # gcloud compute instances delete davidzhu-instance-1 --zone=us-central1-a
 }
 
 delete_instance_by_filter() {

@@ -16,14 +16,14 @@ start_serverless_by_filter() {
             continue
         fi
 
-        if [[ $name == *"davidzhu-fornaxcore"* ]]; then
-            echo "start fornaxcore service: $name"
+        if [[ $name == *"fornaxcore"* ]]; then
+            echo "start fornaxcore service in: $name"
             gcloud compute ssh $name  --zone=us-central1-a -- bash -s < $HOME/fornaxcore_start.sh > /dev/null 2>&1 &
             sleep 1
         fi
 
-        if [[ $name == *"davidzhu-nodeagent"* ]]; then
-            echo "Start nodeagent service: $name"
+        if [[ $name == *"nodeagent"* ]]; then
+            echo "Start nodeagent service in: $name"
             gcloud compute ssh $name  --zone=us-central1-a -- bash -s < $HOME/nodeagent_start.sh > /dev/null 2>&1 &
             sleep 1
         fi

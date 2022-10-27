@@ -11,7 +11,7 @@ stop_instance_by_filter() {
         continue
     fi
 
-    if [[ $name == *"davidzhu-fornaxcore"* ]] || [[ $name == *"davidzhu-nodeagent"* ]]; then
+    if [[ $name == *"fornaxcore"* ]] || [[ $name == *"nodeagent"* ]]; then
         echo "delete instance name: $name"
         gcloud compute instances stop $name --async --project=quark-serverless --zone=us-central1-a --quiet &
         sleep 1

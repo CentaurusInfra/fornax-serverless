@@ -20,7 +20,7 @@ instance_create() {
         # 32 cpu and 120G memory
         # gcloud compute instances create davidzhu-fornaxcore --project=quark-serverless --zone=us-central1-a --machine-type=n1-standard-32 --network-interface=network-tier=PREMIUM,subnet=default --maintenance-policy=MIGRATE --provisioning-model=STANDARD --service-account=$account_number-compute@developer.gserviceaccount.com --scopes=https://www.googleapis.com/auth/cloud-platform --tags=http-server,https-server --create-disk=auto-delete=yes,boot=yes,device-name=instance-1,image=projects/ubuntu-os-cloud/global/images/ubuntu-2004-focal-v20221018,mode=rw,size=50,type=projects/quark-serverless/zones/us-central1-a/diskTypes/pd-ssd --no-shielded-secure-boot --shielded-vtpm --shielded-integrity-monitoring --reservation-affinity=any &
         # 2 cpu and 8G Memory
-        gcloud compute instances create davidzhu-fornaxcore --project=quark-serverless --zone=us-central1-a --machine-type=e2-medium --network-interface=network-tier=PREMIUM,subnet=default --maintenance-policy=MIGRATE --provisioning-model=STANDARD --service-account=$account_number-compute@developer.gserviceaccount.com --scopes=https://www.googleapis.com/auth/cloud-platform --tags=http-server,https-server --create-disk=auto-delete=yes,boot=yes,device-name=davidzhu-instance-1,image=projects/ubuntu-os-cloud/global/images/ubuntu-2004-focal-v20220927,mode=rw,size=50,type=projects/quark-serverless/zones/us-central1-a/diskTypes/pd-ssd --no-shielded-secure-boot --shielded-vtpm --shielded-integrity-monitoring --reservation-affinity=any &
+        gcloud compute instances create fornaxcore --project=quark-serverless --zone=us-central1-a --machine-type=e2-medium --network-interface=network-tier=PREMIUM,subnet=default --maintenance-policy=MIGRATE --provisioning-model=STANDARD --service-account=$account_number-compute@developer.gserviceaccount.com --scopes=https://www.googleapis.com/auth/cloud-platform --tags=http-server,https-server --create-disk=auto-delete=yes,boot=yes,device-name=davidzhu-instance-1,image=projects/ubuntu-os-cloud/global/images/ubuntu-2004-focal-v20220927,mode=rw,size=50,type=projects/quark-serverless/zones/us-central1-a/diskTypes/pd-ssd --no-shielded-secure-boot --shielded-vtpm --shielded-integrity-monitoring --reservation-affinity=any &
     else
         echo -e "instance: $inst already exist"
     fi
@@ -32,7 +32,7 @@ instance_create() {
     then
         for ((i = 1; i<=$instance_num; i++))
         do
-            instance_name='davidzhu-nodeagent-'$i
+            instance_name='nodeagent-'$i
             echo -e "created $instance_name \n"
             # 32 cpu and 120G memory
             # gcloud compute instances create $instance_name --project=quark-serverless --zone=us-central1-a --machine-type=n1-standard-32 --network-interface=network-tier=PREMIUM,subnet=default --maintenance-policy=MIGRATE --provisioning-model=STANDARD --service-account=$account_number-compute@developer.gserviceaccount.com --scopes=https://www.googleapis.com/auth/cloud-platform --tags=http-server,https-server --create-disk=auto-delete=yes,boot=yes,device-name=instance-1,image=projects/ubuntu-os-cloud/global/images/ubuntu-2004-focal-v20221018,mode=rw,size=50,type=projects/quark-serverless/zones/us-central1-a/diskTypes/pd-ssd --no-shielded-secure-boot --shielded-vtpm --shielded-integrity-monitoring --reservation-affinity=any &
@@ -67,7 +67,7 @@ deploy_instance_by_filter() {
             continue
         fi
 
-        if [[ $name == *"davidzhu-fornaxcore"* ]]; then
+        if [[ $name == *"fornaxcore"* ]]; then
             echo "deploy fornaxcore instance: $name"
             cat ~/.ssh/id_rsa.pub | ssh -o StrictHostKeyChecking=no ubuntu@$name 'cat >> ~/.ssh/authorized_keys'
             ssh -t ubuntu@$name "mkdir -p $HOME/go/src/centaurusinfra.io/fornax-serverless/bin" > /dev/null 2>&1
@@ -76,17 +76,15 @@ deploy_instance_by_filter() {
             scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -r $HOME/go/src/centaurusinfra.io/fornax-serverless/kubeconfig  ubuntu@$name:$HOME/go/src/centaurusinfra.io/fornax-serverless/
             scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -r $HOME/fornaxcore_deploy.sh  ubuntu@$name:$HOME/
             scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -r $HOME/fornaxcore_start.sh  ubuntu@$name:$HOME/
-            # ssh -t ubuntu@$name "sudo bash $HOME/fornaxcore_deploy.sh" > /dev/null 2>&1 &
             gcloud compute ssh $name  --zone=us-central1-a -- bash -s < $HOME/fornaxcore_deploy.sh > /dev/null 2>&1 &
             sleep 1
         fi
 
-        if [[ $name == *"davidzhu-nodeagent"* ]]; then
+        if [[ $name == *"nodeagent"* ]]; then
             echo "deploy nodeagent instance: $name"
             cat ~/.ssh/id_rsa.pub | ssh -o StrictHostKeyChecking=no ubuntu@$name "cat >> ~/.ssh/authorized_keys"
             sleep 1
             ssh -t ubuntu@$name "mkdir -p $HOME/go/src/centaurusinfra.io/fornax-serverless/bin" > /dev/null 2>&1
-            # scp -r $HOME/bin/*  ubuntu@davidzhu-fornaxcore:$HOME/go/src/centaurusinfra.io/fornax-serverless/bin
             scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -r $HOME/go/src/centaurusinfra.io/fornax-serverless/bin/nodeagent  ubuntu@$name:$HOME/go/src/centaurusinfra.io/fornax-serverless/bin/
             scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -r $HOME/nodeagent_deploy.sh  ubuntu@$name:$HOME/
             scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -r $HOME/nodeagent_start.sh  ubuntu@$name:$HOME/

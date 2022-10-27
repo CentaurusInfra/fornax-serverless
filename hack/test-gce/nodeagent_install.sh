@@ -6,8 +6,7 @@ set -e
 GO_VERSION=${GO_VERSION:-"1.18.7"}
 
 pushd $HOME
-# echo -e "## SETTING UP THE HOSTNAME NODEAGENT-A\n"
-# sudo hostnamectl set-hostname nodeagent-a
+
 echo -e "## DISABLING FIREWALL\n"
 sudo ufw disable
 sudo swapoff -a
@@ -242,7 +241,7 @@ nodeagent_build(){
     sudo git clone https://github.com/CentaurusInfra/fornax-serverless.git
     # pushd $HOME/go/src/centaurusinfra.io/fornax-serverless
 	  cd fornax-serverless
-	  sudo chown -R $USER: .
+	  # sudo chown -R $USER: .
     make all
     echo "## Build session-wrapper docker image\n"
     image_build
@@ -252,7 +251,7 @@ nodeagent_build(){
     echo "Fornaxcore IP is: $fornaxcoreip"
     sleep 3
 	  # following line command, put nodeagent run at background
-	  nohup sudo ./bin/nodeagent --fornaxcore-url 127.0.0.1:18001 --disable-swap=false >> nodeagent.logs 2>&1 &
+	  nohup sudo ./bin/nodeagent --fornaxcore-url fornaxcoreip:18001 --disable-swap=false >> nodeagent.logs 2>&1 &
     # sudo ./bin/nodeagent --fornaxcore-url $fornaxcoreip:18001 --disable-swap=false
     echo -e "## DONE\n"
 }

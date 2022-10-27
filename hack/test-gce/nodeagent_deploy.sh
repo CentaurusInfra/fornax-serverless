@@ -2,12 +2,8 @@
 
 set -e
 
-#Golang version
-GO_VERSION=${GO_VERSION:-"1.18.7"}
-
 pushd $HOME
-# echo -e "## SETTING UP THE HOSTNAME NODEAGENT-A\n"
-# sudo hostnamectl set-hostname nodeagent-a
+
 echo -e "## DISABLING FIREWALL\n"
 sudo ufw disable
 sudo swapoff -a
@@ -49,7 +45,7 @@ runtimes_setup(){
     # kata_install
 
     systemctl restart docker
-    sleep 5
+    sleep 3
 }
 
 daemon_install() {
@@ -205,65 +201,11 @@ kata_install(){
   sleep 3
 }
 
-
-golang_tools(){
-   if [ "$(go version)" != "go version go1.18.7 linux/amd64" ] > /dev/null 2>&1
-    then
-      echo -e "## INSTALLING GOLANG TOOLS FOR FORNAXCORE AND NODEAGENT"
-      sudo apt -y install make gcc jq > /dev/null 2>&1
-	    echo "Install golang."
-      wget https://dl.google.com/go/go${GO_VERSION}.linux-amd64.tar.gz -P /tmp
-      sudo tar -C /usr/local -xzf /tmp/go${GO_VERSION}.linux-amd64.tar.gz
-      # echo -e 'export PATH=$PATH:/usr/local/go/bin\nexport GOPATH=/usr/local/go/bin\nexport KUBECONFIG=/etc/kubernetes/admin.conf' |cat >> ~/.bashrc
-	    echo -e '\n' >> ~/.bashrc
-	    echo export GOROOT=\"/usr/local/go\" >> ~/.bashrc
-	    echo export GOPATH=\"\$HOME/go\" >> ~/.bashrc
-	    echo export GOBIN=\"\$HOME/go/bin\" >> ~/.bashrc
-	    echo -e 'export PATH=$PATH:/usr/local/go/bin:$HOME/go/bin' | cat >> ~/.bashrc
-      source $HOME/.bashrc
-      echo -e "## DONE\n"
-      export PATH=$PATH:/usr/local/go/bin
-    else
-      echo -e "## go${GO_VERSION} already installed\n "
-      export PATH=$PATH:/usr/local/go/bin
-   fi
-}
-
-
-nodeagent_build(){
-    echo -e "## CLONE FORNAXCORE SOURCE CODE"
-    mkdir -p ~/go
-    cd go
-	  mkdir -p bin src pkg
-	  cd src
-	  mkdir -p centaurusinfra.io
-	  cd centaurusinfra.io
-	  # pushd $HOME/go/src/centaurusinfra.io
-    sudo git clone https://github.com/CentaurusInfra/fornax-serverless.git
-    # pushd $HOME/go/src/centaurusinfra.io/fornax-serverless
-	  cd fornax-serverless
-	  sudo chown -R $USER: .
-    make all
-    echo "## Build session-wrapper docker image\n"
-    image_build
-	  echo '## RUN NODEAGENT To Connect to FORNAXCORE'
-    echo '# Get Fornaxcore IP'
-    fornaxcoreip=`gcloud compute instances list --format='table(INTERNAL_IP)' --filter="name=davidzhu-fornaxcore" | awk '{if(NR==2) print $1}'`
-    echo "Fornaxcore IP is: $fornaxcoreip"
-    sleep 3
-	  # following line command, put nodeagent run at background
-	  nohup sudo ./bin/nodeagent --fornaxcore-url $fornaxcoreip:18001 --disable-swap=false >> nodeagent.logs 2>&1 &
-    # sudo ./bin/nodeagent --fornaxcore-url 10.128.0.14:18001 --disable-swap=false
-    echo -e "## DONE\n"
-}
-
 nodeagent_deploy(){
     echo -e "## DEPLOY NODEAGENT"
     # cd ~/go/src/centaurusinfra.io/fornax-serverless
     pushd $HOME/go/src/centaurusinfra.io/fornax-serverless
-    # echo "## Build session-wrapper docker image\n"
-    # sudo chmod o+rw /var/run/docker.sock 
-    # docker pull 512811/sessionwrapper:v0.1.0
+    # docker pull 512811/sessionwrapper:latest
     # sleep 1
 	  echo '## RUN NODEAGENT To Connect to FORNAXCORE'
     echo '# Get Fornaxcore IP'
@@ -271,7 +213,6 @@ nodeagent_deploy(){
     echo "Fornaxcore IP is: $fornaxcoreip"
 	  # following line command, put nodeagent run at background
 	  nohup sudo ./bin/nodeagent --fornaxcore-url $fornaxcoreip:18001 --disable-swap=false >> nodeagent.logs 2>&1 &
-    # sudo ./bin/nodeagent --fornaxcore-url $fornaxcoreip:18001 --disable-swap=false
     echo -e "## DONE\n"
 }
 
@@ -281,10 +222,6 @@ basic_install
 docker_install
 
 runtimes_setup
-
-# golang_tools
-
-# nodeagent_build
 
 nodeagent_deploy
 

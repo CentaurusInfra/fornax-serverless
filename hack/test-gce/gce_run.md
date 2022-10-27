@@ -6,7 +6,7 @@ This doc represent how to setup gce serverless test envrironment and detail step
 
 ## Machine and file Prepare
 If you already have machine and with source file ready, and have all build execut file on  ~/go/src/CentaurusInfra/fornax-serverlessan/bin,
-you can copy following file to $HOME(or create new file with the same name and copy following file content to the file). 
+you can copy following file to $HOME(or create new file with the same name and copy following file content to the file). Or go to /hach/gce_test/
 
 ```script
 gce_create_deploy.sh
@@ -31,7 +31,7 @@ kubeconfig
 
 ## 1. Run the following file and deploy
 
-step 1. run gce_create_deploy.sh file and wait untill finished(first step: create instance, second step: copy file to each instance, third step: execute script to install thired party software)
+step 1. go to hack/gce-test/ folder and copy all file to $HOME, and run gce_create_deploy.sh file and wait untill finished(first step: create instance, second step: copy file to each instance, third step: execute script to install thired party software)
 
 ```script
 bash gce_create_deploy.sh

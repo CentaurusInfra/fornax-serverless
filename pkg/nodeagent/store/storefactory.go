@@ -63,7 +63,7 @@ func (s *NodeStore) PutNode(node *types.FornaxNodeWithRevision) error {
 	if node == nil {
 		return fmt.Errorf("nil node is passed")
 	}
-	err := s.PutObject(string(node.Identifier), node)
+	err := s.PutObject(node.Identifier, node)
 	if err != nil {
 		return err
 	}

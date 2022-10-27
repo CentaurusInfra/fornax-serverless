@@ -160,6 +160,10 @@ func (n *FornaxNodeActor) incrementNodeRevision() int64 {
 	return revision
 }
 
+// sqlite is not great on transaction, update each resource state in its own transaction for safety
+// if there are a lot of in update in queeu, each update will slow down processs a few milliseconds
+// it will impact latency a lot, especially for session which is latency sensitive,
+// https://www.sqlite.org/faq.html#q19
 func (n *FornaxNodeActor) nodeHandler(msg message.ActorMessage) (interface{}, error) {
 	switch msg.Body.(type) {
 	case *fornaxgrpc.FornaxCoreMessage:

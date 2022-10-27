@@ -79,11 +79,9 @@ func (n *FornaxCoreActor) Start(nodeActor message.ActorRef) error {
 					case msgType == fornax.MessageType_FORNAX_CORE_CONFIGURATION:
 						n.onFornaxCoreConfigurationCommand(msg.GetFornaxCoreConfiguration())
 					default:
-						// TODO handle error
 						n.notify(n.nodeActor, msg)
 					}
 				} else {
-					// TODO handle error
 					klog.Warningf("Receiving message from fornaxcore meet error")
 				}
 			}

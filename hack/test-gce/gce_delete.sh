@@ -17,7 +17,7 @@ delete_instance_by_number() {
     do
         instance_name='davidzhu-nodeagent-'$i
         echo -e "delete $instance_name \n"
-        gcloud compute instances delete $instance_name --zone=us-central1-a
+        gcloud compute instances delete $instance_name --zone=us-central1-a --quiet &
 
     done
     # gcloud compute instances delete davidzhu-instance-1 --zone=us-central1-a
@@ -33,14 +33,23 @@ delete_instance_by_filter() {
 
     if [[ $name == *"davidzhu-fornaxcore"* ]] || [[ $name == *"davidzhu-nodeagent"* ]]; then
         echo "delete instance name: $name"
-        gcloud compute instances delete $name --zone=us-central1-a
+        gcloud compute instances delete $name --project=quark-serverless --zone=us-central1-a --quiet &
         sleep 1
     fi
   done
 }
 
+check_knownhosts(){
+    if [ "$(ls $HOME/.ssh/known_hosts)" != "" ]; then
+        echo -e "known_hosts already exits, we remove this file first\n";
+        rm -rf ~/.ssh/known_hosts
+    fi
+}
+
 # delete_instance_by_number
 
 delete_instance_by_filter
+
+check_knownhosts
 
 echo "all instance have been deleted seccessfully."

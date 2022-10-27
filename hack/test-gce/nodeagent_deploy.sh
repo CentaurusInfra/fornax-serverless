@@ -45,8 +45,8 @@ runtimes_setup(){
     crictl_install
     cni_install
     cni_config
-    runsc_install
-    kata_install
+    # runsc_install
+    # kata_install
 
     systemctl restart docker
     sleep 5
@@ -231,7 +231,7 @@ golang_tools(){
 
 
 nodeagent_build(){
-    echo -e "## CLONE NODEAGENT SOURCE CODE"
+    echo -e "## CLONE FORNAXCORE SOURCE CODE"
     mkdir -p ~/go
     cd go
 	  mkdir -p bin src pkg
@@ -252,20 +252,29 @@ nodeagent_build(){
     echo "Fornaxcore IP is: $fornaxcoreip"
     sleep 3
 	  # following line command, put nodeagent run at background
-	  nohup sudo ./bin/nodeagent --fornaxcore-url 127.0.0.1:18001 --disable-swap=false >> nodeagent.logs 2>&1 &
+	  nohup sudo ./bin/nodeagent --fornaxcore-url $fornaxcoreip:18001 --disable-swap=false >> nodeagent.logs 2>&1 &
+    # sudo ./bin/nodeagent --fornaxcore-url 10.128.0.14:18001 --disable-swap=false
+    echo -e "## DONE\n"
+}
+
+nodeagent_deploy(){
+    echo -e "## DEPLOY NODEAGENT"
+    # cd ~/go/src/centaurusinfra.io/fornax-serverless
+    pushd $HOME/go/src/centaurusinfra.io/fornax-serverless
+    # echo "## Build session-wrapper docker image\n"
+    # sudo chmod o+rw /var/run/docker.sock 
+    # docker pull 512811/sessionwrapper:v0.1.0
+    # sleep 1
+	  echo '## RUN NODEAGENT To Connect to FORNAXCORE'
+    echo '# Get Fornaxcore IP'
+    fornaxcoreip=`gcloud compute instances list --format='table(INTERNAL_IP)' --filter="name=davidzhu-fornaxcore" | awk '{if(NR==2) print $1}'`
+    echo "Fornaxcore IP is: $fornaxcoreip"
+	  # following line command, put nodeagent run at background
+	  nohup sudo ./bin/nodeagent --fornaxcore-url $fornaxcoreip:18001 --disable-swap=false >> nodeagent.logs 2>&1 &
     # sudo ./bin/nodeagent --fornaxcore-url $fornaxcoreip:18001 --disable-swap=false
     echo -e "## DONE\n"
 }
 
-image_build() {
-  echo -e "## Start to build session-wrapper docker image\n"
-  make docker-build
-  make
-  sudo sed -i "s/@sudo crictl rmi/#@sudo crictl rmi/" ./Makefile
-  make containerd-local-push
-  sudo sed -i "s/#@sudo crictl rmi/@sudo crictl rmi/" ./Makefile
-  echo -e "## Build session-wrapper docker image finished and deployed\n"
-}
 
 basic_install
 
@@ -273,8 +282,10 @@ docker_install
 
 runtimes_setup
 
-golang_tools
+# golang_tools
 
-nodeagent_build
+# nodeagent_build
+
+nodeagent_deploy
 
 echo -e "## Nodeagent SETUP SUCCESSSFUL\n"

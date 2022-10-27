@@ -2,7 +2,7 @@
 
 set -e
 
-#Golang version
+# Golang version
 GO_VERSION=${GO_VERSION:-"1.18.7"}
 
 pushd $HOME
@@ -68,6 +68,7 @@ kubectl_install(){
     fi
 }
 
+
 fornaxcore_build(){
     echo -e "## CLONE FORNAXCORE SOURCE CODE"
     mkdir ~/go
@@ -89,15 +90,28 @@ fornaxcore_build(){
     echo -e "## DONE\n"
 }
 
+fornaxcore_deploy(){
+    echo -e "## DEPLOY FORNAXCORE"
+    cd ~/go/src/centaurusinfra.io/fornax-serverless
+	sudo chown -R $USER: .
+	echo '## RUN FORNAXCORE'
+    # run fornaxcore on the background
+	nohup ./bin/fornaxcore --etcd-servers=http://127.0.0.1:2379 --secure-port=9443 --standalone-debug-mode --bind-address=127.0.0.1 >> fornaxcore.logs 2>&1 &
+	# ./bin/fornaxcore --etcd-servers=http://127.0.0.1:2379 --secure-port=9443 --standalone-debug-mode --bind-address=127.0.0.1 
+    echo -e "## DONE\n"
+}
+
 
 basic_install
 
 etcd_install
 
-golang_tools
-
 kubectl_install
 
-fornaxcore_build
+# golang_tools
+
+# fornaxcore_build
+
+fornaxcore_deploy
 
 echo -e "## SETUP SUCCESSSFUL\n"

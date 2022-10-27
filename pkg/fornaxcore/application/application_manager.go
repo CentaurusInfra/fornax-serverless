@@ -84,41 +84,32 @@ type ApplicationManager struct {
 	appSessionKind   schema.GroupVersionKind
 	applicationQueue workqueue.RateLimitingInterface
 
+	applicationPools map[string]*ApplicationPool
+
 	applicationStore fornaxstore.ApiStorageInterface
 	appStoreUpdate   <-chan fornaxstore.WatchEventWithOldObj
 
-	sessionStore       fornaxstore.ApiStorageInterface
-	sessionStoreUpdate <-chan fornaxstore.WatchEventWithOldObj
-
-	// A pool of pods grouped by application key
-	applicationPools     map[string]*ApplicationPool
 	podUpdateChannel     chan *ie.PodEvent
 	podManager           ie.PodManagerInterface
-	sessionUpdateChannel chan *ie.SessionEvent
 	sessionManager       ie.SessionManagerInterface
+	sessionUpdateChannel <-chan fornaxstore.WatchEventWithOldObj
 
 	applicationStatusManager *ApplicationStatusManager
-
-	syncHandler func(ctx context.Context, appKey string) error
 }
 
 // NewApplicationManager init ApplicationInformer and ApplicationSessionInformer,
 // and start to listen to pod event from node
-func NewApplicationManager(ctx context.Context, podManager ie.PodManagerInterface, sessionManager ie.SessionManagerInterface, appStore, sessionStore fornaxstore.ApiStorageInterface) *ApplicationManager {
+func NewApplicationManager(ctx context.Context, podManager ie.PodManagerInterface, sessionManager ie.SessionManagerInterface, appStore fornaxstore.ApiStorageInterface) *ApplicationManager {
 	am := &ApplicationManager{
-		ctx:                  ctx,
-		applicationQueue:     workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "fornaxv1.Application"),
-		applicationPools:     map[string]*ApplicationPool{},
-		podUpdateChannel:     make(chan *ie.PodEvent, 1000),
-		podManager:           podManager,
-		sessionUpdateChannel: make(chan *ie.SessionEvent, 1000),
-		sessionManager:       sessionManager,
-		applicationStore:     appStore,
-		sessionStore:         sessionStore,
+		ctx:              ctx,
+		applicationQueue: workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "fornaxv1.Application"),
+		applicationPools: map[string]*ApplicationPool{},
+		podUpdateChannel: make(chan *ie.PodEvent, 1000),
+		podManager:       podManager,
+		sessionManager:   sessionManager,
+		applicationStore: appStore,
 	}
 	am.podManager.Watch(am.podUpdateChannel)
-	am.sessionManager.Watch(am.sessionUpdateChannel)
-	am.syncHandler = am.syncApplication
 
 	return am
 }
@@ -213,7 +204,7 @@ func (am *ApplicationManager) Run(ctx context.Context) {
 			select {
 			case <-ctx.Done():
 				break
-			case we := <-am.sessionStoreUpdate:
+			case we := <-am.sessionUpdateChannel:
 				am.onSessionEventFromStorage(we)
 			}
 		}
@@ -236,17 +227,6 @@ func (am *ApplicationManager) Run(ctx context.Context) {
 			}
 		}()
 
-		go func() {
-			defer klog.Info("Shutting down fornaxv1 application session manager")
-			for {
-				select {
-				case <-ctx.Done():
-					break
-				case update := <-am.sessionUpdateChannel:
-					am.onSessionEventFromNode(update)
-				}
-			}
-		}()
 	}
 
 	go func() {
@@ -313,7 +293,7 @@ func (am *ApplicationManager) processNextWorkItem(ctx context.Context) bool {
 	}
 	defer am.applicationQueue.Done(key)
 
-	err := am.syncHandler(ctx, key.(string))
+	err := am.syncApplication(ctx, key.(string))
 	if err == nil {
 		am.applicationQueue.Forget(key)
 		return true
@@ -356,7 +336,7 @@ func (am *ApplicationManager) syncApplication(ctx context.Context, applicationKe
 	st := time.Now().UnixMicro()
 	defer func() {
 		et := time.Now().UnixMicro()
-		klog.InfoS("Done syncing application", "application", applicationKey, "took", et-st)
+		klog.InfoS("Done syncing application", "application", applicationKey, "took-micro", et-st)
 		// TODO post metrics
 	}()
 	pool := am.getApplicationPool(applicationKey)

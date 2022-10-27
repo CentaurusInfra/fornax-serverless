@@ -240,6 +240,7 @@ func cleanupAppFullCycleTest(namespace, appName string, sessions []*TestSession)
 
 func createAndWaitForApplicationSetup(namespace, appName string, testConfig config.TestConfiguration) *fornaxv1.Application {
 	appSpec := SessionWrapperEchoServerSpec.DeepCopy()
+	appSpec.ScalingPolicy.Burst = uint32(testConfig.NumOfBurstPodsPerApp)
 	appSpec.ScalingPolicy.MinimumInstance = uint32(testConfig.NumOfInitPodsPerApp)
 	ta, err := createApplication(namespace, appName, appSpec)
 	if err != nil {

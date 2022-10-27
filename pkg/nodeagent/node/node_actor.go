@@ -169,15 +169,20 @@ func (n *FornaxNodeActor) nodeHandler(msg message.ActorMessage) (interface{}, er
 		revision := n.incrementNodeRevision()
 		fppod.Pod.ResourceVersion = fmt.Sprint(revision)
 		n.notify(n.fornoxCoreRef, pod.BuildFornaxcoreGrpcPodState(revision, fppod))
+		n.node.Dependencies.PodStore.PutPod(fppod)
 		if fppod.FornaxPodState == types.PodStateTerminated {
-			klog.InfoS("Cleanup pod actor and store", "pod", types.UniquePodName(fppod), "state", fppod.FornaxPodState)
-			n.cleanupPodAndActor(fppod)
+			err := n.cleanupPodAndActor(fppod)
+			if err != nil {
+				klog.ErrorS(err, "failed to cleanup pod store and actor")
+			}
 		}
 	case internal.SessionStatusChange:
 		fpsession := msg.Body.(internal.SessionStatusChange).Session
+		fppod := msg.Body.(internal.SessionStatusChange).Pod
 		revision := n.incrementNodeRevision()
 		fpsession.Session.ResourceVersion = fmt.Sprint(revision)
 		n.notify(n.fornoxCoreRef, session.BuildFornaxcoreGrpcSessionState(revision, fpsession))
+		n.node.Dependencies.PodStore.PutPod(fppod)
 	case internal.NodeUpdate:
 		SetNodeStatus(n.node)
 		n.notify(n.fornoxCoreRef, BuildFornaxGrpcNodeState(n.node, n.node.Revision))
@@ -389,12 +394,13 @@ func (n *FornaxNodeActor) createPodAndActor(state types.PodState, v1Pod *v1.Pod,
 }
 
 func (n *FornaxNodeActor) cleanupPodAndActor(fppod *types.FornaxPod) error {
+	klog.InfoS("Cleanup pod actor and store", "pod", types.UniquePodName(fppod), "state", fppod.FornaxPodState)
 	actor := n.podActors.Get(string(fppod.Identifier))
 	if actor != nil {
 		actor.Stop()
 		n.podActors.Del(string(fppod.Identifier))
-		n.node.Pods.Del(fppod.Identifier)
 	}
+	n.node.Pods.Del(fppod.Identifier)
 	n.nodePortManager.DeallocatePodPortMapping(n.node.V1Node, fppod.Pod)
 	return n.node.Dependencies.PodStore.DelObject(fppod.Identifier)
 }

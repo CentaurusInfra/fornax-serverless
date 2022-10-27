@@ -39,8 +39,8 @@ import (
 	"k8s.io/klog/v2"
 )
 
-const FornaxCoreChanSize = 2
-const DefaultNodePutMessageChanNum = 4
+const NodeOutgoingChanBufferSize = 20
+const DefaultNodeIncomingHandlerNum = 4
 
 type FornaxCoreServer interface {
 	fornaxcore_grpc.FornaxCoreServiceServer
@@ -122,7 +122,7 @@ func (g *grpcServer) delistNode(node string) {
 
 func (g *grpcServer) GetMessage(identifier *fornaxcore_grpc.NodeIdentifier, server fornaxcore_grpc.FornaxCoreService_GetMessageServer) error {
 	var messageSeq int64 = 0
-	ch := make(chan *fornaxcore_grpc.FornaxCoreMessage, FornaxCoreChanSize)
+	ch := make(chan *fornaxcore_grpc.FornaxCoreMessage, NodeOutgoingChanBufferSize)
 	if err := g.enlistNode(identifier.GetIdentifier(), ch); err != nil {
 		close(ch)
 		return fmt.Errorf("Fornax core has established channel with this node: %s", identifier)
@@ -202,9 +202,9 @@ func (g *grpcServer) mustEmbedUnimplementedFornaxCoreServiceServer() {
 }
 
 func NewGrpcServer() *grpcServer {
-	putMessageChans := []chan *fornaxcore_grpc.FornaxCoreMessage{}
-	for i := 0; i < DefaultNodePutMessageChanNum; i++ {
-		putMessageChans = append(putMessageChans, make(chan *fornaxcore_grpc.FornaxCoreMessage, 1000))
+	handlerChans := []chan *fornaxcore_grpc.FornaxCoreMessage{}
+	for i := 0; i < DefaultNodeIncomingHandlerNum; i++ {
+		handlerChans = append(handlerChans, make(chan *fornaxcore_grpc.FornaxCoreMessage, 1000))
 	}
 
 	return &grpcServer{
@@ -213,7 +213,7 @@ func NewGrpcServer() *grpcServer {
 		nodeIncommingChans:                   make(map[string]chan *fornaxcore_grpc.FornaxCoreMessage),
 		nodeMonitor:                          nil,
 		UnimplementedFornaxCoreServiceServer: fornaxcore_grpc.UnimplementedFornaxCoreServiceServer{},
-		nodeMessageHandlerChans:              putMessageChans,
+		nodeMessageHandlerChans:              handlerChans,
 	}
 }
 

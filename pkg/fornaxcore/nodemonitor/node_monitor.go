@@ -288,9 +288,8 @@ func (nm *nodeMonitor) updateOrCreateNode(nodeId string, v1node *v1.Node, revisi
 			klog.ErrorS(err, "Failed to create a node", "node", v1node)
 			return err
 		}
-		nm.nodeManager.SyncNodePodStates(nodeId, podStates, 0)
+		nm.nodeManager.SyncNodePodStates(nodeId, podStates)
 	} else {
-		minimalResourceRevision := nodeWRev.Revision
 		if err := nm.validateNodeRevision(nodeWRev, revision); err != nil {
 			return err
 		}
@@ -300,7 +299,7 @@ func (nm *nodeMonitor) updateOrCreateNode(nodeId string, v1node *v1.Node, revisi
 			klog.ErrorS(err, "Failed to update a node", "node", v1node)
 			return err
 		}
-		nm.nodeManager.SyncNodePodStates(nodeId, podStates, minimalResourceRevision)
+		nm.nodeManager.SyncNodePodStates(nodeId, podStates)
 	}
 
 	return nil

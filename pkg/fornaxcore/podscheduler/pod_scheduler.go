@@ -168,7 +168,6 @@ func (ps *podScheduler) bindNode(snode *SchedulableNode, pod *v1.Pod) error {
 	err := ps.nodeAgentClient.CreatePod(nodeId, pod)
 	if err != nil {
 		klog.ErrorS(err, "Failed to bind pod, reschedule", "node", nodeId, "pod", podName)
-		ps.unbindNode(snode, pod)
 		return err
 	}
 
@@ -282,10 +281,8 @@ func (ps *podScheduler) updateNodePool(nodeId string, v1node *v1.Node, updateTyp
 func (ps *podScheduler) updatePodOccupiedResourceList(snode *SchedulableNode, v1pod *v1.Pod, updateType ie.PodEventType) {
 	switch updateType {
 	case ie.PodEventTypeDelete, ie.PodEventTypeTerminate:
-		// if pod deleted or disappear, remove it from preoccupied list
 		resourceList := util.GetPodResourceList(v1pod)
 		snode.ReleasePodOccupiedResourceList(resourceList)
-		// TODO, if there are pod in backoff queue with similar resource req, notify to try schedule
 	case ie.PodEventTypeCreate:
 		resourceList := util.GetPodResourceList(v1pod)
 		snode.AdmitPodOccupiedResourceList(resourceList)
@@ -429,6 +426,7 @@ func (ps *podScheduler) Run() {
 				if len(update.NodeId) != 0 {
 					snode := ps.nodePool.GetNode(update.NodeId)
 					if snode != nil {
+						// update resource list only if pod event is from node
 						ps.updatePodOccupiedResourceList(snode, update.Pod, update.Type)
 					}
 				}

@@ -128,5 +128,6 @@ type SessionState struct {
 }
 
 type SessionStatusChange struct {
+	Pod     *types.FornaxPod
 	Session *types.FornaxSession
 }

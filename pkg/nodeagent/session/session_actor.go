@@ -17,8 +17,6 @@ limitations under the License.
 package session
 
 import (
-	"fmt"
-
 	fornaxv1 "centaurusinfra.io/fornax-serverless/pkg/apis/core/v1"
 	"centaurusinfra.io/fornax-serverless/pkg/message"
 	internal "centaurusinfra.io/fornax-serverless/pkg/nodeagent/message"
@@ -49,9 +47,6 @@ func NewSessionActor(session *types.FornaxSession, sessionService sessionservice
 
 // try to open a session with session service, if it failed, send a session closed message
 func (a *SessionActor) OpenSession() error {
-	if util.SessionIsClosed(a.session.Session) && len(a.session.ClientSessions) == 0 {
-		return fmt.Errorf("Session %s already closed", a.session.Identifier)
-	}
 	podId := a.session.PodIdentifier
 	err := a.sessionService.OpenSession(podId, a.session.Identifier, a.session.Session.Spec.SessionData, a.receiveSessionState)
 	if err != nil {

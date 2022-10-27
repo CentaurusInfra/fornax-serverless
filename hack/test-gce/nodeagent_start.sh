@@ -22,7 +22,7 @@ start_nodeagent(){
     pushd $HOME/go/src/centaurusinfra.io/fornax-serverless
 	echo '## RUN NODEAGENT To Connect to FORNAXCORE'
     echo '# Get Fornaxcore IP'
-    fornaxcoreip=`gcloud compute instances list --format='table(INTERNAL_IP)' --filter="name=davidzhu-fornaxcore" | awk '{if(NR==2) print $1}'`
+    fornaxcoreip=`gcloud compute instances list --format='table(INTERNAL_IP)' --filter="name=fornaxcore" | awk '{if(NR==2) print $1}'`
     echo "Fornaxcore IP is: $fornaxcoreip"
     sleep 1
 	# following line command, put nodeagent run at background

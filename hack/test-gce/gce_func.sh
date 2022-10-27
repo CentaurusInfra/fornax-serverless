@@ -96,3 +96,65 @@ warm_test() {
     # bind session to application
     ./bin/fornaxtest --test-case session_create --num-of-session-per-app 1 --num-of-app 100 --num-of-init-pod-per-app 0 --num-of-test-cycle 50
 }
+
+create_instance(){
+   # Enter the nodeagent number which you want to created 
+    echo -e "## Enter nodeagent number which you want to created VM in your test:"
+    read instance_num
+    echo -e "\n"
+
+    echo -e "## Enter account number which you want to created VM in your test:"
+    read account_number
+    echo -e "\n"
+
+
+    # fornaxcore
+    inst=`gcloud compute instances list --project quark-serverless --format="table(name)" --filter="name=fornaxcore" | awk '{print $1}'`
+    if [[ $inst == "" ]];
+    then
+        echo -e "will create a instance: fornaxcore"
+        gcloud compute instances create fornaxcore --project=quark-serverless --zone=us-central1-a --machine-type=e2-medium --network-interface=network-tier=PREMIUM,subnet=default --maintenance-policy=MIGRATE --provisioning-model=STANDARD --service-account=$account_number-compute@developer.gserviceaccount.com --scopes=https://www.googleapis.com/auth/cloud-platform --tags=http-server,https-server --create-disk=auto-delete=yes,boot=yes,device-name=instance-1,image=projects/ubuntu-os-cloud/global/images/ubuntu-2004-focal-v20220927,mode=rw,size=50,type=projects/quark-serverless/zones/us-central1-a/diskTypes/pd-ssd --no-shielded-secure-boot --shielded-vtpm --shielded-integrity-monitoring --reservation-affinity=any &
+    else
+        echo -e "instance: $inst already exist"
+    fi
+
+
+    # using for loop to create node agentinstance, for example: nodeagent1, 2, 3...
+    # instance_num=2
+    for ((i = 1; i<=$instance_num; i++))
+    do
+        instance_name='nodeagent-'$i
+        echo -e "created $instance_name \n"
+        gcloud compute instances create $instance_name --project=quark-serverless --zone=us-central1-a --machine-type=e2-medium --network-interface=network-tier=PREMIUM,subnet=default --maintenance-policy=MIGRATE --provisioning-model=STANDARD --service-account=$account_number-compute@developer.gserviceaccount.com --scopes=https://www.googleapis.com/auth/cloud-platform --tags=http-server,https-server --create-disk=auto-delete=yes,boot=yes,device-name=instance-1,image=projects/ubuntu-os-cloud/global/images/ubuntu-2004-focal-v20220927,mode=rw,size=50,type=projects/quark-serverless/zones/us-central1-a/diskTypes/pd-ssd --no-shielded-secure-boot --shielded-vtpm --shielded-integrity-monitoring --reservation-affinity=any &
+    done
+
+    echo "all instance created successfully." 
+}
+
+copy_ssh_key_to_project() {
+    # copy ssh key to the project
+    echo -e "## Copy ssh key to the project instance\n"
+    gcloud compute project-info add-metadata \
+    --metadata ssh-keys="$(gcloud compute project-info describe \
+    --format="value(commonInstanceMetadata.items.filter(key:ssh-keys).firstof(value))")
+    $(whoami):$(cat ~/.ssh/id_rsa.pub)"
+}
+
+delete_instance_by_number() {
+    # Enter the nodeagent number which you want to delete 
+    echo -e "## Enter nodeagent number which you want to delete in your test:"
+    read instance_num
+    echo -e "\n"
+
+    # delete virtual machine instance
+    gcloud compute instances delete fornaxcore --zone=us-central1-a
+
+    # instance_num=2
+    for ((i = 1; i<=$instance_num; i++))
+    do
+        instance_name='nodeagent-'$i
+        echo -e "delete $instance_name \n"
+        gcloud compute instances delete $instance_name --zone=us-central1-a --quiet &
+
+    done
+}

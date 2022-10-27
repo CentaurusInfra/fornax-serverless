@@ -247,12 +247,11 @@ nodeagent_build(){
     image_build
 	  echo '## RUN NODEAGENT To Connect to FORNAXCORE'
     echo '# Get Fornaxcore IP'
-    fornaxcoreip=`gcloud compute instances list --format='table(INTERNAL_IP)' --filter="name=davidzhu-fornaxcore" | awk '{if(NR==2) print $1}'`
+    fornaxcoreip=`gcloud compute instances list --format='table(INTERNAL_IP)' --filter="name=fornaxcore" | awk '{if(NR==2) print $1}'`
     echo "Fornaxcore IP is: $fornaxcoreip"
     sleep 3
 	  # following line command, put nodeagent run at background
 	  nohup sudo ./bin/nodeagent --fornaxcore-url fornaxcoreip:18001 --disable-swap=false >> nodeagent.logs 2>&1 &
-    # sudo ./bin/nodeagent --fornaxcore-url $fornaxcoreip:18001 --disable-swap=false
     echo -e "## DONE\n"
 }
 

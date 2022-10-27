@@ -41,7 +41,6 @@ kubectl_install(){
     fi
 }
 
-
 fornaxcore_deploy(){
     echo -e "## DEPLOY FORNAXCORE"
     cd ~/go/src/centaurusinfra.io/fornax-serverless

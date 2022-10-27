@@ -51,7 +51,7 @@ golang_tools(){
        export PATH=$PATH:/usr/local/go/bin
        echo -e "## DONE\n"
     else
-       echo -e "## go${GO_VERSION} already installed\n "
+       echo -e "## go${GO_VERSION} already installed\n "F
        export PATH=$PATH:/usr/local/go/bin
    fi
 }

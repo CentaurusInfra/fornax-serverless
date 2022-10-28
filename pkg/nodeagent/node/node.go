@@ -225,7 +225,6 @@ func LoadPodsFromContainerRuntime(runtimeService runtime.RuntimeService, db *sto
 					}
 					world.terminatedPods = append(world.terminatedPods, fornaxpod)
 				}
-				db.PutPod(fornaxpod)
 			} else {
 				// got error, can not make decision, will retry
 				return world, err

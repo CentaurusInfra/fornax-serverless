@@ -59,11 +59,11 @@ func (s *NodeStore) GetNode(identifier string) (*types.FornaxNodeWithRevision, e
 	}
 }
 
-func (s *NodeStore) PutNode(node *types.FornaxNodeWithRevision) error {
+func (s *NodeStore) PutNode(node *types.FornaxNodeWithRevision, revision int64) error {
 	if node == nil {
 		return fmt.Errorf("nil node is passed")
 	}
-	err := s.PutObject(node.Identifier, node)
+	err := s.PutObject(node.Identifier, node, revision)
 	if err != nil {
 		return err
 	}
@@ -92,11 +92,11 @@ func (s *PodStore) GetPod(identifier string) (*types.FornaxPod, error) {
 	}
 }
 
-func (s *PodStore) PutPod(pod *types.FornaxPod) error {
+func (s *PodStore) PutPod(pod *types.FornaxPod, revision int64) error {
 	if pod == nil {
 		return fmt.Errorf("nil pod is passed")
 	}
-	err := s.PutObject(string(pod.Identifier), pod)
+	err := s.PutObject(pod.Identifier, pod, revision)
 	if err != nil {
 		return err
 	}
@@ -125,11 +125,11 @@ func (s *SessionStore) GetSession(identifier string) (*types.FornaxSession, erro
 	}
 }
 
-func (s *SessionStore) PutSession(session *types.FornaxSession) error {
+func (s *SessionStore) PutSession(session *types.FornaxSession, revision int64) error {
 	if session == nil {
 		return fmt.Errorf("nil session is passed")
 	}
-	err := s.PutObject(session.Identifier, session)
+	err := s.PutObject(session.Identifier, session, revision)
 	if err != nil {
 		return err
 	}

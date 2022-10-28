@@ -23,7 +23,7 @@ import (
 	"sync"
 
 	"centaurusinfra.io/fornax-serverless/pkg/store/storage"
-	_ "github.com/mattn/go-sqlite3"
+	"github.com/mattn/go-sqlite3"
 )
 
 type sqLiteStore struct {
@@ -33,7 +33,8 @@ type sqLiteStore struct {
 	Table              string
 	TextToObjectFunc   storage.TextToObjectFunc
 	TextFromObjectFunc storage.TextFromObjectFunc
-	putStmt            *sql.Stmt
+	insStmt            *sql.Stmt
+	udpStmt            *sql.Stmt
 	delStmt            *sql.Stmt
 }
 
@@ -84,7 +85,7 @@ func (s *sqLiteStore) DelObject(identifier string) error {
 	return nil
 }
 
-func (s *sqLiteStore) PutObject(identifier string, obj interface{}) error {
+func (s *sqLiteStore) PutObject(identifier string, obj interface{}, revision int64) error {
 	var sqlobjtext []byte
 	var err error
 	if sqlobjtext, err = s.TextFromObjectFunc(obj); err != nil {
@@ -95,11 +96,28 @@ func (s *sqLiteStore) PutObject(identifier string, obj interface{}) error {
 		return err
 	}
 
-	stmt, err := s.getPutStmt()
+	stmt, err := s.getInsStmt()
 	if err != nil {
 		return err
 	}
-	_, err = stmt.Exec(identifier, sqlobjtext)
+	_, err = stmt.Exec(identifier, revision, sqlobjtext)
+	if err != nil {
+		if liteErr, ok := err.(sqlite3.Error); ok {
+			if liteErr.ExtendedCode != sqlite3.ErrConstraintPrimaryKey {
+				tx.Rollback()
+				return err
+			}
+		} else {
+			tx.Rollback()
+			return err
+		}
+	}
+
+	stmt, err = s.getUdpStmt()
+	if err != nil {
+		return err
+	}
+	_, err = stmt.Exec(identifier, revision, sqlobjtext, identifier, revision)
 	if err != nil {
 		tx.Rollback()
 		return err
@@ -109,17 +127,31 @@ func (s *sqLiteStore) PutObject(identifier string, obj interface{}) error {
 	return nil
 }
 
-func (s *sqLiteStore) getPutStmt() (*sql.Stmt, error) {
-	if s.putStmt != nil {
-		return s.putStmt, nil
+func (s *sqLiteStore) getInsStmt() (*sql.Stmt, error) {
+	if s.insStmt != nil {
+		return s.insStmt, nil
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	stmt, err := s.DB.Prepare(fmt.Sprintf("insert or replace into %s(identifier, content) values(?, ?)", s.Table))
+	stmt, err := s.DB.Prepare(fmt.Sprintf("insert into %s(identifier, revision, content) values(?, ?, ?)", s.Table))
 	if err != nil {
 		return nil, err
 	}
-	s.putStmt = stmt
+	s.insStmt = stmt
+	return stmt, err
+}
+
+func (s *sqLiteStore) getUdpStmt() (*sql.Stmt, error) {
+	if s.udpStmt != nil {
+		return s.udpStmt, nil
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	stmt, err := s.DB.Prepare(fmt.Sprintf("update %s set identifier = ?, revision =?, content =? where identifier = ? and revision < ?", s.Table))
+	if err != nil {
+		return nil, err
+	}
+	s.udpStmt = stmt
 	return stmt, err
 }
 
@@ -189,7 +221,7 @@ func (s *sqLiteStore) disconnect() error {
 }
 
 func (s *sqLiteStore) initTable() error {
-	sqlStmt := fmt.Sprintf("create table if not exists %s (identifier varchar(36) primary key, content text)", s.Table)
+	sqlStmt := fmt.Sprintf("create table if not exists %s (identifier varchar(36) primary key, revision integer, content text)", s.Table)
 	_, err := s.DB.Exec(sqlStmt)
 	if err != nil {
 		return fmt.Errorf("Failed to create sqlite table %s, cause %v", s.Table, err)

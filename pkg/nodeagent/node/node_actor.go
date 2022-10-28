@@ -396,8 +396,6 @@ func (n *FornaxNodeActor) createPodAndActor(state types.PodState, v1Pod *v1.Pod,
 
 	err = n.node.Dependencies.PodStore.PutPod(fpod, 0)
 	if err != nil {
-		// failed to save this pod
-		klog.ErrorS(err, "Failed to save FornaxPod", "namespace", v1Pod.Namespace, "name", v1Pod.Name)
 		return nil, nil, err
 	}
 

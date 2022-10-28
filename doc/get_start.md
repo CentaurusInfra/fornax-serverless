@@ -190,14 +190,14 @@ metadata:
 spec:
   scalingPolicy:
     minimumInstance: 1
-    maximumInstance: 30
+    maximumInstance: 10
     burst: 1
     scalingPolicyType: idle_session_number
     idleSessionNumThreshold:
       highWaterMark: 3
       lowWaterMark: 1
   containers:
-    - image: centaurusinfra.io/fornax-serverless/session-wrapper:v0.1.0
+    - image: 512811/sessionwrapper:latest
       name: echoserver
       env:
         - name: SESSION_WRAPPER_OPEN_SESSION_CMD
@@ -213,7 +213,7 @@ spec:
         - containerPort: 80
           name: echoserver
   configData:
-    config1: data1
+    configKey1: configValue1
 EOF
 ```
 

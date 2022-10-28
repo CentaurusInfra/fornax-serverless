@@ -23,6 +23,7 @@ import (
 	"centaurusinfra.io/fornax-serverless/pkg/nodeagent/types"
 	"centaurusinfra.io/fornax-serverless/pkg/store/storage"
 	"centaurusinfra.io/fornax-serverless/pkg/store/storage/sqlite"
+	"k8s.io/klog/v2"
 )
 
 type NodeStore struct {
@@ -98,6 +99,7 @@ func (s *PodStore) PutPod(pod *types.FornaxPod, revision int64) error {
 	}
 	err := s.PutObject(pod.Identifier, pod, revision)
 	if err != nil {
+		klog.ErrorS(err, "Failed to save FornaxPod", "name", pod.Identifier)
 		return err
 	}
 	return nil

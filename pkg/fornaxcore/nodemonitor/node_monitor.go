@@ -280,7 +280,6 @@ func (nm *nodeMonitor) updateOrCreateNode(nodeId string, v1node *v1.Node, revisi
 			NodeIdentifier: nodeId,
 			Revision:       revision,
 		})
-		// somehow node already register with other fornax cores
 		_, err := nm.nodeManager.CreateNode(nodeId, v1node)
 		if err != nil {
 			klog.ErrorS(err, "Failed to create a node", "node", v1node)

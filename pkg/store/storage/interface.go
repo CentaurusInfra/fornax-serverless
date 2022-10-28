@@ -30,19 +30,11 @@ type RevisionObject struct {
 	Revision int64
 }
 
-type StoreWithRevision interface {
-	ListObject(rev int64) ([]*RevisionObject, error)
-	DelObject(key string, rev int64) error
-	GetObject(key string) (*RevisionObject, error)
-	PutObject(key string, obj interface{}, rev int64) (int64, error)
-	Watch(key string, rev int64, updateCh chan *RevisionEvent) error
-}
-
 type Store interface {
 	ListObject() ([]interface{}, error)
 	DelObject(key string) error
 	GetObject(key string) (interface{}, error)
-	PutObject(key string, obj interface{}) error
+	PutObject(key string, obj interface{}, revision int64) error
 }
 
 type TextFromObjectFunc func(interface{}) ([]byte, error)

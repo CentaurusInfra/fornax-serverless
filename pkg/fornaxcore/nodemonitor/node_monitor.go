@@ -228,7 +228,6 @@ func (nm *nodeMonitor) OnPodStateUpdate(message *grpc.FornaxCoreMessage) (*grpc.
 	defer func() {
 		et := time.Now().UnixMicro()
 		klog.InfoS("Done update pod state", "pod", util.Name(podState.GetPod()), "took-micro", et-st)
-		// TODO post metrics
 	}()
 
 	nodeWRev := nm.nodes.get(nodeId.GetIdentifier())
@@ -242,6 +241,7 @@ func (nm *nodeMonitor) OnPodStateUpdate(message *grpc.FornaxCoreMessage) (*grpc.
 		klog.InfoS("Received a pod with same revision of current node, node probably send its state earlier with this revison, continue to handle single pod state", "pod", podState.Pod.Name)
 	}
 
+	nodeWRev.Revision = revision
 	sessions := []*fornaxv1.ApplicationSession{}
 	for _, v := range podState.GetSessionStates() {
 		session := &fornaxv1.ApplicationSession{}
@@ -249,8 +249,6 @@ func (nm *nodeMonitor) OnPodStateUpdate(message *grpc.FornaxCoreMessage) (*grpc.
 			sessions = append(sessions, session)
 		}
 	}
-
-	nodeWRev.Revision = revision
 	err := nm.nodeManager.UpdatePodState(nodeId.GetIdentifier(), podState.GetPod().DeepCopy(), sessions)
 	if err != nil {
 		klog.ErrorS(err, "Failed to update pod state", "pod", podState)

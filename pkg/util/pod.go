@@ -170,8 +170,8 @@ func GetPodResourceList(v1pod *v1.Pod) *v1.ResourceList {
 	return &resourceList
 }
 
-func MergePod(toPod, fromPod *v1.Pod) {
-	MergeObjectMeta(&toPod.ObjectMeta, &fromPod.ObjectMeta)
+func MergePod(fromPod, toPod *v1.Pod) {
+	MergeObjectMeta(&fromPod.ObjectMeta, &toPod.ObjectMeta)
 
 	if PodIsTerminated(fromPod) {
 		if toPod.DeletionTimestamp == nil {

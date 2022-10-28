@@ -68,32 +68,32 @@ func Name(obj interface{}) string {
 	return name
 }
 
-func MergeObjectMeta(oldMeta *metav1.ObjectMeta, newMeta *metav1.ObjectMeta) {
-	oldMeta.ResourceVersion = newMeta.ResourceVersion
+func MergeObjectMeta(fromMeta, toMeta *metav1.ObjectMeta) {
+	toMeta.ResourceVersion = fromMeta.ResourceVersion
 
 	labels := map[string]string{}
-	for k, v := range oldMeta.GetLabels() {
+	for k, v := range toMeta.GetLabels() {
 		labels[k] = v
 	}
-	for k, v := range newMeta.GetLabels() {
+	for k, v := range fromMeta.GetLabels() {
 		labels[k] = v
 	}
-	oldMeta.Labels = labels
+	toMeta.Labels = labels
 
 	annotations := map[string]string{}
-	for k, v := range oldMeta.GetAnnotations() {
+	for k, v := range toMeta.GetAnnotations() {
 		annotations[k] = v
 	}
-	for k, v := range newMeta.GetAnnotations() {
+	for k, v := range fromMeta.GetAnnotations() {
 		annotations[k] = v
 	}
-	oldMeta.Annotations = annotations
+	toMeta.Annotations = annotations
 
-	if newMeta.DeletionTimestamp != nil && oldMeta.DeletionTimestamp == nil {
-		oldMeta.DeletionTimestamp = newMeta.DeletionTimestamp
+	if fromMeta.DeletionTimestamp != nil && toMeta.DeletionTimestamp == nil {
+		toMeta.DeletionTimestamp = fromMeta.DeletionTimestamp
 	}
 
-	if newMeta.DeletionGracePeriodSeconds != nil && oldMeta.DeletionGracePeriodSeconds == nil {
-		oldMeta.DeletionGracePeriodSeconds = newMeta.DeletionGracePeriodSeconds
+	if fromMeta.DeletionGracePeriodSeconds != nil && toMeta.DeletionGracePeriodSeconds == nil {
+		toMeta.DeletionGracePeriodSeconds = fromMeta.DeletionGracePeriodSeconds
 	}
 }

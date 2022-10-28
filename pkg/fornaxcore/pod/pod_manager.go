@@ -278,12 +278,12 @@ func (pm *podManager) AddPod(nodeId string, pod *v1.Pod) (*v1.Pod, error) {
 					return nil, err
 				}
 			}
+			util.MergePod(pod, podInCache)
 			switch {
 			case util.PodIsTerminated(pod):
 				pm.podStateMap.deletePod(fornaxPodState)
 				pm.podUpdates <- &ie.PodEvent{NodeId: nodeId, Pod: podInCache.DeepCopy(), Type: ie.PodEventTypeTerminate}
 			default:
-				util.MergePod(podInCache, pod)
 				fornaxPodState.v1pod = podInCache.DeepCopy()
 				fornaxPodState.nodeId = nodeId
 				pm.podUpdates <- &ie.PodEvent{NodeId: nodeId, Pod: podInCache.DeepCopy(), Type: ie.PodEventTypeUpdate}

@@ -158,3 +158,8 @@ delete_instance_by_number() {
 
     done
 }
+
+run_bash(){
+     ssh -t ubuntu@$name "bash $HOME/nodeagent_deploy.sh" > /dev/null 2>&1 &
+     gcloud compute ssh $name  --zone=us-central1-a -- bash -s < $HOME/nodeagent_deploy.sh > /dev/null 2>&1 &
+}

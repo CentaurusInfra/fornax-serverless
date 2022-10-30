@@ -50,8 +50,8 @@ func init() {
 func main() {
 	// initialize fornax resource memory store
 	ctx := context.Background()
-	appStatusStore := factory.NewFornaxApplicationStatusStorage()
-	appSessionStore := factory.NewFornaxApplicationSessionStorage()
+	appStatusStore := factory.NewFornaxApplicationStatusStorage(ctx)
+	appSessionStore := factory.NewFornaxApplicationSessionStorage(ctx)
 
 	// new fornaxcore grpc grpcServer which implement node agent proxy
 	grpcServer := grpc_server.NewGrpcServer()

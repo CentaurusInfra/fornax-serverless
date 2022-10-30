@@ -36,8 +36,8 @@ import (
 var _ ie.NodeMonitorInterface = &nodeMonitor{}
 
 type NodeWithRevision struct {
-	NodeIdentifier string
-	Revision       int64
+	NodeId   string
+	Revision int64
 }
 
 type NodeRevisionMap struct {
@@ -122,8 +122,8 @@ func (nm *nodeMonitor) OnRegistry(message *grpc.FornaxCoreMessage) (*grpc.Fornax
 	// on node register, we reset revision
 	if nodeWRev := nm.nodes.get(nodeId); nodeWRev == nil {
 		nm.nodes.add(nodeId, &NodeWithRevision{
-			NodeIdentifier: nodeId,
-			Revision:       revision,
+			NodeId:   nodeId,
+			Revision: revision,
 		})
 	} else {
 		currRevision := nodeWRev.Revision
@@ -182,8 +182,8 @@ func (nm *nodeMonitor) OnNodeDisconnect(nodeId string) error {
 		nm.staleNodes.add(nodeId, nodeWRev)
 	} else {
 		nm.staleNodes.add(nodeId, &NodeWithRevision{
-			NodeIdentifier: nodeId,
-			Revision:       0,
+			NodeId:   nodeId,
+			Revision: 0,
 		})
 	}
 	nm.nodeManager.DisconnectNode(nodeId)
@@ -223,7 +223,7 @@ func (nm *nodeMonitor) OnPodStateUpdate(message *grpc.FornaxCoreMessage) (*grpc.
 	podState := message.GetPodState()
 	revision := podState.GetNodeRevision()
 	nodeId := message.GetNodeIdentifier()
-	klog.InfoS("Received a pod state", "pod", util.Name(podState.GetPod()), "fornax state", podState.GetState(), "pod phase", podState.GetPod().Status.Phase, "condition", k8spodutil.IsPodReady(podState.GetPod()), "node revision", revision)
+	klog.InfoS("Received a pod state", "nodeId", nodeId, "pod", util.Name(podState.GetPod()), "pod phase", podState.GetPod().Status.Phase, "condition", k8spodutil.IsPodReady(podState.GetPod()), "node revision", revision)
 	st := time.Now().UnixMicro()
 	defer func() {
 		et := time.Now().UnixMicro()
@@ -266,7 +266,7 @@ func (nm *nodeMonitor) validateNodeRevision(nodeWRev *NodeWithRevision, revision
 	if revision == currRevision+1 || revision == currRevision {
 		// ok
 	} else {
-		klog.Warningf("Received a disordred revision from node agent, fornax core revision: %d, received revision: %d", currRevision, revision)
+		klog.Warningf("Received a disordred revision from node %s, fornax core revision: %d, received revision: %d", nodeWRev.NodeId, currRevision, revision)
 		return nodeagent.NodeRevisionOutOfOrderError
 	}
 	return nil
@@ -275,8 +275,8 @@ func (nm *nodeMonitor) validateNodeRevision(nodeWRev *NodeWithRevision, revision
 func (nm *nodeMonitor) updateOrCreateNode(nodeId string, v1node *v1.Node, revision int64, podStates []*grpc.PodState) error {
 	if nodeWRev := nm.nodes.get(nodeId); nodeWRev == nil {
 		nm.nodes.add(nodeId, &NodeWithRevision{
-			NodeIdentifier: nodeId,
-			Revision:       revision,
+			NodeId:   nodeId,
+			Revision: revision,
 		})
 		_, err := nm.nodeManager.CreateNode(nodeId, v1node)
 		if err != nil {

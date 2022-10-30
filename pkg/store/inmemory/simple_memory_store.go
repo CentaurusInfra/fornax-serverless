@@ -46,6 +46,7 @@ import (
 type MemoryStore struct {
 	versioner        apistorage.Versioner
 	revmu            sync.RWMutex
+	stopChannel      chan interface{}
 	kvs              *objStoreMap
 	revSortedObjList *objList
 	groupResource    schema.GroupResource
@@ -65,32 +66,47 @@ var (
 	_MemoryRev = uint64(2<<61) + uint64(time.Now().UnixNano())
 )
 
-// DefaultObjRevListSize must lager than DefaultObjRevListGrowThread, when revSortedObjList is filled up with empty slot less than DefaultObjRevListGrowThreashold, grow it DefaultObjRevListGrowThreashold
+// DefaultObjRevListInitSize must lager than DefaultObjRevListGrowThread, when revSortedObjList is filled up with empty slot less than DefaultObjRevListGrowThreashold, grow it DefaultObjRevListGrowThreashold
 const (
-	DefaultObjRevListSize           = 20000
+	DefaultObjRevListInitSize       = 20000
 	DefaultObjRevListGrowThreashold = 10000
 	NilSlotShrinkLowThrehold        = 10000
 	NilSlotShrinkHighThrehold       = 20000
+	DefaultHouseKeepingInterval     = 60 * time.Second
 )
 
 // NewMemoryStore return a singleton storage.Interface for a groupResource
-func NewMemoryStore(groupResource schema.GroupResource, grvKeyPrefix string, newFunc func() runtime.Object, newListFunc func() runtime.Object) *MemoryStore {
+func NewMemoryStore(ctx context.Context, groupResource schema.GroupResource, grvKeyPrefix string, newFunc func() runtime.Object, newListFunc func() runtime.Object) *MemoryStore {
 	key := groupResource.String()
 	klog.InfoS("New or Get a in memory store for", "resource", key)
 	si := &MemoryStore{
 		versioner:   store.APIObjectVersioner{},
 		revmu:       sync.RWMutex{},
+		stopChannel: make(chan interface{}),
 		newFunc:     newFunc,
 		newListFunc: newListFunc,
 		kvs:         &objStoreMap{mu: sync.RWMutex{}, kvs: map[string]objMapOrObj{}},
 		revSortedObjList: &objList{
-			objs:         make([]*objWithIndex, DefaultObjRevListSize),
+			objs:         make([]*objWithIndex, DefaultObjRevListInitSize),
 			lastObjIndex: 0,
 		},
 		grvKeyPrefix:  grvKeyPrefix, // resource key prefix, every key should start with it
 		groupResource: groupResource,
 		watchers:      []*memoryStoreWatcher{},
 	}
+	ticker := time.NewTicker(DefaultHouseKeepingInterval)
+	go func() {
+		for {
+			select {
+			case <-ticker.C:
+				si.houseKeeping()
+			case <-si.stopChannel:
+				return
+			case <-ctx.Done():
+				return
+			}
+		}
+	}()
 	return si
 }
 
@@ -112,6 +128,19 @@ func (ms *MemoryStore) CompleteWithFunctions(
 	return nil
 }
 
+func (ms *MemoryStore) houseKeeping() {
+	ms.revmu.Lock()
+	defer ms.revmu.Unlock()
+	klog.InfoS("Shrink revSortedObjList before", "size", ms.revSortedObjList.Len(), "last index", ms.revSortedObjList.lastObjIndex)
+	st := time.Now().UnixMicro()
+	c, _ := ms.kvs.count([]string{})
+	if ms.revSortedObjList.lastObjIndex > uint64(c+NilSlotShrinkHighThrehold) {
+		ms.revSortedObjList.shrink(uint64(c + NilSlotShrinkLowThrehold))
+	}
+	et := time.Now().UnixMicro()
+	klog.InfoS("shrink revSortedObjList after", "size", ms.revSortedObjList.Len(), "last index", ms.revSortedObjList.lastObjIndex, "took-micro", et-st)
+}
+
 func (ms *MemoryStore) getKey(obj runtime.Object) (string, error) {
 	if ms.keyFunc != nil {
 		return ms.keyFunc(obj)
@@ -123,6 +152,7 @@ func (ms *MemoryStore) getKey(obj runtime.Object) (string, error) {
 
 // Stop cleanup memory
 func (ms *MemoryStore) Stop() error {
+	ms.stopChannel <- "stop"
 	return nil
 }
 
@@ -388,10 +418,10 @@ func (ms *MemoryStore) GetList(ctx context.Context, key string, opts apistorage.
 	hasMore := false
 	lastKey := ""
 	lastRev := withRV
-	objBufferLen := atomic.LoadUint64(&ms.revSortedObjList.lastObjIndex)
 	err = func() error {
 		ms.revmu.RLock()
 		defer ms.revmu.RUnlock()
+		objBufferLen := atomic.LoadUint64(&ms.revSortedObjList.lastObjIndex)
 		for i := startingIndex; i < objBufferLen; i++ {
 			v := ms.revSortedObjList.objs[i]
 			// deleted object are also in list, ignore it for GetList call, but deleted object will be returned in watch call
@@ -778,12 +808,6 @@ func (ms *MemoryStore) sendEvent(event *objEvent) {
 func (ms *MemoryStore) reserveRevAndSlot() (uint64, uint64, error) {
 	ms.revmu.Lock()
 	defer ms.revmu.Unlock()
-	// c, _ := ms.kvs.count([]string{})
-	// if ms.revSortedObjList.lastObjIndex > uint64(c+NilSlotShrinkHighThrehold) {
-	//  klog.InfoS("GWJ, shrink revSortedObjList before", "size", ms.revSortedObjList.Len(), "last index", ms.revSortedObjList.lastObjIndex)
-	//  ms.revSortedObjList.shrink(uint64(c + NilSlotShrinkLowThrehold))
-	//  klog.InfoS("GWJ, shrink revSortedObjList after", "size", ms.revSortedObjList.Len(), "last index", ms.revSortedObjList.lastObjIndex)
-	// }
 	rev := atomic.AddUint64(&_MemoryRev, 1)
 	uindex := atomic.AddUint64(&ms.revSortedObjList.lastObjIndex, 1)
 	if uint64(ms.revSortedObjList.Len()) < uindex+DefaultObjRevListGrowThreashold {

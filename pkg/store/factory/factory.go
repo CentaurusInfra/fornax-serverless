@@ -90,22 +90,22 @@ func JsonFromApplication(obj interface{}) ([]byte, error) {
 	return bytes, nil
 }
 
-func NewFornaxApplicationStatusStorage() *inmemory.MemoryStore {
-	return newFornaxStorage(fornaxv1.ApplicationGrv.GroupResource(), fornaxv1.ApplicationGrvKey, nil, nil)
+func NewFornaxApplicationStatusStorage(ctx context.Context) *inmemory.MemoryStore {
+	return newFornaxStorage(ctx, fornaxv1.ApplicationGrv.GroupResource(), fornaxv1.ApplicationGrvKey, nil, nil)
 }
 
-func NewFornaxApplicationSessionStorage() *inmemory.MemoryStore {
-	return newFornaxStorage(fornaxv1.ApplicationSessionGrv.GroupResource(), fornaxv1.ApplicationSessionGrvKey, nil, nil)
+func NewFornaxApplicationSessionStorage(ctx context.Context) *inmemory.MemoryStore {
+	return newFornaxStorage(ctx, fornaxv1.ApplicationSessionGrv.GroupResource(), fornaxv1.ApplicationSessionGrvKey, nil, nil)
 }
 
-func newFornaxStorage(groupResource schema.GroupResource, grvKey string, newFunc func() runtime.Object, newListFunc func() runtime.Object) *inmemory.MemoryStore {
+func newFornaxStorage(ctx context.Context, groupResource schema.GroupResource, grvKey string, newFunc func() runtime.Object, newListFunc func() runtime.Object) *inmemory.MemoryStore {
 	_FornaxInMemoryStoresMutex.Lock()
 	defer _FornaxInMemoryStoresMutex.Unlock()
 	key := groupResource.String()
 	if si, found := _InMemoryResourceStores[key]; found {
 		return si
 	} else {
-		si = inmemory.NewMemoryStore(groupResource, grvKey, newFunc, newListFunc)
+		si = inmemory.NewMemoryStore(ctx, groupResource, grvKey, newFunc, newListFunc)
 		_InMemoryResourceStores[key] = si
 		return si
 	}
@@ -133,7 +133,7 @@ func CompositedFornaxApplicationStorageFunc(
 	if err != nil {
 		return specStore, persistStoreDestroyFunc, err
 	}
-	statusStore := NewFornaxApplicationStatusStorage()
+	statusStore := NewFornaxApplicationStatusStorage(context.Background())
 	statusStore.CompleteWithFunctions(keyFunc, newFunc, newListFunc, getAttrsFunc, triggerFuncs, indexers)
 	destroyFunc := func() {
 		persistStoreDestroyFunc()

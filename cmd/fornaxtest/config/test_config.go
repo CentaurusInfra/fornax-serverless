@@ -26,6 +26,7 @@ type TestConfiguration struct {
 	NumOfBurstPodsPerApp int
 	NumOfInitPodsPerApp  int
 	NumOfSessionPerApp   int
+	AppNamePrefix        string
 }
 
 type TestCase string
@@ -43,6 +44,7 @@ func AddConfigFlags(flagSet *pflag.FlagSet, simuConfig *TestConfiguration) {
 	flagSet.IntVar(&simuConfig.NumOfBurstPodsPerApp, "num-of-burst-pod-per-app", simuConfig.NumOfBurstPodsPerApp, "how many applications pods are allow to create at same time for a app")
 	flagSet.IntVar(&simuConfig.NumOfSessionPerApp, "num-of-session-per-app", simuConfig.NumOfSessionPerApp, "how many application sessions are created for a app")
 	flagSet.IntVar(&simuConfig.NumOfTestCycle, "num-of-test-cycle", simuConfig.NumOfSessionPerApp, "how many test run before exit")
+	flagSet.StringVar(&simuConfig.AppNamePrefix, "app-name-prefix", simuConfig.AppNamePrefix, "app name prefix")
 }
 
 func DefaultConfiguration() *TestConfiguration {
@@ -53,5 +55,6 @@ func DefaultConfiguration() *TestConfiguration {
 		NumOfBurstPodsPerApp: 2,
 		NumOfSessionPerApp:   1,
 		NumOfTestCycle:       1,
+		AppNamePrefix:        "echo",
 	}
 }

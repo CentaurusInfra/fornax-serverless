@@ -138,10 +138,10 @@ func Run(ctx context.Context, testConfig config.TestConfiguration) {
 		}()
 	}
 
-	RunTest := func(namespace, appName, randAppName string) {
+	RunTest := func(namespace, appName, randSessionPrefix string) {
 		klog.Infof("--------App %s Test begin--------\n", appName)
 		for i := 1; i <= testConfig.NumOfTestCycle; i++ {
-			cycleName := fmt.Sprintf("%s-cycle-%d", randAppName, i)
+			cycleName := fmt.Sprintf("%s-c-%d", randSessionPrefix, i)
 			switch testConfig.TestCase {
 			case config.AppFullCycleTest:
 				runAppFullCycleTest(cycleName, namespace, appName, testConfig)
@@ -153,15 +153,16 @@ func Run(ctx context.Context, testConfig config.TestConfiguration) {
 		}
 		klog.Infof("--------App %s Test end----------\n\n", appName)
 	}
+
 	// start to test all apps
-	randAppName := rand.String(16)
+	randSessionName := rand.String(16)
 	wgAppTest := sync.WaitGroup{}
 	for i := 0; i < testConfig.NumOfApps; i++ {
 		wgAppTest.Add(1)
-		appName := fmt.Sprintf("echoserver%d", i)
+		appName := fmt.Sprintf("%s%d", testConfig.AppNamePrefix, i)
 		klog.Infof("Run test app %s", appName)
 		go func(app string) {
-			RunTest(ns, app, randAppName)
+			RunTest(ns, app, randSessionName)
 			wgAppTest.Done()
 		}(appName)
 	}

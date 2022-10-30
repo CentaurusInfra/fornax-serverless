@@ -17,6 +17,7 @@ limitations under the License.
 package store
 
 import (
+	"fmt"
 	"os"
 	"reflect"
 	"testing"
@@ -29,7 +30,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-func NewATestSession(id string) *fornaxtypes.FornaxSession {
+func NewATestSession(id string, revision uint64) *fornaxtypes.FornaxSession {
 	testSession := fornaxtypes.FornaxSession{
 		Identifier:    id,
 		PodIdentifier: id,
@@ -42,7 +43,7 @@ func NewATestSession(id string) *fornaxtypes.FornaxSession {
 				Name:            id,
 				GenerateName:    id,
 				Namespace:       "test",
-				ResourceVersion: "123",
+				ResourceVersion: fmt.Sprintf("%d", revision),
 				Generation:      0,
 			},
 			Spec:   fornaxv1.ApplicationSessionSpec{},
@@ -52,7 +53,7 @@ func NewATestSession(id string) *fornaxtypes.FornaxSession {
 	return &testSession
 }
 
-func NewATestPod(id string) *fornaxtypes.FornaxPod {
+func NewATestPod(id string, revision int64) *fornaxtypes.FornaxPod {
 	testPod := fornaxtypes.FornaxPod{
 		Identifier:     id,
 		FornaxPodState: "PodStateCreated",
@@ -65,7 +66,7 @@ func NewATestPod(id string) *fornaxtypes.FornaxPod {
 				Name:            id,
 				Namespace:       "test",
 				GenerateName:    id,
-				ResourceVersion: "123",
+				ResourceVersion: fmt.Sprintf("%d", revision),
 				Generation:      0,
 			},
 			Spec:   v1.PodSpec{},
@@ -117,8 +118,8 @@ func TestPodStore_GetPod(t *testing.T) {
 		ConnUrl: "./test.db",
 	})
 	defer os.Remove("./test.db")
-	testPod := NewATestPod("testPod1")
-	store.PutPod(testPod)
+	testPod := NewATestPod("testPod1", 1)
+	store.PutPod(testPod, 1)
 
 	tests := []struct {
 		name       string
@@ -153,28 +154,78 @@ func TestPodStore_GetPod(t *testing.T) {
 	}
 }
 
-func TestPodStore_PutPod(t *testing.T) {
+func TestPodStore_PutPod_Updated(t *testing.T) {
 	store, _ := NewPodSqliteStore(&sqlite.SQLiteStoreOptions{
 		ConnUrl: "./test.db",
 	})
 	defer os.Remove("./test.db")
-	testPod := NewATestPod("testPod1")
-	testPod2 := NewATestPod("testPod1")
+	testPod := NewATestPod("testPod1", 1)
+	testPod.FornaxPodState = "PodStateRunning"
+	testPod2 := NewATestPod("testPod1", 2)
 	testPod2.FornaxPodState = "PodStateTerminated"
 	tests := []struct {
-		name    string
-		args    *fornaxtypes.FornaxPod
-		wantErr bool
+		name     string
+		args     *fornaxtypes.FornaxPod
+		revision int64
+		wantErr  bool
 	}{
 		{
-			name:    "goodput",
-			args:    testPod,
-			wantErr: false,
+			name:     "goodput",
+			args:     testPod,
+			revision: 1,
+			wantErr:  false,
 		},
 		{
-			name:    "duplicateReplace",
-			args:    testPod2,
-			wantErr: false,
+			name:     "duplicateReplace",
+			args:     testPod2,
+			revision: 2,
+			wantErr:  false,
+		},
+		{
+			name:     "nilobj",
+			args:     nil,
+			revision: 2,
+			wantErr:  true,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if err := store.PutPod(tt.args, tt.revision); (err != nil) != tt.wantErr {
+				t.Errorf("PodStore.PutPod() error = %v, wantErr %v", err, tt.wantErr)
+			}
+		})
+	}
+	if s, err := store.GetPod("testPod1"); err != nil || s == nil || s.Pod.ResourceVersion != testPod2.Pod.ResourceVersion || s.FornaxPodState != testPod2.FornaxPodState {
+		t.Error("pod is not updated although revision is bumped")
+	}
+}
+
+func TestPodStore_PutPod_NotUpdated(t *testing.T) {
+	store, _ := NewPodSqliteStore(&sqlite.SQLiteStoreOptions{
+		ConnUrl: "./test.db",
+	})
+	defer os.Remove("./test.db")
+	testPod := NewATestPod("testPod1", 1)
+	testPod.FornaxPodState = "PodStateRunning"
+	testPod2 := NewATestPod("testPod1", 2)
+	testPod2.FornaxPodState = "PodStateTerminated"
+	tests := []struct {
+		name     string
+		args     *fornaxtypes.FornaxPod
+		revision int64
+		wantErr  bool
+	}{
+		{
+			name:     "goodput",
+			args:     testPod,
+			revision: 1,
+			wantErr:  false,
+		},
+		{
+			name:     "duplicateReplace",
+			args:     testPod2,
+			revision: 1,
+			wantErr:  false,
 		},
 		{
 			name:    "nilobj",
@@ -184,10 +235,14 @@ func TestPodStore_PutPod(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if err := store.PutPod(tt.args); (err != nil) != tt.wantErr {
+			if err := store.PutPod(tt.args, tt.revision); (err != nil) != tt.wantErr {
 				t.Errorf("PodStore.PutPod() error = %v, wantErr %v", err, tt.wantErr)
 			}
 		})
+	}
+
+	if s, err := store.GetPod("testPod1"); err != nil || s == nil || s.Pod.ResourceVersion != testPod.Pod.ResourceVersion || s.FornaxPodState != testPod.FornaxPodState {
+		t.Error("pod is updated although revision is not bumped")
 	}
 }
 
@@ -231,8 +286,8 @@ func TestSessionStore_GetSession(t *testing.T) {
 		ConnUrl: "./test.db",
 	})
 	defer os.Remove("./test.db")
-	testSession := NewATestSession("session1")
-	store.PutSession(testSession)
+	testSession := NewATestSession("session1", 1)
+	store.PutSession(testSession, 1)
 
 	tests := []struct {
 		name       string
@@ -267,36 +322,84 @@ func TestSessionStore_GetSession(t *testing.T) {
 	}
 }
 
-func TestSessionStore_PutSession(t *testing.T) {
+func TestSessionStore_PutSession_Updated(t *testing.T) {
 	store, _ := NewSessionSqliteStore(&sqlite.SQLiteStoreOptions{
 		ConnUrl: "./test.db",
 	})
 	defer os.Remove("./test.db")
 
-	testSession := NewATestSession("session1")
-	testSession2 := NewATestSession("session2")
+	testSession := NewATestSession("session1", 1)
+	testSession.Session.Status.SessionStatus = fornaxv1.SessionStatusAvailable
+	testSession2 := NewATestSession("session1", 2)
 	testSession2.Session.Status.SessionStatus = fornaxv1.SessionStatusClosed
 	tests := []struct {
-		name    string
-		session *fornaxtypes.FornaxSession
-		wantErr bool
+		name     string
+		session  *fornaxtypes.FornaxSession
+		revision int64
+		wantErr  bool
 	}{
 		{
-			name:    "put",
-			session: testSession,
-			wantErr: false,
+			name:     "put",
+			session:  testSession,
+			revision: 1,
+			wantErr:  false,
 		},
 		{
-			name:    "duplicateError",
-			session: testSession,
-			wantErr: false,
+			name:     "upd",
+			session:  testSession2,
+			revision: 2,
+			wantErr:  false,
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if err := store.PutSession(tt.session); (err != nil) != tt.wantErr {
+			if err := store.PutSession(tt.session, tt.revision); (err != nil) != tt.wantErr {
 				t.Errorf("SessionStore.PutSession() error = %v, wantErr %v", err, tt.wantErr)
 			}
 		})
+	}
+	if s, err := store.GetSession("session1"); err != nil || s == nil || s.Session.ResourceVersion != testSession2.Session.ResourceVersion || s.Session.Status.SessionStatus != testSession2.Session.Status.SessionStatus {
+		t.Error("session is not updated, although revision changed")
+	}
+}
+
+func TestSessionStore_PutSession_NotUpdated(t *testing.T) {
+	store, _ := NewSessionSqliteStore(&sqlite.SQLiteStoreOptions{
+		ConnUrl: "./test.db",
+	})
+	defer os.Remove("./test.db")
+
+	testSession := NewATestSession("session1", 1)
+	testSession.Session.Status.SessionStatus = fornaxv1.SessionStatusAvailable
+	testSession2 := NewATestSession("session1", 1)
+	testSession2.Session.Status.SessionStatus = fornaxv1.SessionStatusClosed
+	tests := []struct {
+		name     string
+		session  *fornaxtypes.FornaxSession
+		revision int64
+		wantErr  bool
+	}{
+		{
+			name:     "put",
+			session:  testSession,
+			revision: 1,
+			wantErr:  false,
+		},
+		{
+			name:     "upd",
+			session:  testSession2,
+			revision: 1,
+			wantErr:  false,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if err := store.PutSession(tt.session, tt.revision); (err != nil) != tt.wantErr {
+				t.Errorf("SessionStore.PutSession() error = %v, wantErr %v", err, tt.wantErr)
+			}
+		})
+	}
+	if s, err := store.GetSession("session1"); err != nil || s == nil || s.Session.ResourceVersion != testSession.Session.ResourceVersion || s.Session.Status.SessionStatus != testSession.Session.Status.SessionStatus {
+		t.Error("session is updated although revision is not changed")
 	}
 }

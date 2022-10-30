@@ -25,15 +25,16 @@ import (
 	"centaurusinfra.io/fornax-serverless/pkg/nodeagent/types"
 	fornaxtypes "centaurusinfra.io/fornax-serverless/pkg/nodeagent/types"
 	"centaurusinfra.io/fornax-serverless/pkg/util"
+	v1 "k8s.io/api/core/v1"
 	criv1 "k8s.io/cri-api/pkg/apis/runtime/v1"
 )
 
-func BuildFornaxcoreGrpcPodStateForTerminatedPod(nodeRevision int64, pod *fornaxtypes.FornaxPod) *grpc.FornaxCoreMessage {
+func BuildFornaxcoreGrpcPodStateForFailedPod(nodeRevision int64, pod *v1.Pod) *grpc.FornaxCoreMessage {
 	state := grpc.PodState_Terminated
 	s := grpc.PodState{
 		NodeRevision: nodeRevision,
 		State:        state,
-		Pod:          pod.Pod.DeepCopy(),
+		Pod:          pod.DeepCopy(),
 		Resource:     &grpc.PodResource{},
 	}
 	messageType := grpc.MessageType_POD_STATE

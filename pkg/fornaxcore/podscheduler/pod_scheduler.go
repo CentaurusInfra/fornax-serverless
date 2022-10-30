@@ -160,7 +160,8 @@ func (ps *podScheduler) bindNode(snode *SchedulableNode, pod *v1.Pod) error {
 
 	// set pod status
 	pod.Status.StartTime = util.NewCurrentMetaTime()
-	pod.Status.HostIP = snode.Node.Status.Addresses[0].Address
+	// when pod is scheduled but not returned from node, use it's host ip to help release resource
+	pod.Status.HostIP = snode.NodeId
 	pod.Status.Message = "Scheduled"
 	pod.Status.Reason = "Scheduled"
 
@@ -168,7 +169,6 @@ func (ps *podScheduler) bindNode(snode *SchedulableNode, pod *v1.Pod) error {
 	err := ps.nodeAgentClient.CreatePod(nodeId, pod)
 	if err != nil {
 		klog.ErrorS(err, "Failed to bind pod, reschedule", "node", nodeId, "pod", podName)
-		ps.unbindNode(snode, pod)
 		return err
 	}
 
@@ -279,15 +279,13 @@ func (ps *podScheduler) updateNodePool(nodeId string, v1node *v1.Node, updateTyp
 	}
 }
 
-func (ps *podScheduler) updatePodOccupiedResourceList(snode *SchedulableNode, v1pod *v1.Pod, updateType ie.PodEventType) {
+func (ps *podScheduler) updatePodOccupiedResourceList(snode *SchedulableNode, pod *v1.Pod, updateType ie.PodEventType) {
 	switch updateType {
 	case ie.PodEventTypeDelete, ie.PodEventTypeTerminate:
-		// if pod deleted or disappear, remove it from preoccupied list
-		resourceList := util.GetPodResourceList(v1pod)
+		resourceList := util.GetPodResourceList(pod)
 		snode.ReleasePodOccupiedResourceList(resourceList)
-		// TODO, if there are pod in backoff queue with similar resource req, notify to try schedule
 	case ie.PodEventTypeCreate:
-		resourceList := util.GetPodResourceList(v1pod)
+		resourceList := util.GetPodResourceList(pod)
 		snode.AdmitPodOccupiedResourceList(resourceList)
 	}
 }
@@ -295,7 +293,7 @@ func (ps *podScheduler) updatePodOccupiedResourceList(snode *SchedulableNode, v1
 func (ps *podScheduler) printScheduleSummary() {
 	activeNum, retryNum := ps.scheduleQueue.Length()
 	klog.InfoS("Scheduler summary", "active queue length", activeNum, "backoff queue length", retryNum, "available nodes", ps.nodePool.size(), "schedulers", len(ps.schedulers))
-	// ps.nodePool.printSummary()
+	ps.nodePool.printSummary()
 }
 
 type nodeChunkScheduler struct {
@@ -426,9 +424,14 @@ func (ps *podScheduler) Run() {
 				ps.stop = true
 				return
 			case update := <-ps.podUpdateCh:
-				if len(update.NodeId) != 0 {
-					snode := ps.nodePool.GetNode(update.NodeId)
+				nodeId := update.NodeId
+				if len(nodeId) == 0 {
+					nodeId = update.Pod.Status.HostIP
+				}
+				if len(nodeId) != 0 {
+					snode := ps.nodePool.GetNode(nodeId)
 					if snode != nil {
+						// update resource list only if pod event is from node
 						ps.updatePodOccupiedResourceList(snode, update.Pod, update.Type)
 					}
 				}

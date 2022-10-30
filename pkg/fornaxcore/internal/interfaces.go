@@ -57,7 +57,7 @@ type NodeManagerInterface interface {
 	NodeInfoProviderInterface
 	UpdateSessionState(nodeId string, session *fornaxv1.ApplicationSession) error
 	UpdatePodState(nodeId string, pod *v1.Pod, sessions []*fornaxv1.ApplicationSession) error
-	SyncNodePodStates(nodeId string, podStates []*grpc.PodState, minimalResourceRevision int64)
+	SyncNodePodStates(nodeId string, podStates []*grpc.PodState)
 	DisconnectNode(nodeId string) error
 	FindNode(name string) *FornaxNodeWithState
 	CreateNode(nodeId string, node *v1.Node) (*FornaxNodeWithState, error)

@@ -76,6 +76,7 @@ type nodeMonitor struct {
 
 // OnSessionUpdate implements server.NodeMonitor
 func (nm *nodeMonitor) OnSessionUpdate(message *grpc.FornaxCoreMessage) (*grpc.FornaxCoreMessage, error) {
+	st := time.Now().UnixMicro()
 	sessionState := message.GetSessionState()
 	revision := sessionState.GetNodeRevision()
 	nodeId := message.GetNodeIdentifier().GetIdentifier()
@@ -84,12 +85,9 @@ func (nm *nodeMonitor) OnSessionUpdate(message *grpc.FornaxCoreMessage) (*grpc.F
 		klog.ErrorS(err, "Malformed SessionData, is not a valid fornaxv1.ApplicationSession object")
 		return nil, err
 	}
-	klog.InfoS("Received a session state", "node", nodeId, "session", util.Name(session), "node revision", revision, "status", session.Status)
-	st := time.Now().UnixMicro()
 	defer func() {
 		et := time.Now().UnixMicro()
-		klog.InfoS("Done update session state", "session", util.Name(session), "took-micro", et-st)
-		// TODO post metrics
+		klog.InfoS("Done Received a session state", "node", nodeId, "session", util.Name(session), "node revision", revision, "status", session.Status, "took-micro", et-st)
 	}()
 
 	nodeWRev := nm.nodes.get(nodeId)
@@ -230,7 +228,6 @@ func (nm *nodeMonitor) OnPodStateUpdate(message *grpc.FornaxCoreMessage) (*grpc.
 	defer func() {
 		et := time.Now().UnixMicro()
 		klog.InfoS("Done update pod state", "pod", util.Name(podState.GetPod()), "took-micro", et-st)
-		// TODO post metrics
 	}()
 
 	nodeWRev := nm.nodes.get(nodeId.GetIdentifier())
@@ -244,6 +241,7 @@ func (nm *nodeMonitor) OnPodStateUpdate(message *grpc.FornaxCoreMessage) (*grpc.
 		klog.InfoS("Received a pod with same revision of current node, node probably send its state earlier with this revison, continue to handle single pod state", "pod", podState.Pod.Name)
 	}
 
+	nodeWRev.Revision = revision
 	sessions := []*fornaxv1.ApplicationSession{}
 	for _, v := range podState.GetSessionStates() {
 		session := &fornaxv1.ApplicationSession{}
@@ -251,8 +249,6 @@ func (nm *nodeMonitor) OnPodStateUpdate(message *grpc.FornaxCoreMessage) (*grpc.
 			sessions = append(sessions, session)
 		}
 	}
-
-	nodeWRev.Revision = revision
 	err := nm.nodeManager.UpdatePodState(nodeId.GetIdentifier(), podState.GetPod().DeepCopy(), sessions)
 	if err != nil {
 		klog.ErrorS(err, "Failed to update pod state", "pod", podState)
@@ -282,15 +278,13 @@ func (nm *nodeMonitor) updateOrCreateNode(nodeId string, v1node *v1.Node, revisi
 			NodeIdentifier: nodeId,
 			Revision:       revision,
 		})
-		// somehow node already register with other fornax cores
 		_, err := nm.nodeManager.CreateNode(nodeId, v1node)
 		if err != nil {
 			klog.ErrorS(err, "Failed to create a node", "node", v1node)
 			return err
 		}
-		nm.nodeManager.SyncNodePodStates(nodeId, podStates, 0)
+		nm.nodeManager.SyncNodePodStates(nodeId, podStates)
 	} else {
-		minimalResourceRevision := nodeWRev.Revision
 		if err := nm.validateNodeRevision(nodeWRev, revision); err != nil {
 			return err
 		}
@@ -300,7 +294,7 @@ func (nm *nodeMonitor) updateOrCreateNode(nodeId string, v1node *v1.Node, revisi
 			klog.ErrorS(err, "Failed to update a node", "node", v1node)
 			return err
 		}
-		nm.nodeManager.SyncNodePodStates(nodeId, podStates, minimalResourceRevision)
+		nm.nodeManager.SyncNodePodStates(nodeId, podStates)
 	}
 
 	return nil

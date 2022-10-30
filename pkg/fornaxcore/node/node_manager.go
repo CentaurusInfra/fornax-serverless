@@ -86,13 +86,21 @@ func (nm *nodeManager) List() []*ie.NodeEvent {
 	return nodes
 }
 
-// UpdatePodState check node status and update single pod state
+// UpdatePodState check pod revision status and update single pod state
 // even a pod is terminated status, we still keep it in podmanager,
 // it got deleted until next time pod does not report it again in node state event
 func (nm *nodeManager) UpdatePodState(nodeId string, pod *v1.Pod, sessions []*fornaxv1.ApplicationSession) error {
+	podName := util.Name(pod)
 	if nodeWS := nm.nodes.get(nodeId); nodeWS != nil {
 		nodeWS.LastSeen = time.Now()
-		podName := util.Name(pod)
+		if existingPod := nm.podManager.FindPod(podName); existingPod != nil {
+			existingPodRv, _ := strconv.Atoi(existingPod.ResourceVersion)
+			podRv, _ := strconv.Atoi(pod.ResourceVersion)
+			if existingPodRv >= podRv {
+				// we already have pod with newer version
+				return nil
+			}
+		}
 		updatedPod, err := nm.podManager.AddPod(nodeId, pod)
 		if err != nil {
 			return err
@@ -109,7 +117,7 @@ func (nm *nodeManager) UpdatePodState(nodeId string, pod *v1.Pod, sessions []*fo
 	return nil
 }
 
-func (nm *nodeManager) SyncNodePodStates(nodeId string, podStates []*grpc.PodState, minimalNodeRevision int64) {
+func (nm *nodeManager) SyncNodePodStates(nodeId string, podStates []*grpc.PodState) {
 	klog.InfoS("Sync pods state for node", "node", nodeId)
 	var err error
 	nodeWS := nm.nodes.get(nodeId)
@@ -124,11 +132,6 @@ func (nm *nodeManager) SyncNodePodStates(nodeId string, podStates []*grpc.PodSta
 	for _, podState := range podStates {
 		podName := util.Name(podState.GetPod())
 		reportedPods[podName] = true
-		podRev, err := strconv.Atoi(podState.GetPod().ResourceVersion)
-		if err == nil && int64(podRev) <= minimalNodeRevision {
-			// this pod is already updated in previously
-			continue
-		}
 		sessions := []*fornaxv1.ApplicationSession{}
 		for _, v := range podState.GetSessionStates() {
 			session := &fornaxv1.ApplicationSession{}

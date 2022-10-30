@@ -169,7 +169,6 @@ func (a *PodActor) podHandler(msg message.ActorMessage) (interface{}, error) {
 	}
 
 	SetPodStatus(a.pod, nil)
-	a.dependencies.PodStore.PutPod(a.pod)
 	if err != nil {
 		a.lastError = err
 		return nil, err
@@ -429,9 +428,6 @@ func (a *PodActor) onSessionOpenCommand(msg internal.SessionOpen) (err error) {
 	err = sactor.OpenSession()
 	if err == nil {
 		a.sessionActors[msg.SessionId] = sactor
-		// save could fail but it's better to continue,
-		// and pod has another chance to save sessions when session service report back
-		a.dependencies.PodStore.PutPod(a.pod)
 	}
 
 	if err != nil {
@@ -487,7 +483,7 @@ func (a *PodActor) handleSessionState(s internal.SessionState) {
 	if !reflect.DeepEqual(session.Session.Status, *newStatus) {
 		klog.InfoS("Session status changed", "session", s.SessionId, "old status", session.Session.Status, "new status", *newStatus)
 		session.Session.Status = *newStatus
-		a.notify(a.supervisor, internal.SessionStatusChange{Session: session})
+		a.notify(a.supervisor, internal.SessionStatusChange{Session: session, Pod: a.pod})
 	}
 
 	if util.SessionIsClosed(session.Session) {

@@ -67,7 +67,7 @@ func (am *ApplicationManager) onSessionEventFromStorage(we fornaxstore.WatchEven
 	case watch.Modified:
 		am.onApplicationSessionUpdateEvent(we.OldObject, we.Object)
 	case watch.Deleted:
-		am.onApplicationSessionDeleteEvent(we.Object, false)
+		am.onApplicationSessionDeleteEvent(we.Object)
 	}
 }
 
@@ -88,7 +88,7 @@ func (am *ApplicationManager) changeSessionStatus(session *fornaxv1.ApplicationS
 func (am *ApplicationManager) onApplicationSessionAddEvent(obj interface{}) {
 	session := obj.(*fornaxv1.ApplicationSession)
 	if session.DeletionTimestamp != nil {
-		am.onApplicationSessionDeleteEvent(obj, false)
+		am.onApplicationSessionDeleteEvent(obj)
 		return
 	}
 	applicationKey := getSessionApplicationKey(session)
@@ -141,13 +141,13 @@ func (am *ApplicationManager) onApplicationSessionUpdateEvent(old, cur interface
 // callback from Application informer when ApplicationSession is physically deleted
 // if it's in pool, update session status and resync application
 // if a delete session is not application pool, no need to add, it does not impact application at all
-func (am *ApplicationManager) onApplicationSessionDeleteEvent(obj interface{}, fromNode bool) {
+func (am *ApplicationManager) onApplicationSessionDeleteEvent(obj interface{}) {
 	session, ok := obj.(*fornaxv1.ApplicationSession)
 	if !ok {
 		klog.Errorf("Received a unknown runtime object", obj)
 	}
 
-	klog.InfoS("Application session deleted", "session", util.Name(session), "status", session.Status, "fromNode", fromNode)
+	klog.InfoS("Application session deleted", "session", util.Name(session), "status", session.Status)
 	applicationKey := getSessionApplicationKey(session)
 	pool := am.getApplicationPool(applicationKey)
 	if pool == nil {

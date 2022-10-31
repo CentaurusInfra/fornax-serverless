@@ -87,7 +87,7 @@ type ApplicationManager struct {
 	applicationPools map[string]*ApplicationPool
 
 	applicationStore fornaxstore.ApiStorageInterface
-	appStoreUpdate   <-chan fornaxstore.WatchEventWithOldObj
+	appUpdateChannel <-chan fornaxstore.WatchEventWithOldObj
 
 	podUpdateChannel     chan *ie.PodEvent
 	podManager           ie.PodManagerInterface
@@ -165,7 +165,7 @@ func (am *ApplicationManager) initApplicationInformer(ctx context.Context) error
 	if err != nil {
 		return err
 	}
-	am.appStoreUpdate = wi.ResultChanWithPrevobj()
+	am.appUpdateChannel = wi.ResultChanWithPrevobj()
 	return nil
 }
 
@@ -185,32 +185,19 @@ func (am *ApplicationManager) Run(ctx context.Context) {
 	klog.Info("Starting fornaxv1 application manager")
 
 	am.applicationStatusManager = NewApplicationStatusManager(am.applicationStore)
-
 	am.initApplicationInformer(ctx)
 	go func() {
 		for {
 			select {
 			case <-ctx.Done():
 				break
-			case we := <-am.appStoreUpdate:
+			case we := <-am.appUpdateChannel:
 				am.onApplicationEventFromStorage(we)
 			}
 		}
 	}()
 
 	am.initApplicationSessionInformer(ctx)
-	go func() {
-		for {
-			select {
-			case <-ctx.Done():
-				break
-			case we := <-am.sessionUpdateChannel:
-				am.onSessionEventFromStorage(we)
-			}
-		}
-	}()
-
-	klog.Info("Fornaxv1 application manager started")
 
 	for i := 0; i < DefaultNumOfApplicationWorkers; i++ {
 		go wait.UntilWithContext(ctx, am.worker, time.Second)
@@ -223,6 +210,18 @@ func (am *ApplicationManager) Run(ctx context.Context) {
 					break
 				case update := <-am.podUpdateChannel:
 					am.onPodEventFromNode(update)
+				}
+			}
+		}()
+
+		go func() {
+			defer klog.Info("Shutting down fornaxv1 application session manager")
+			for {
+				select {
+				case <-ctx.Done():
+					break
+				case we := <-am.sessionUpdateChannel:
+					am.onSessionEventFromStorage(we)
 				}
 			}
 		}()
@@ -242,6 +241,7 @@ func (am *ApplicationManager) Run(ctx context.Context) {
 			}
 		}
 	}()
+	klog.Info("Fornaxv1 application manager started")
 }
 
 func (am *ApplicationManager) enqueueApplication(applicationKey string) {

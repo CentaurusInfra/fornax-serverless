@@ -35,29 +35,6 @@ ls -l $HOME/.cargo/bin
 ls -l $HOME/.cargo/env
 ```
 
-Update latest version, rustup update
-```sh
-rustup update nightly-2021-12-04-x86_64-unknown-linux-gnu
-rustup toolchain install nightly-2021-12-04-x86_64-unknown-linux-gnu
-rustup default nightly-2021-12-04-x86_64-unknown-linux-gnu
-```
-
-Add runst-src component to nightly
-```sh
-rustup component add rust-src --toolchain nightly-2021-12-04-x86_64-unknown-linux-gnu
-```
-
-Verify src component
-```sh
-rustup component list --toolchain nightly-2021-12-04-x86_64-unknown-linux-gnu | grep rust-src
-```
-
-Display current Installation Info
-```sh
-rustup show 
-rustup --version
-```
-
 ## 3. Install Cargo Build
 The build take a little more time, be patient.
 ```sh
@@ -76,21 +53,7 @@ sudo apt-get install build-essential cmake gcc libudev-dev libnl-3-dev libnl-rou
 
 
 ## 4. Build Quark Container
-1. Download the source code and go Quark folder
-```sh
-git clone https://github.com/QuarkContainer/Quark.git
-cd Quark
-```
-
-2. make
-```sh
-make
-```
-
-3. make install after make is successful
-```sh
-make install
-```
+follow https://github.com/QuarkContainer/Quark#installing-from-source
 
 ## 5. Setup and Configuration Quark Container
 1. You can reference part "Install/Setup/Configuration" in [Quark Read.md](https://github.com/QuarkContainer/Quark#readme).

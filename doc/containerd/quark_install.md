@@ -18,7 +18,7 @@ sudo apt install git
 If you have not installed containerd, you need install containerd. The detail see [Setting Up Detail](https://github.com/CentaurusInfra/fornax-serverless/blob/main/doc/fornax_setup.md). Reference 2.1.1 Install containerd. 
 If you already installed containerd, skip this step.
 
-## 2. Install Rust
+## 2. Install Rustup
 When intallation stop and show option, please select option 1. then follow instruction
 ```sh
 curl --proto '=https' --tlsv1.2 https://sh.rustup.rs -sSf | sh

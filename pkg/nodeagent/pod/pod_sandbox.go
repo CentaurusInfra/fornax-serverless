@@ -32,18 +32,18 @@ import (
 )
 
 // createPodSandbox creates a pod sandbox and returns (podSandBoxID, message, error).
-func (m *PodActor) createPodSandbox() (*runtime.Pod, error) {
-	pod := m.pod.Pod
-	klog.InfoS("Generate pod sandbox config", "pod", types.UniquePodName(m.pod))
-	podSandboxConfig, err := m.generatePodSandboxConfig()
+func (a *PodActor) createPodSandbox() (*runtime.Pod, error) {
+	pod := a.pod.Pod
+	klog.InfoS("Generate pod sandbox config", "pod", types.UniquePodName(a.pod))
+	podSandboxConfig, err := a.generatePodSandboxConfig()
 	if err != nil {
-		message := fmt.Sprintf("Failed to generate sandbox config for pod %s", types.UniquePodName(m.pod))
+		message := fmt.Sprintf("Failed to generate sandbox config for pod %s", types.UniquePodName(a.pod))
 		klog.ErrorS(err, message)
 		return nil, err
 	}
 
 	// Create pod logs directory
-	klog.InfoS("Make pod log dir", "pod", types.UniquePodName(m.pod))
+	klog.InfoS("Make pod log dir", "pod", types.UniquePodName(a.pod))
 	err = os.MkdirAll(podSandboxConfig.LogDirectory, 0755)
 	if err != nil {
 		message := fmt.Sprintf("Failed to create log directory %s", podSandboxConfig.LogDirectory)
@@ -51,20 +51,9 @@ func (m *PodActor) createPodSandbox() (*runtime.Pod, error) {
 		return nil, err
 	}
 
-	runtimeHandler := "runc"
-	// if m.runtimeClassManager != nil {
-	//  runtimeHandler, err = m.runtimeClassManager.LookupRuntimeHandler(pod.Spec.RuntimeClassName)
-	//  if err != nil {
-	//    message := fmt.Sprintf("Failed to create sandbox for pod %q: %v", format.Pod(pod), err)
-	//    return "", message, err
-	//  }
-	//  if runtimeHandler != "" {
-	//    klog.V(2).InfoS("Running pod with runtime handler", "pod", klog.KObj(pod), "runtimeHandler", runtimeHandler)
-	//  }
-	// }
-
-	klog.InfoS("Call runtime to create sandbox", "pod", types.UniquePodName(m.pod), "sandboxConfig", podSandboxConfig)
-	runtimepod, err := m.dependencies.CRIRuntimeService.CreateSandbox(podSandboxConfig, runtimeHandler)
+	runtimeHandler := a.nodeConfig.RuntimeHandler
+	klog.InfoS("Call runtime to create sandbox", "pod", types.UniquePodName(a.pod), "sandboxConfig", podSandboxConfig)
+	runtimepod, err := a.dependencies.CRIRuntimeService.CreateSandbox(podSandboxConfig, runtimeHandler)
 	if err != nil {
 		message := fmt.Sprintf("Failed to create sandbox for pod %q: %v", format.Pod(pod), err)
 		klog.ErrorS(err, message)
@@ -76,20 +65,20 @@ func (m *PodActor) createPodSandbox() (*runtime.Pod, error) {
 	return runtimepod, nil
 }
 
-func (m *PodActor) removePodSandbox(podSandboxId string, podSandboxConfig *criv1.PodSandboxConfig) error {
+func (a *PodActor) removePodSandbox(podSandboxId string, podSandboxConfig *criv1.PodSandboxConfig) error {
 	var err error
 
 	// remove pod sandbox, assume all containers have been terminated
-	err = m.dependencies.CRIRuntimeService.TerminatePod(podSandboxId, []string{})
+	err = a.dependencies.CRIRuntimeService.TerminatePod(podSandboxId, []string{})
 	if err != nil {
-		klog.ErrorS(err, "Failed to remove pod sandbox", "Pod", types.UniquePodName(m.pod))
+		klog.ErrorS(err, "Failed to remove pod sandbox", "Pod", types.UniquePodName(a.pod))
 		return err
 	}
 
 	// remove pod logs directory
 	err = os.RemoveAll(podSandboxConfig.LogDirectory)
 	if err != nil {
-		klog.ErrorS(err, "Failed to remove pod log directory", "Pod", types.UniquePodName(m.pod))
+		klog.ErrorS(err, "Failed to remove pod log directory", "Pod", types.UniquePodName(a.pod))
 		return err
 	}
 
@@ -97,10 +86,10 @@ func (m *PodActor) removePodSandbox(podSandboxId string, podSandboxConfig *criv1
 }
 
 // generatePodSandboxConfig generates pod sandbox config from fornaxtypes.FornaxPod.
-func (m *PodActor) generatePodSandboxConfig() (*criv1.PodSandboxConfig, error) {
+func (a *PodActor) generatePodSandboxConfig() (*criv1.PodSandboxConfig, error) {
 	// fornax node will expect fornaxcore populate most of pod spec before send it
 	// it will not calulate hostname, all these staff
-	pod := m.pod.Pod
+	pod := a.pod.Pod
 	podUID := string(pod.UID)
 	podSandboxConfig := &criv1.PodSandboxConfig{
 		Metadata: &criv1.PodSandboxMetadata{
@@ -137,14 +126,14 @@ func (m *PodActor) generatePodSandboxConfig() (*criv1.PodSandboxConfig, error) {
 		podSandboxConfig.PortMappings = portMappings
 	}
 
-	lc, err := m.generatePodSandboxLinuxConfig()
+	lc, err := a.generatePodSandboxLinuxConfig()
 	if err != nil {
 		return nil, err
 	}
 	podSandboxConfig.Linux = lc
 
 	// Update config to include overhead, sandbox level resources
-	if err := applySandboxResources(m.nodeConfig, pod, podSandboxConfig); err != nil {
+	if err := applySandboxResources(a.nodeConfig, pod, podSandboxConfig); err != nil {
 		return nil, err
 	}
 	return podSandboxConfig, nil
@@ -154,9 +143,9 @@ func (m *PodActor) generatePodSandboxConfig() (*criv1.PodSandboxConfig, error) {
 // We've to call PodSandboxLinuxConfig always irrespective of the underlying OS as securityContext is not part of
 // podSandboxConfig. It is currently part of LinuxPodSandboxConfig. In future, if we have securityContext pulled out
 // in podSandboxConfig we should be able to use it.
-func (m *PodActor) generatePodSandboxLinuxConfig() (*criv1.LinuxPodSandboxConfig, error) {
-	pod := m.pod.Pod
-	cgroupParent := m.dependencies.QosManager.GetPodCgroupParent(pod)
+func (a *PodActor) generatePodSandboxLinuxConfig() (*criv1.LinuxPodSandboxConfig, error) {
+	pod := a.pod.Pod
+	cgroupParent := a.dependencies.QosManager.GetPodCgroupParent(pod)
 	lpsc := &criv1.LinuxPodSandboxConfig{
 		CgroupParent: cgroupParent,
 		SecurityContext: &criv1.LinuxSandboxSecurityContext{
@@ -173,7 +162,7 @@ func (m *PodActor) generatePodSandboxLinuxConfig() (*criv1.LinuxPodSandboxConfig
 }
 
 // determinePodSandboxIP determines the IP addresses of the given pod sandbox.
-func (m *PodActor) determinePodSandboxIPs(podNamespace, podName string, podSandbox *criv1.PodSandboxStatus) []string {
+func (a *PodActor) determinePodSandboxIPs(podNamespace, podName string, podSandbox *criv1.PodSandboxStatus) []string {
 	podIPs := make([]string, 0)
 	if podSandbox.Network == nil {
 		klog.InfoS("Pod Sandbox status doesn't have network information, cannot report IPs", "pod", klog.KRef(podNamespace, podName))

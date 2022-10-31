@@ -72,6 +72,7 @@ const (
 	DefaultNodePortStartingNum        = 1024
 	KubeletPluginsDirSELinuxLabel     = "system_u:object_r:container_file_t:s0"
 	DefaultPodCgroupName              = "containers"
+	DefaultRuntimeHandler             = "runc"
 )
 
 type NodeConfiguration struct {
@@ -96,6 +97,7 @@ type NodeConfiguration struct {
 	PodsPerCore              int
 	PodCgroupName            string
 	RootPath                 string // node agent state root, /var/lib/nodeagent/
+	RuntimeHandler           string
 	ProtectKernelDefaults    bool
 	SystemCgroupName         string
 	EnforceCPULimits         bool
@@ -145,6 +147,7 @@ func DefaultNodeConfiguration() (*NodeConfiguration, error) {
 		PodsPerCore:              DefaultPodsPerCore,
 		PodCgroupName:            DefaultPodCgroupName,
 		RootPath:                 DefaultRootPath,
+		RuntimeHandler:           DefaultRuntimeHandler,
 		SeccompProfileRoot:       filepath.Join(DefaultRootPath, "seccomp"),
 		NodePortStartingNo:       DefaultNodePortStartingNum,
 		SessionServicePort:       DefaultSessionServicePort,
@@ -204,4 +207,5 @@ func AddConfigFlags(flagSet *pflag.FlagSet, nodeConfig *NodeConfiguration) {
 
 	flagSet.StringArrayVar(&nodeConfig.FornaxCoreUrls, "fornaxcore-url", nodeConfig.FornaxCoreUrls, "addresses of the fornaxcores, format is ip:port. must provided")
 
+	flagSet.StringVar(&nodeConfig.RuntimeHandler, "runtime-handler", nodeConfig.RuntimeHandler, "container runtime handler name, check /etc/docker/daemon.json for valid name")
 }

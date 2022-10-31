@@ -28,7 +28,7 @@ import (
 	"centaurusinfra.io/fornax-serverless/pkg/message"
 	"centaurusinfra.io/fornax-serverless/pkg/nodeagent/fornaxcore"
 	internal "centaurusinfra.io/fornax-serverless/pkg/nodeagent/message"
-	"centaurusinfra.io/fornax-serverless/pkg/nodeagent/pod"
+	fornaxpod "centaurusinfra.io/fornax-serverless/pkg/nodeagent/pod"
 	"centaurusinfra.io/fornax-serverless/pkg/nodeagent/session"
 	"centaurusinfra.io/fornax-serverless/pkg/nodeagent/types"
 	"centaurusinfra.io/fornax-serverless/pkg/util"
@@ -131,7 +131,7 @@ func (n *FornaxNodeActor) recreatePodStateFromRuntimeSummary(runtimeSummary Cont
 
 	for _, fpod := range runtimeSummary.runningPods {
 		klog.InfoS("Recover pod actor for a running pod", "pod", types.UniquePodName(fpod), "state", fpod.FornaxPodState)
-		n.nodePortManager.initNodePortRangeSlot(n.node.V1Node, fpod.Pod)
+		n.nodePortManager.initNodePortRangeSlot(fpod.Pod)
 		n.startPodActor(fpod)
 	}
 }
@@ -176,7 +176,7 @@ func (n *FornaxNodeActor) nodeHandler(msg message.ActorMessage) (interface{}, er
 		fppod := msg.Body.(internal.PodStatusChange).Pod
 		revision := n.incrementNodeRevision()
 		fppod.Pod.ResourceVersion = fmt.Sprint(revision)
-		n.notify(n.fornoxCoreRef, pod.BuildFornaxcoreGrpcPodState(revision, fppod))
+		n.notify(n.fornoxCoreRef, fornaxpod.BuildFornaxcoreGrpcPodState(revision, fppod))
 		go func() {
 			n.node.Dependencies.PodStore.PutPod(fppod, revision)
 			if fppod.FornaxPodState == types.PodStateTerminated {
@@ -301,7 +301,7 @@ func (n *FornaxNodeActor) onNodeConfigurationCommand(msg *fornaxgrpc.NodeConfigu
 func (n *FornaxNodeActor) initializeNodeDaemons(pods []*v1.Pod) error {
 	for _, p := range pods {
 		klog.Infof("Initialize daemon pod, %v", p)
-		errs := pod.ValidatePodSpec(p)
+		errs := fornaxpod.ValidatePodSpec(p)
 		if len(errs) != 0 {
 			return errors.Errorf("Pod spec is invalid %v", errs)
 		}
@@ -332,7 +332,7 @@ func (n *FornaxNodeActor) initializeNodeDaemons(pods []*v1.Pod) error {
 // buildAFornaxPod validate pod spec, and allocate host port for pod container port, it also set pod lables,
 // modified pod spec will saved in store and return back to FornaxCore to make pod spec in sync
 func (n *FornaxNodeActor) buildAFornaxPod(state types.PodState, v1pod *v1.Pod, configMap *v1.ConfigMap, isDaemon bool) (*types.FornaxPod, error) {
-	errs := pod.ValidatePodSpec(v1pod)
+	errs := fornaxpod.ValidatePodSpec(v1pod)
 	if len(errs) > 0 {
 		return nil, errors.New("Pod spec is invalid")
 	}
@@ -346,11 +346,11 @@ func (n *FornaxNodeActor) buildAFornaxPod(state types.PodState, v1pod *v1.Pod, c
 		Sessions:                map[string]*types.FornaxSession{},
 		LastStateTransitionTime: time.Now(),
 	}
-	pod.SetPodStatus(fornaxPod, n.node.V1Node)
+	fornaxpod.SetPodStatus(fornaxPod, n.node.V1Node)
 	fornaxPod.Pod.Labels[fornaxv1.LabelFornaxCoreNode] = util.Name(n.node.V1Node)
 
 	if configMap != nil {
-		errs = pod.ValidateConfigMapSpec(configMap)
+		errs = fornaxpod.ValidateConfigMapSpec(configMap)
 		if len(errs) > 0 {
 			return nil, errors.New("ConfigMap spec is invalid")
 		}
@@ -361,7 +361,7 @@ func (n *FornaxNodeActor) buildAFornaxPod(state types.PodState, v1pod *v1.Pod, c
 	// to avoid port conflict on host of multiple pods, node allocate a unique host port number for each container port
 	// and overwrite pod spec's container port mapping, modified pod spec is returned back to FornaxCore,
 	// FornaxCore use modified port mapping to let its client to access pod using node allocated host port
-	err := n.nodePortManager.AllocatePodPortMapping(n.node.V1Node, fornaxPod.Pod)
+	err := n.nodePortManager.AllocatePodPortMapping(n.node.NodeConfig.NodeIP, fornaxPod.Pod)
 	if err != nil {
 		return nil, err
 	}
@@ -374,19 +374,19 @@ func (n *FornaxNodeActor) buildAFornaxPod(state types.PodState, v1pod *v1.Pod, c
 
 // startPodActor start a actor for a pod
 // set pod node related information in case node name and ip changed
-func (n *FornaxNodeActor) startPodActor(fpod *types.FornaxPod) (*types.FornaxPod, *pod.PodActor, error) {
+func (n *FornaxNodeActor) startPodActor(fpod *types.FornaxPod) (*types.FornaxPod, *fornaxpod.PodActor, error) {
 	fpod.Pod = fpod.Pod.DeepCopy()
 	fpod.Pod.Status.HostIP = n.node.V1Node.Status.Addresses[0].Address
 	fpod.Pod.Labels[fornaxv1.LabelFornaxCoreNode] = util.Name(n.node.V1Node)
 
-	fpActor := pod.NewPodActor(n.innerActor.Reference(), fpod, &n.node.NodeConfig, n.node.Dependencies, pod.ErrRecoverPod)
+	fpActor := fornaxpod.NewPodActor(n.innerActor.Reference(), fpod, &n.node.NodeConfig, n.node.Dependencies, fornaxpod.ErrRecoverPod)
 	n.node.Pods.Add(fpod.Identifier, fpod)
 	n.podActors.Add(fpod.Identifier, fpActor)
 	fpActor.Start()
 	return fpod, fpActor, nil
 }
 
-func (n *FornaxNodeActor) createPodAndActor(state types.PodState, v1Pod *v1.Pod, v1Config *v1.ConfigMap, isDaemon bool) (*types.FornaxPod, *pod.PodActor, error) {
+func (n *FornaxNodeActor) createPodAndActor(state types.PodState, v1Pod *v1.Pod, v1Config *v1.ConfigMap, isDaemon bool) (*types.FornaxPod, *fornaxpod.PodActor, error) {
 	// create fornax pod obj
 	fpod, err := n.buildAFornaxPod(state, v1Pod, v1Config, isDaemon)
 	if err != nil {
@@ -411,7 +411,7 @@ func (n *FornaxNodeActor) cleanupPodAndActor(fppod *types.FornaxPod) error {
 		n.podActors.Del(string(fppod.Identifier))
 	}
 	n.node.Pods.Del(fppod.Identifier)
-	n.nodePortManager.DeallocatePodPortMapping(n.node.V1Node, fppod.Pod)
+	n.nodePortManager.DeallocatePodPortMapping(fppod.Pod)
 	return n.node.Dependencies.PodStore.DelObject(fppod.Identifier)
 }
 

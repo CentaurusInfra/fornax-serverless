@@ -23,6 +23,7 @@ import (
 
 	"centaurusinfra.io/fornax-serverless/pkg/nodeagent/config"
 	v1 "k8s.io/api/core/v1"
+	"k8s.io/klog/v2"
 )
 
 const (
@@ -151,7 +152,7 @@ type nodePortManager struct {
 
 // AllocatePodPortMapping find a not used host port range slot to a pod and assign host port number from this range
 // to each container port to make sure host port number is unique on a node to avoid conflict between pods
-func (npm *nodePortManager) AllocatePodPortMapping(node *v1.Node, pod *v1.Pod) error {
+func (npm *nodePortManager) AllocatePodPortMapping(nodeIp string, pod *v1.Pod) error {
 	containerPorts := []*v1.ContainerPort{}
 	for _, cont := range pod.Spec.Containers {
 		for _, port := range cont.Ports {
@@ -168,18 +169,18 @@ func (npm *nodePortManager) AllocatePodPortMapping(node *v1.Node, pod *v1.Pod) e
 		updatedContSpec := cont.DeepCopy()
 		ports := []v1.ContainerPort{}
 		for _, contPort := range updatedContSpec.Ports {
-			for _, addr := range node.Status.Addresses {
-				hostIp := addr.Address
-				port := contPort.DeepCopy()
-				for _, v := range containerPorts {
-					if v.ContainerPort == port.ContainerPort {
-						port.HostPort = v.HostPort
-						port.HostIP = hostIp
-					}
+			klog.InfoS("GWJ, hostport", "addr", nodeIp)
+			port := contPort.DeepCopy()
+			for _, v := range containerPorts {
+				if v.ContainerPort == port.ContainerPort {
+					port.HostPort = v.HostPort
+					port.HostIP = nodeIp
 				}
-				ports = append(ports, *port)
 			}
+			klog.InfoS("GWJ, hostport", "port", port)
+			ports = append(ports, *port)
 		}
+		klog.InfoS("GWJ, hostport", "ports", ports)
 		updatedContSpec.Ports = ports
 		conts = append(conts, *updatedContSpec)
 	}
@@ -190,7 +191,7 @@ func (npm *nodePortManager) AllocatePodPortMapping(node *v1.Node, pod *v1.Pod) e
 
 // DeallocatePodPortMapping check host port number of container ports of pod, and find allocated slot,
 // and reset slot for allocation for other pods
-func (npm *nodePortManager) DeallocatePodPortMapping(node *v1.Node, pod *v1.Pod) {
+func (npm *nodePortManager) DeallocatePodPortMapping(pod *v1.Pod) {
 	containerPorts := []*v1.ContainerPort{}
 	for _, cont := range pod.Spec.Containers {
 		for _, port := range cont.Ports {
@@ -206,7 +207,7 @@ func (npm *nodePortManager) DeallocatePodPortMapping(node *v1.Node, pod *v1.Pod)
 // initNodePortRangeSlot fill node port range usage via a list of existing pods reported on Node,
 // this method is called before allocate new pod on this node,
 // so node port range is initialized correctly to avoid double allocation
-func (npm *nodePortManager) initNodePortRangeSlot(node *v1.Node, pod *v1.Pod) {
+func (npm *nodePortManager) initNodePortRangeSlot(pod *v1.Pod) {
 	containerPorts := GetContainerPorts(pod)
 	npm.portRange.initRangeWithContainerPorts(containerPorts)
 	return

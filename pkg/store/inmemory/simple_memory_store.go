@@ -312,7 +312,7 @@ func (ms *MemoryStore) Get(ctx context.Context, key string, opts apistorage.GetO
 			return apistorage.NewInternalError(err.Error())
 		}
 
-		if err := ms.validateMinimumResourceVersion(opts.ResourceVersion, currObjRv); err != nil {
+		if err := store.ValidateMinimumResourceVersion(opts.ResourceVersion, currObjRv); err != nil {
 			return err
 		}
 
@@ -871,22 +871,6 @@ func (ms *MemoryStore) getSingleObjectAsList(ctx context.Context, key string, op
 		}
 		return store.UpdateList(listObj, rv, "", nil)
 	}
-}
-
-// validateMinimumResourceVersion returns a 'too large resource' version error when the provided minimumResourceVersion is
-// greater than the most recent actualRevision available from storage.
-func (ms *MemoryStore) validateMinimumResourceVersion(minimumResourceVersion string, actualRevision uint64) error {
-	if minimumResourceVersion == "" {
-		return nil
-	}
-	minimumRV, err := store.ParseResourceVersion(minimumResourceVersion)
-	if err != nil {
-		return apierrors.NewBadRequest(fmt.Sprintf("invalid resource version: %v", err))
-	}
-	if minimumRV > actualRevision {
-		return apistorage.NewTooLargeResourceVersionError(minimumRV, actualRevision, 0)
-	}
-	return nil
 }
 
 var _ apistorage.Interface = &MemoryStore{}

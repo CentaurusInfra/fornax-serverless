@@ -21,10 +21,11 @@ import (
 	"fmt"
 	"strconv"
 
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/validation/field"
-	"k8s.io/apiserver/pkg/storage"
+	apistorage "k8s.io/apiserver/pkg/storage"
 )
 
 // APIObjectVersioner implements versioning and extracting etcd node information
@@ -33,10 +34,10 @@ type APIObjectVersioner struct{}
 
 // UpdateObject implements Versioner
 func (a APIObjectVersioner) UpdateObject(obj runtime.Object, resourceVersion uint64) error {
-	return UpdateObjectResourceVersion(obj, resourceVersion)
+	return SetObjectResourceVersion(obj, resourceVersion)
 }
 
-func UpdateObjectResourceVersion(obj runtime.Object, resourceVersion uint64) error {
+func SetObjectResourceVersion(obj runtime.Object, resourceVersion uint64) error {
 	accessor, err := meta.Accessor(obj)
 	if err != nil {
 		return err
@@ -86,10 +87,10 @@ func PrepareObjectForStorage(obj runtime.Object) error {
 
 // ObjectResourceVersion implements Versioner
 func (a APIObjectVersioner) ObjectResourceVersion(obj runtime.Object) (uint64, error) {
-	return ObjectResourceVersion(obj)
+	return GetObjectResourceVersion(obj)
 }
 
-func ObjectResourceVersion(obj runtime.Object) (uint64, error) {
+func GetObjectResourceVersion(obj runtime.Object) (uint64, error) {
 	accessor, err := meta.Accessor(obj)
 	if err != nil {
 		return 0, err
@@ -115,7 +116,7 @@ func ParseResourceVersion(resourceVersion string) (uint64, error) {
 	}
 	version, err := strconv.ParseUint(resourceVersion, 10, 64)
 	if err != nil {
-		return 0, storage.NewInvalidError(field.ErrorList{
+		return 0, apistorage.NewInvalidError(field.ErrorList{
 			// Validation errors are supposed to return version-specific field
 			// paths, but this is probably close enough.
 			field.Invalid(field.NewPath("resourceVersion"), resourceVersion, err.Error()),
@@ -131,12 +132,12 @@ func (a APIObjectVersioner) CompareResourceVersion(lhs, rhs runtime.Object) int 
 }
 
 func CompareResourceVersion(lhs, rhs runtime.Object) int {
-	lhsVersion, err := ObjectResourceVersion(lhs)
+	lhsVersion, err := GetObjectResourceVersion(lhs)
 	if err != nil {
 		// coder error
 		panic(err)
 	}
-	rhsVersion, err := ObjectResourceVersion(rhs)
+	rhsVersion, err := GetObjectResourceVersion(rhs)
 	if err != nil {
 		// coder error
 		panic(err)
@@ -152,5 +153,21 @@ func CompareResourceVersion(lhs, rhs runtime.Object) int {
 	return 1
 }
 
+// ValidateMinimumResourceVersion returns a 'too large resource' version error when the provided minimumResourceVersion is
+// greater than the most recent actualRevision available from storage.
+func ValidateMinimumResourceVersion(minimumResourceVersion string, actualRevision uint64) error {
+	if minimumResourceVersion == "" {
+		return nil
+	}
+	minimumRV, err := ParseResourceVersion(minimumResourceVersion)
+	if err != nil {
+		return apierrors.NewBadRequest(fmt.Sprintf("invalid resource version: %v", err))
+	}
+	if minimumRV > actualRevision {
+		return apistorage.NewTooLargeResourceVersionError(minimumRV, actualRevision, 0)
+	}
+	return nil
+}
+
 // Versioner implements Versioner
-var Versioner storage.Versioner = APIObjectVersioner{}
+var Versioner apistorage.Versioner = APIObjectVersioner{}

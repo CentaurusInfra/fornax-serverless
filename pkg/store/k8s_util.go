@@ -44,7 +44,7 @@ type continueToken struct {
 // AppendListItem decodes and appends the object (if it passes filter) to v, which must be a slice.
 func AppendListItem(v reflect.Value, obj runtime.Object, rev uint64, pred apistorage.SelectionPredicate) error {
 	// being unable to set the version does not prevent the object from being extracted
-	if err := UpdateObjectResourceVersion(obj, rev); err != nil {
+	if err := SetObjectResourceVersion(obj, rev); err != nil {
 		klog.Errorf("failed to update object version: %v", err)
 	}
 	if matched, err := pred.Matches(obj); err == nil && matched {
@@ -57,7 +57,7 @@ func UpdateState(existintObj runtime.Object, userUpdate apistorage.UpdateFunc) (
 	obj := existintObj.DeepCopyObject() // deep copy to avoid obj changed by other routine, state should be a snapshot
 	meta := apistorage.ResponseMeta{}
 
-	rv, err := ObjectResourceVersion(obj)
+	rv, err := GetObjectResourceVersion(obj)
 	if err != nil {
 		return nil, 0, fmt.Errorf("couldn't get resource version: %v", err)
 	}
@@ -155,11 +155,11 @@ func ShouldDeleteSpec(obj runtime.Object) bool {
 
 func GetTryUpdateFunc(updating runtime.Object) apistorage.UpdateFunc {
 	return func(existing runtime.Object, res apistorage.ResponseMeta) (runtime.Object, *uint64, error) {
-		existingVersion, err := ObjectResourceVersion(existing)
+		existingVersion, err := GetObjectResourceVersion(existing)
 		if err != nil {
 			return nil, nil, err
 		}
-		updatingVersion, err := ObjectResourceVersion(updating)
+		updatingVersion, err := GetObjectResourceVersion(updating)
 		if existingVersion != updatingVersion {
 			return nil, nil, fmt.Errorf("object is already updated to a newer version, get it and update again")
 		}

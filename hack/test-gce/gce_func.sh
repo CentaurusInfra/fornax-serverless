@@ -74,7 +74,7 @@ copy_execute_file() {
 delete_app() {
     for i in {0..100}
     do
-        kubectl delete application --kubeconfig kubeconfig --namespace fornaxtest echoserver$i &
+        kubectl delete application --kubeconfig kubeconfig --namespace fornaxtest echo$i &
     done
 
     # check if app exist

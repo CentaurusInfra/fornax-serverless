@@ -43,7 +43,7 @@ var (
 	SessionWrapperEchoServerSpec = &fornaxv1.ApplicationSpec{
 		Containers: []v1.Container{{
 			Name:  "echoserver",
-			Image: "centaurusinfra.io/fornax-serverless/session-wrapper:v0.1.0",
+			Image: "512811/sessionwrapper:latest",
 			Ports: []v1.ContainerPort{{
 				Name:          "echoserver",
 				ContainerPort: 80,

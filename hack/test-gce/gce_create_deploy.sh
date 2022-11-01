@@ -44,15 +44,13 @@ instance_create() {
     fi
 
     echo -e "## All instances created done\n"
-    sleep 2
+    sleep 60
 }
 
 # copy exe file to the each instance
 deploy_instance_by_filter() {
     echo -e "## Deployed file to the instance and setup machine\n"
-
     names=`gcloud compute instances list --project quark-serverless --format="table(name)" | awk '{print $1}'`
-
     for name in $names
     do
         if [ $name == "NAME" ]; then
@@ -61,38 +59,40 @@ deploy_instance_by_filter() {
 
         if [[ $name == *"fornaxcore"* ]]; then
             echo "deploy fornaxcore instance: $name"
-            cat ~/.ssh/id_rsa.pub | ssh -o StrictHostKeyChecking=no ubuntu@$name 'cat >> ~/.ssh/authorized_keys'
-            ssh -t ubuntu@$name "mkdir -p $HOME/go/src/centaurusinfra.io/fornax-serverless/bin" > /dev/null 2>&1
-            scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -r ./bin/fornaxcore  ubuntu@$name:$HOME/go/src/centaurusinfra.io/fornax-serverless/bin/
-            scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -r ./bin/fornaxtest  ubuntu@$name:$HOME/go/src/centaurusinfra.io/fornax-serverless/bin/
-            scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -r ./kubeconfig  ubuntu@$name:$HOME/go/src/centaurusinfra.io/fornax-serverless/
-            scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -r ./hack/test-gce/fornaxcore_deploy.sh  ubuntu@$name:$HOME/
-            scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -r ./hack/test-gce/fornaxcore_start.sh  ubuntu@$name:$HOME/
-            scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -r ./hack/test-gce/fornaxcore_status.sh  ubuntu@$name:$HOME/
-            gcloud compute ssh $name  --zone=us-central1-a -- bash -s < $HOME/fornaxcore_deploy.sh > /dev/null 2>&1 &
+            gcloud compute ssh $name --command="mkdir -p $HOME/go/src/centaurusinfra.io/fornax-serverless/bin" --project=quark-serverless --zone=us-central1-a > /dev/null 2>&1 &
+            gcloud compute scp ./bin/fornaxcore ./bin/fornaxtest $name:$HOME/go/src/centaurusinfra.io/fornax-serverless/bin/ --project=quark-serverless --zone=us-central1-a 
+            gcloud compute scp ./kubeconfig $name:$HOME/go/src/centaurusinfra.io/fornax-serverless/ --project=quark-serverless --zone=us-central1-a
+            gcloud compute scp ./hack/test-gce/fornaxcore_deploy.sh ./hack/test-gce/fornaxcore_start.sh  ./hack/test-gce/fornaxcore_status.sh $name:$HOME/ --project=quark-serverless --zone=us-central1-a
+            gcloud compute ssh $name --command="bash ~/fornaxcore_deploy.sh" --project=quark-serverless --zone=us-central1-a > /dev/null 2>&1 &
             sleep 1
         fi
 
         if [[ $name == *"nodeagent"* ]]; then
             echo "deploy nodeagent instance: $name"
-            cat ~/.ssh/id_rsa.pub | ssh -o StrictHostKeyChecking=no ubuntu@$name "cat >> ~/.ssh/authorized_keys"
+            gcloud compute ssh $name --command="mkdir -p $HOME/go/src/centaurusinfra.io/fornax-serverless/bin" --project=quark-serverless --zone=us-central1-a > /dev/null 2>&1 &
+            gcloud compute scp ./bin/nodeagent $name:$HOME/go/src/centaurusinfra.io/fornax-serverless/bin/ --project=quark-serverless --zone=us-central1-a 
+            gcloud compute scp ./hack/test-gce/nodeagent_deploy.sh ./hack/test-gce/nodeagent_start.sh  ./hack/test-gce/nodeagent_status.sh $name:$HOME/ --project=quark-serverless --zone=us-central1-a
             sleep 1
-            ssh -t ubuntu@$name "mkdir -p $HOME/go/src/centaurusinfra.io/fornax-serverless/bin" > /dev/null 2>&1
-            scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -r ./bin/nodeagent  ubuntu@$name:$HOME/go/src/centaurusinfra.io/fornax-serverless/bin/
-            scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -r ./hack/test-gce/nodeagent_deploy.sh  ubuntu@$name:$HOME/
-            scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -r ./hack/test-gce/nodeagent_start.sh  ubuntu@$name:$HOME/
-            scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -r ./hack/test-gce/nodeagent_status.sh  ubuntu@$name:$HOME/
-            gcloud compute ssh $name  --zone=us-central1-a -- bash -s < $HOME/nodeagent_deploy.sh > /dev/null 2>&1 &
+            gcloud compute ssh $name --command="bash ~/nodeagent_deploy.sh" --project=quark-serverless --zone=us-central1-a > /dev/null 2>&1 &
             sleep 1
         fi
     done
+
+    sleep 60
 }
+
+key_config_ssh(){
+   if [ "$(ls $HOME/.ssh/google_compute_engine.pub)" != "$HOME/.ssh/google_compute_engine.pub" ] > /dev/null 2>&1
+   then
+       echo -e "## gcloud compute config-ssh."
+       < /dev/zero gcloud compute config-ssh --quiet
+   fi
+} 
 
 key_gen(){
    if [ "$(ls $HOME/.ssh/id_rsa.pub)" != "$HOME/.ssh/id_rsa.pub" ] > /dev/null 2>&1
    then
        echo -e "## GENERATING KEY."
-       # chmod 600 $key_pair_3 
        < /dev/zero ssh-keygen -q -N ""
    fi
 } 
@@ -104,11 +104,22 @@ check_knownhosts(){
     fi
 }
 
-key_gen
+check_knownhosts_google(){
+    if [ "$(ls $HOME/.ssh/google_compute_known_hosts)" != "" ]; then
+        echo -e "google_compute_known_hosts already exits, we remove this file first\n";
+        rm -rf ~/.ssh/google_compute_known_hosts
+    fi
+}
 
-check_knownhosts
+# key_gen
+key_config_ssh
+
+# check_knownhosts
+check_knownhosts_google
 
 instance_create
+
+sleep 30
 
 deploy_instance_by_filter
 

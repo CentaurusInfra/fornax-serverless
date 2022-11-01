@@ -88,6 +88,7 @@ delete_app() {
 cold_test(){
     # current use 5000 pod for 20 node
     ./bin/fornaxtest --test-case session_create --num-of-session-per-app 1 --num-of-app 100 --num-of-init-pod-per-app 0 --num-of-test-cycle 50
+    ./bin/fornaxtest --test-case session_create --num-of-session-per-app 1 --num-of-app 100 --num-of-init-pod-per-app 0 --num-of-test-cycle 3 --num-of-burst-pod-per-app 1
 }
 
 warm_test() {
@@ -162,4 +163,53 @@ delete_instance_by_number() {
 run_bash(){
      ssh -t ubuntu@$name "bash $HOME/nodeagent_deploy.sh" > /dev/null 2>&1 &
      gcloud compute ssh $name  --zone=us-central1-a -- bash -s < $HOME/nodeagent_deploy.sh > /dev/null 2>&1 &
+}
+
+# copy exe file to the each instance
+deploy_instance_by_filter() {
+    echo -e "## Deployed file to the instance and setup machine\n"
+
+    names=`gcloud compute instances list --project quark-serverless --format="table(name)" | awk '{print $1}'`
+
+    for name in $names
+    do
+        if [ $name == "NAME" ]; then
+            continue
+        fi
+
+        if [[ $name == *"fornaxcore"* ]]; then
+            echo "deploy fornaxcore instance: $name"
+            cat ~/.ssh/id_rsa.pub | ssh -o StrictHostKeyChecking=no ubuntu@$name 'cat >> ~/.ssh/authorized_keys'
+            ssh -t ubuntu@$name "mkdir -p $HOME/go/src/centaurusinfra.io/fornax-serverless/bin" > /dev/null 2>&1
+            scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -r ./bin/fornaxcore  ubuntu@$name:$HOME/go/src/centaurusinfra.io/fornax-serverless/bin/
+            scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -r ./bin/fornaxtest  ubuntu@$name:$HOME/go/src/centaurusinfra.io/fornax-serverless/bin/
+            scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -r ./kubeconfig  ubuntu@$name:$HOME/go/src/centaurusinfra.io/fornax-serverless/
+            scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -r ./hack/test-gce/fornaxcore_deploy.sh  ubuntu@$name:$HOME/
+            scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -r ./hack/test-gce/fornaxcore_start.sh  ubuntu@$name:$HOME/
+            scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -r ./hack/test-gce/fornaxcore_status.sh  ubuntu@$name:$HOME/
+            gcloud compute ssh $name  --zone=us-central1-a -- bash -s < $HOME/fornaxcore_deploy.sh > /dev/null 2>&1 &
+            sleep 1
+        fi
+
+        if [[ $name == *"nodeagent"* ]]; then
+            echo "deploy nodeagent instance: $name"
+            cat ~/.ssh/id_rsa.pub | ssh -o StrictHostKeyChecking=no ubuntu@$name "cat >> ~/.ssh/authorized_keys"
+            sleep 1
+            ssh -t ubuntu@$name "mkdir -p $HOME/go/src/centaurusinfra.io/fornax-serverless/bin" > /dev/null 2>&1
+            scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -r ./bin/nodeagent  ubuntu@$name:$HOME/go/src/centaurusinfra.io/fornax-serverless/bin/
+            scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -r ./hack/test-gce/nodeagent_deploy.sh  ubuntu@$name:$HOME/
+            scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -r ./hack/test-gce/nodeagent_start.sh  ubuntu@$name:$HOME/
+            scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -r ./hack/test-gce/nodeagent_status.sh  ubuntu@$name:$HOME/
+            gcloud compute ssh $name  --zone=us-central1-a -- bash -s < $HOME/nodeagent_deploy.sh > /dev/null 2>&1 &
+            sleep 1
+        fi
+    done
+}
+
+# install google gce cli and sdk
+install_gce_cli(){
+    sudo snap install google-cloud-cli --classic
+    gcloud components update
+
+    sudo rm -rf /usr/bin/snap    
 }

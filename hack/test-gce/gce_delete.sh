@@ -25,9 +25,17 @@ check_knownhosts(){
     fi
 }
 
+check_knownhosts_google(){
+    if [ "$(ls $HOME/.ssh/google_compute_known_hosts)" != "" ]; then
+        echo -e "google known_hosts already exits, we remove this file first\n";
+        rm -rf ~/.ssh/google_compute_known_hosts
+    fi
+}
+
 
 delete_instance_by_filter
 
-check_knownhosts
+# check_knownhosts
+check_knownhosts_google
 
 echo "all instance have been deleted seccessfully."

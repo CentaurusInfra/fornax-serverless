@@ -12,13 +12,15 @@ check_fornaxcore_nodeagent_service() {
     do
         if [[ $name == *"fornaxcore"* ]]; then
             echo "check fornaxcore service in: $name"
-            gcloud compute ssh $name  --zone=us-central1-a -- bash -s < $HOME/fornaxcore_status.sh &
+            # gcloud compute ssh $name  --zone=us-central1-a -- bash -s < $HOME/fornaxcore_status.sh &
+            gcloud compute ssh $name --command="bash ~/fornaxcore_status.sh" --project=quark-serverless --zone=us-central1-a &
             sleep 1
         fi
 
         if [[ $name == *"nodeagent"* ]]; then
             echo "check nodeagent service in: $name"
-            gcloud compute ssh $name  --zone=us-central1-a -- bash -s < $HOME/nodeagent_status.sh &
+            # gcloud compute ssh $name  --zone=us-central1-a -- bash -s < $HOME/nodeagent_status.sh &
+            gcloud compute ssh $name --command="bash ~/nodeagent_status.sh" --project=quark-serverless --zone=us-central1-a &
             sleep 1
         fi
     done    

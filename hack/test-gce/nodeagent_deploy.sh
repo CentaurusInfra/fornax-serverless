@@ -44,7 +44,7 @@ runtimes_setup(){
     # runsc_install
     # kata_install
 
-    systemctl restart docker
+    sudo systemctl restart docker
     sleep 3
 }
 

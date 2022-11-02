@@ -18,9 +18,9 @@ instance_create() {
     then
         echo -e "will create a instance: fornaxcore"
         # 32 cpu and 120G memory
-        # gcloud compute instances create fornaxcore --project=quark-serverless --zone=us-central1-a --machine-type=n1-standard-32 --network-interface=network-tier=PREMIUM,subnet=default --maintenance-policy=MIGRATE --provisioning-model=STANDARD --service-account=$account_number-compute@developer.gserviceaccount.com --scopes=https://www.googleapis.com/auth/cloud-platform --tags=http-server,https-server --create-disk=auto-delete=yes,boot=yes,device-name=instance-1,image=projects/ubuntu-os-cloud/global/images/ubuntu-2004-focal-v20221018,mode=rw,size=50,type=projects/quark-serverless/zones/us-central1-a/diskTypes/pd-ssd --no-shielded-secure-boot --shielded-vtpm --shielded-integrity-monitoring --reservation-affinity=any &
+        gcloud compute instances create fornaxcore --project=quark-serverless --zone=us-central1-a --machine-type=n1-standard-32 --network-interface=network-tier=PREMIUM,subnet=default --maintenance-policy=MIGRATE --provisioning-model=STANDARD --service-account=$account_number-compute@developer.gserviceaccount.com --scopes=https://www.googleapis.com/auth/cloud-platform --tags=http-server,https-server --create-disk=auto-delete=yes,boot=yes,device-name=instance-1,image=projects/ubuntu-os-cloud/global/images/ubuntu-2004-focal-v20221018,mode=rw,size=50,type=projects/quark-serverless/zones/us-central1-a/diskTypes/pd-ssd --no-shielded-secure-boot --shielded-vtpm --shielded-integrity-monitoring --reservation-affinity=any &
         # 2 cpu and 4G Memory
-        gcloud compute instances create fornaxcore --project=quark-serverless --zone=us-central1-a --machine-type=e2-medium --network-interface=network-tier=PREMIUM,subnet=default --maintenance-policy=MIGRATE --provisioning-model=STANDARD --service-account=$account_number-compute@developer.gserviceaccount.com --scopes=https://www.googleapis.com/auth/cloud-platform --tags=http-server,https-server --create-disk=auto-delete=yes,boot=yes,device-name=instance-1,image=projects/ubuntu-os-cloud/global/images/ubuntu-2004-focal-v20220927,mode=rw,size=50,type=projects/quark-serverless/zones/us-central1-a/diskTypes/pd-ssd --no-shielded-secure-boot --shielded-vtpm --shielded-integrity-monitoring --reservation-affinity=any &
+        # gcloud compute instances create fornaxcore --project=quark-serverless --zone=us-central1-a --machine-type=e2-medium --network-interface=network-tier=PREMIUM,subnet=default --maintenance-policy=MIGRATE --provisioning-model=STANDARD --service-account=$account_number-compute@developer.gserviceaccount.com --scopes=https://www.googleapis.com/auth/cloud-platform --tags=http-server,https-server --create-disk=auto-delete=yes,boot=yes,device-name=instance-1,image=projects/ubuntu-os-cloud/global/images/ubuntu-2004-focal-v20220927,mode=rw,size=50,type=projects/quark-serverless/zones/us-central1-a/diskTypes/pd-ssd --no-shielded-secure-boot --shielded-vtpm --shielded-integrity-monitoring --reservation-affinity=any &
     else
         echo -e "instance: $inst already exist"
     fi
@@ -44,12 +44,12 @@ instance_create() {
     fi
 
     echo -e "## All instances created done\n"
-    sleep 60
+    sleep 5
 }
 
 # copy exe file to the each instance
 deploy_instance_by_filter() {
-    echo -e "## Deployed file to the instance and setup machine\n"
+    echo -e "## Copy file to the instance\n"
     names=`gcloud compute instances list --project quark-serverless --format="table(name)" | awk '{print $1}'`
     for name in $names
     do
@@ -58,27 +58,47 @@ deploy_instance_by_filter() {
         fi
 
         if [[ $name == *"fornaxcore"* ]]; then
-            echo "deploy fornaxcore instance: $name"
-            gcloud compute ssh $name --command="mkdir -p $HOME/go/src/centaurusinfra.io/fornax-serverless/bin" --project=quark-serverless --zone=us-central1-a > /dev/null 2>&1 &
-            gcloud compute scp ./bin/fornaxcore ./bin/fornaxtest $name:$HOME/go/src/centaurusinfra.io/fornax-serverless/bin/ --project=quark-serverless --zone=us-central1-a 
-            gcloud compute scp ./kubeconfig $name:$HOME/go/src/centaurusinfra.io/fornax-serverless/ --project=quark-serverless --zone=us-central1-a
-            gcloud compute scp ./hack/test-gce/fornaxcore_deploy.sh ./hack/test-gce/fornaxcore_start.sh  ./hack/test-gce/fornaxcore_status.sh $name:$HOME/ --project=quark-serverless --zone=us-central1-a
-            gcloud compute ssh $name --command="bash ~/fornaxcore_deploy.sh" --project=quark-serverless --zone=us-central1-a > /dev/null 2>&1 &
-            sleep 1
+            echo "copy file to fornaxcore instance: $name"
+            gcloud compute ssh $name --command="mkdir -p ~/go/src/centaurusinfra.io/fornax-serverless/bin" --project=quark-serverless --zone=us-central1-a > /dev/null 2>&1 &
+            gcloud compute scp ./bin/fornaxcore ./bin/fornaxtest $name:~/go/src/centaurusinfra.io/fornax-serverless/bin/ --project=quark-serverless --zone=us-central1-a 
+            gcloud compute scp ./kubeconfig $name:~/go/src/centaurusinfra.io/fornax-serverless/ --project=quark-serverless --zone=us-central1-a
+            gcloud compute scp ./hack/test-gce/fornaxcore_deploy.sh ./hack/test-gce/fornaxcore_start.sh  ./hack/test-gce/fornaxcore_status.sh $name:~/ --project=quark-serverless --zone=us-central1-a
         fi
 
         if [[ $name == *"nodeagent"* ]]; then
-            echo "deploy nodeagent instance: $name"
-            gcloud compute ssh $name --command="mkdir -p $HOME/go/src/centaurusinfra.io/fornax-serverless/bin" --project=quark-serverless --zone=us-central1-a > /dev/null 2>&1 &
-            gcloud compute scp ./bin/nodeagent $name:$HOME/go/src/centaurusinfra.io/fornax-serverless/bin/ --project=quark-serverless --zone=us-central1-a 
-            gcloud compute scp ./hack/test-gce/nodeagent_deploy.sh ./hack/test-gce/nodeagent_start.sh  ./hack/test-gce/nodeagent_status.sh $name:$HOME/ --project=quark-serverless --zone=us-central1-a
-            sleep 1
+            echo "copy file to nodeagent instance: $name"
+            gcloud compute ssh $name --command="mkdir -p ~/go/src/centaurusinfra.io/fornax-serverless/bin" --project=quark-serverless --zone=us-central1-a > /dev/null 2>&1 &
+            gcloud compute scp ./bin/nodeagent $name:~/go/src/centaurusinfra.io/fornax-serverless/bin/ --project=quark-serverless --zone=us-central1-a 
+            gcloud compute scp ./hack/test-gce/nodeagent_deploy.sh ./hack/test-gce/nodeagent_start.sh  ./hack/test-gce/nodeagent_status.sh $name:~/ --project=quark-serverless --zone=us-central1-a
+        fi
+    done
+    
+    echo -e "Copy file is done.\n"
+    sleep 2
+}
+
+install_required_software(){
+    echo -e "## Install required software to the instance and setup machine\n"
+    names=`gcloud compute instances list --project quark-serverless --format="table(name)" | awk '{print $1}'`
+    for name in $names
+    do
+        if [ $name == "NAME" ]; then
+            continue
+        fi
+
+        if [[ $name == *"fornaxcore"* ]]; then
+            echo "install third party software in fornaxcore instance: $name"
+            gcloud compute ssh $name --command="bash ~/fornaxcore_deploy.sh" --project=quark-serverless --zone=us-central1-a > /dev/null 2>&1 &
+        fi
+
+        if [[ $name == *"nodeagent"* ]]; then
+            echo "install third party software in nodeagent instance: $name"
             gcloud compute ssh $name --command="bash ~/nodeagent_deploy.sh" --project=quark-serverless --zone=us-central1-a > /dev/null 2>&1 &
-            sleep 1
         fi
     done
 
-    sleep 60
+    sleep 15
+    echo -e "install and configue is done.\n"
 }
 
 key_config_ssh(){
@@ -115,12 +135,12 @@ check_knownhosts_google(){
 key_config_ssh
 
 # check_knownhosts
-check_knownhosts_google
+# check_knownhosts_google
 
 instance_create
 
-sleep 30
-
 deploy_instance_by_filter
 
-echo "all instance deploy successfully."
+install_required_software
+
+echo "all instance deploy done."

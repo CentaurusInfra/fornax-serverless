@@ -42,12 +42,11 @@ const (
 type ResourceType string
 
 const (
-	CPU             = "CPU"
-	Memory          = "Memory"
-	PID             = "PID"
-	DefaultRootPath = "/var/lib/nodeagent"
-	DefaultDBName   = "nodeagent.sqlite"
-	// DefaultContainerRuntimeEndpoint   = "unix:///run/containerd/containerd.sock"
+	CPU                               = "CPU"
+	Memory                            = "Memory"
+	PID                               = "PID"
+	DefaultRootPath                   = "/var/lib/nodeagent"
+	DefaultDBName                     = "nodeagent.sqlite"
 	DefaultContainerRuntimeEndpoint   = "/run/containerd/containerd.sock"
 	DefaultMaxPods                    = 1000
 	DefaultPodPidLimits               = -1

@@ -83,7 +83,7 @@ var (
 		OpenTimeoutSeconds:            5,
 	}
 
-	NonSessionWrapperEchoServerSpec = &fornaxv1.ApplicationSpec{
+	NoSessionWrapperEchoServerSpec = &fornaxv1.ApplicationSpec{
 		Containers: []v1.Container{{
 			Name:  "echoserver",
 			Image: "centaurusinfra.io/fornax-serverless/echoserver:v0.1.0",
@@ -271,7 +271,7 @@ func cleanupAppFullCycleTest(namespace, appName string, sessions []*TestSession)
 func createAndWaitForApplicationSetup(namespace, appName string, testConfig config.TestConfiguration) *fornaxv1.Application {
 	appSpec := SessionWrapperEchoServerSpec.DeepCopy()
 	if testConfig.NoNodeSessionService {
-		appSpec = NonSessionWrapperEchoServerSpec.DeepCopy()
+		appSpec = NoSessionWrapperEchoServerSpec.DeepCopy()
 	}
 
 	appSpec.ScalingPolicy.Burst = uint32(testConfig.NumOfBurstPodsPerApp)

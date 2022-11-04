@@ -379,8 +379,7 @@ func (am *ApplicationManager) syncApplication(ctx context.Context, applicationKe
 				}
 				// pending session will need pods immediately, the rest of pods can be created as a standby pod
 				desiredAddition := numOfDesiredUnoccupiedPod - numOfUnoccupiedPod
-				numOfNonStandbyPod := numOfPendingSession - numOfUnoccupiedPod
-				syncErr = am.deployApplicationPods(pool, application, desiredAddition, numOfNonStandbyPod)
+				syncErr = am.deployApplicationPods(pool, application, desiredAddition)
 
 				// take care of timeout and deleting pods
 				am.pruneDeadPods(pool)

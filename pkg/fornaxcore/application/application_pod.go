@@ -390,10 +390,10 @@ func (am *ApplicationManager) getPodsToBeDelete(pool *ApplicationPool, numOfDesi
 }
 
 // deployApplicationPods create pods when desiredAddition > 0, and delete pods when desiredAddition < 0
-// when create pods, it create active pods util meet numOfNewRunningPod, then rest of pods will created as Standby pods
-// when delete pods, it pickup pending pods and running pods which does not have session yet,
+// when create pods, it create active pods or hibernate pods according application spec's usingNodeSessionService attr
+// when delete pods, it pickup pending pods and running pods which does not have session yet
 // keep standby pods during deletion to reduce memory usage on node
-func (am *ApplicationManager) deployApplicationPods(pool *ApplicationPool, application *fornaxv1.Application, desiredAddition, numOfNewRunningPod int) error {
+func (am *ApplicationManager) deployApplicationPods(pool *ApplicationPool, application *fornaxv1.Application, desiredAddition int) error {
 	var err error
 
 	applicationBurst := util.ApplicationScalingBurst(application)
@@ -407,7 +407,6 @@ func (am *ApplicationManager) deployApplicationPods(pool *ApplicationPool, appli
 		createErrors := []error{}
 		standby := !application.Spec.UsingNodeSessionService
 		for i := 0; i < desiredAddition; i++ {
-			// standby := i > numOfNewRunningPod
 			pod, err := am.createApplicationPod(application, standby)
 			if err != nil {
 				klog.ErrorS(err, "Create pod failed", "application", pool.appName)

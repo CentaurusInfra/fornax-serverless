@@ -183,6 +183,7 @@ func (pm *podManager) DeletePod(nodeId string, pod *v1.Pod) (*v1.Pod, error) {
 // if pod not scheduled yet, just delete
 // there could be a race condition with pod scheduler if node have not report back after sending to it
 // pod will be terminate again by pod owner when node report this pod back,
+// if pod exist, and pod does not have deletion timestamp, set it
 func (pm *podManager) TerminatePod(podName string) error {
 
 	fornaxPodState := pm.podStateMap.findPod(podName)
@@ -202,7 +203,6 @@ func (pm *podManager) TerminatePod(podName string) error {
 		pm.DeletePod("", podInCache)
 	}
 
-	// if pod exist, and pod does not have deletion timestamp, set it
 	if podInCache.GetDeletionTimestamp() == nil {
 		podInCache.DeletionTimestamp = util.NewCurrentMetaTime()
 	}
@@ -212,9 +212,8 @@ func (pm *podManager) TerminatePod(podName string) error {
 		podInCache.DeletionGracePeriodSeconds = &gracePeriod
 	}
 
-	// send to node agent to terminate pod if this pod is associated with a node
+	// pod is bound with node, let node agent terminate it before deletion
 	if len(fornaxPodState.nodeId) > 0 && util.PodNotTerminated(podInCache) {
-		// pod is bound with node, let node agent terminate it before deletion
 		err := pm.nodeAgentClient.TerminatePod(fornaxPodState.nodeId, fornaxPodState.v1pod)
 		if err != nil {
 			return err
@@ -231,9 +230,7 @@ func (pm *podManager) HibernatePod(podName string) error {
 	}
 	podInCache := fornaxPodState.v1pod
 
-	// send to node agent to terminate pod if this pod is associated with a node
 	if len(fornaxPodState.nodeId) > 0 && util.PodNotTerminated(podInCache) {
-		// pod is bound with node, let node agent terminate it before deletion
 		err := pm.nodeAgentClient.HibernatePod(fornaxPodState.nodeId, fornaxPodState.v1pod)
 		if err != nil {
 			return err

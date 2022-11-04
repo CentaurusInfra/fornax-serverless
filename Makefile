@@ -99,8 +99,8 @@ run-fornaxcore-local: ## Download apiserver-boot cmd locally if necessary.
 
 .PHONY: docker-build
 docker-build: test ## Build docker image
-	# @sudo docker build -f ./dockerimages/Dockerfile.echoserver -t centaurusinfra.io/fornax-serverless/echoserver:${VERSION} .
-	# @sudo docker build -f ./dockerimages/Dockerfile.sessionwrapper -t centaurusinfra.io/fornax-serverless/session-wrapper:${VERSION} .
+	@sudo docker build -f ./dockerimages/Dockerfile.echoserver -t centaurusinfra.io/fornax-serverless/echoserver:${VERSION} .
+	@sudo docker build -f ./dockerimages/Dockerfile.sessionwrapper -t centaurusinfra.io/fornax-serverless/session-wrapper:${VERSION} .
 	@sudo docker build -f ./dockerimages/nodejs-hw/Dockerfile.nodejs-hw -t centaurusinfra.io/fornax-serverless/nodejs-hw:${VERSION} .
 
 .PHONY: docker-push

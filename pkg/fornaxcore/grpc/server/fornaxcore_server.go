@@ -219,13 +219,11 @@ func NewGrpcServer() *grpcServer {
 
 // CreatePod dispatch a PodCreate grpc message to node agent
 func (g *grpcServer) CreatePod(nodeIdentifier string, pod *v1.Pod) error {
-	mode := fornaxcore_grpc.PodCreate_Active
 	podIdentifier := util.Name(pod)
 	messageType := fornaxcore_grpc.MessageType_POD_CREATE
 	podCreate := fornaxcore_grpc.FornaxCoreMessage_PodCreate{
 		PodCreate: &fornaxcore_grpc.PodCreate{
 			PodIdentifier: podIdentifier,
-			Mode:          mode,
 			Pod:           pod.DeepCopy(),
 			ConfigMap:     &v1.ConfigMap{},
 		},
@@ -260,6 +258,28 @@ func (g *grpcServer) TerminatePod(nodeIdentifier string, pod *v1.Pod) error {
 	err := g.DispatchNodeMessage(nodeIdentifier, m)
 	if err != nil {
 		klog.ErrorS(err, "Failed to dispatch pod terminate message to node", "node", nodeIdentifier, "pod", util.Name(pod))
+		return err
+	}
+	return nil
+}
+
+// HibernatePod dispatch a PodHibernate grpc message to node agent
+func (g *grpcServer) HibernatePod(nodeIdentifier string, pod *v1.Pod) error {
+	podIdentifier := util.Name(pod)
+	messageType := fornaxcore_grpc.MessageType_POD_HIBERNATE
+	podHibernate := fornaxcore_grpc.FornaxCoreMessage_PodHibernate{
+		PodHibernate: &fornaxcore_grpc.PodHibernate{
+			PodIdentifier: podIdentifier,
+		},
+	}
+	m := &fornaxcore_grpc.FornaxCoreMessage{
+		MessageType: messageType,
+		MessageBody: &podHibernate,
+	}
+
+	err := g.DispatchNodeMessage(nodeIdentifier, m)
+	if err != nil {
+		klog.ErrorS(err, "Failed to dispatch pod hibernate message to node", "node", nodeIdentifier, "pod", util.Name(pod))
 		return err
 	}
 	return nil

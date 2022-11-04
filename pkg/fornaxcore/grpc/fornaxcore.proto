@@ -37,7 +37,7 @@ enum MessageType {
     NODE_FULL_SYNC = 204;
     POD_CREATE = 300;
     POD_TERMINATE = 301;
-    POD_ACTIVE = 302;
+    POD_HIBERNATE = 302;
     POD_STATE = 303;
     SESSION_OPEN = 400;
     SESSION_CLOSE = 401;
@@ -57,7 +57,7 @@ message FornaxCoreMessage {
     NodeFullSync nodeFullSync = 204;
     PodCreate podCreate = 300;
     PodTerminate podTerminate = 301;
-    PodActive podActive = 302;
+    PodHibernate podHibernate = 302;
     PodState podState = 303;
     SessionOpen sessionOpen = 400;
     SessionClose sessionClose = 401;
@@ -135,20 +135,15 @@ message PodResource {
 
 message PodCreate {
   string podIdentifier = 1;
-  enum CreateMode {
-    Active = 0;
-    Standby = 10;
-  }
-  CreateMode mode = 2;
-  k8s.io.api.core.v1.Pod pod = 3;
-  k8s.io.api.core.v1.ConfigMap configMap = 4;
+  k8s.io.api.core.v1.Pod pod = 2;
+  k8s.io.api.core.v1.ConfigMap configMap = 3;
 }
 
 message  PodTerminate {
   string podIdentifier = 1;
 }
 
-message  PodActive {
+message  PodHibernate {
   string podIdentifier = 1;
 }
 

@@ -124,7 +124,7 @@ func Run(ctx context.Context, nodeConfig config.NodeConfiguration) error {
 
 	logs.InitLogs()
 
-	dependencies, err := dependency.InitBasicDependencies(nodeConfig)
+	dependencies, err := dependency.InitBasicDependencies(ctx, nodeConfig)
 	if err != nil {
 		return fmt.Errorf("failed to init basic dependencies: %w", err)
 	}

@@ -20,7 +20,7 @@ import (
 	"errors"
 	"time"
 
-	podcontainer "centaurusinfra.io/fornax-serverless/pkg/nodeagent/pod/container"
+	"centaurusinfra.io/fornax-serverless/pkg/nodeagent/runtime"
 	"centaurusinfra.io/fornax-serverless/pkg/nodeagent/types"
 
 	v1 "k8s.io/api/core/v1"
@@ -92,6 +92,8 @@ func ToV1PodPhase(fppod *types.FornaxPod) v1.PodPhase {
 		podPhase = v1.PodPending
 	case types.PodStateRunning:
 		podPhase = v1.PodRunning
+	case types.PodStateHibernated:
+		podPhase = v1.PodRunning
 	case types.PodStateTerminating:
 		podPhase = v1.PodUnknown
 	case types.PodStateTerminated:
@@ -108,7 +110,7 @@ func ToV1PodPhase(fppod *types.FornaxPod) v1.PodPhase {
 
 	// check container runtime state
 	for _, v := range fppod.Containers {
-		if podcontainer.ContainerExitAbnormal(v.ContainerStatus) {
+		if runtime.ContainerExitAbnormal(v.ContainerStatus) {
 			podPhase = v1.PodFailed
 			break
 		}
@@ -152,21 +154,21 @@ func GetPodConditions(fppod *types.FornaxPod) []v1.PodCondition {
 	allInitContainerNormal := true
 	for _, v := range fppod.Containers {
 		if v.InitContainer {
-			if !podcontainer.ContainerExit(v.ContainerStatus) {
+			if !runtime.ContainerExit(v.ContainerStatus) {
 				containerReadyCondition.Status = v1.ConditionFalse
 				containerReadyCondition.Message = "init container not finished yet"
 				containerReadyCondition.Reason = "init container not finished yet"
 				allInitContainerNormal = false
 				break
 			}
-			if podcontainer.ContainerExitAbnormal(v.ContainerStatus) {
+			if runtime.ContainerExitAbnormal(v.ContainerStatus) {
 				containerReadyCondition.Status = v1.ConditionFalse
 				containerReadyCondition.Message = "init container exit abnormally"
 				containerReadyCondition.Reason = "init container exit abnormally"
 				allInitContainerNormal = false
 				break
 			}
-			allInitContainerNormal = allInitContainerNormal && podcontainer.ContainerExitNormal(v.ContainerStatus)
+			allInitContainerNormal = allInitContainerNormal && runtime.ContainerExitNormal(v.ContainerStatus)
 		}
 	}
 	if allInitContainerNormal {
@@ -186,7 +188,7 @@ func GetPodConditions(fppod *types.FornaxPod) []v1.PodCondition {
 		// check runtime status
 		for _, v := range fppod.Containers {
 			if !v.InitContainer {
-				if !podcontainer.ContainerRunning(v.ContainerStatus) {
+				if !runtime.ContainerRunning(v.ContainerStatus) {
 					containerReadyCondition.Status = v1.ConditionFalse
 					containerReadyCondition.Message = "one container is not running"
 					containerReadyCondition.Reason = "one container is not running"
@@ -195,8 +197,8 @@ func GetPodConditions(fppod *types.FornaxPod) []v1.PodCondition {
 					break
 				}
 
-				allContainerNormal = allContainerNormal && podcontainer.ContainerRunning(v.ContainerStatus)
-				allContainerReady = allContainerReady && v.State == types.ContainerStateReady
+				allContainerNormal = allContainerNormal && runtime.ContainerRunning(v.ContainerStatus)
+				allContainerReady = allContainerReady && (v.State == types.ContainerStateRunning || v.State == types.ContainerStateHibernated)
 			}
 		}
 	}

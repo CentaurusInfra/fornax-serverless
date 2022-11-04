@@ -422,7 +422,7 @@ func (ms *MemoryStore) GetList(ctx context.Context, key string, opts apistorage.
 		ms.revmu.RLock()
 		defer ms.revmu.RUnlock()
 		objBufferLen := atomic.LoadUint64(&ms.revSortedObjList.lastObjIndex)
-		for i := startingIndex; i < objBufferLen; i++ {
+		for i := startingIndex; i <= objBufferLen; i++ {
 			v := ms.revSortedObjList.objs[i]
 			// deleted object are also in list, ignore it for GetList call, but deleted object will be returned in watch call
 			if v != nil && v.deleted == false {
@@ -811,7 +811,6 @@ func (ms *MemoryStore) reserveRevAndSlot() (uint64, uint64, error) {
 	rev := atomic.AddUint64(&_MemoryRev, 1)
 	uindex := atomic.AddUint64(&ms.revSortedObjList.lastObjIndex, 1)
 	if uint64(ms.revSortedObjList.Len()) < uindex+DefaultObjRevListGrowThreashold {
-		klog.InfoS("GWJ, grow revSortedObjList", "size", ms.revSortedObjList.Len(), "last index", uindex)
 		ms.revSortedObjList.grow(DefaultObjRevListGrowThreashold)
 	}
 	return rev, uindex, nil

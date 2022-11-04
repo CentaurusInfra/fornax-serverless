@@ -56,7 +56,7 @@ func SetNodeStatus(node *FornaxNode) error {
 		errs = append(errs, errors.New("can not find cadvisor"))
 	}
 
-	condition, err = UpdateNodeReadyStatus(node.Dependencies.CRIRuntimeService, node.V1Node)
+	condition, err = UpdateNodeReadyStatus(node.Dependencies.RuntimeService, node.V1Node)
 	if err != nil {
 		errs = append(errs, errors.New("cand not find cri runtime"))
 	}

@@ -32,6 +32,7 @@ type PodManagerInterface interface {
 	AddPod(nodeId string, pod *v1.Pod) (*v1.Pod, error)
 	DeletePod(nodeId string, pod *v1.Pod) (*v1.Pod, error)
 	TerminatePod(podName string) error
+	HibernatePod(podName string) error
 	FindPod(podName string) *v1.Pod
 	Watch(watcher chan<- *PodEvent)
 }

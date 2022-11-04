@@ -22,6 +22,11 @@ import (
 	criv1 "k8s.io/cri-api/pkg/apis/runtime/v1"
 )
 
+const (
+	QuarkRuntime = "quark"
+	RuncRuntime  = "runc"
+)
+
 type RuntimeService interface {
 	GetRuntimeStatus() (*criv1.RuntimeStatus, error)
 
@@ -48,6 +53,10 @@ type RuntimeService interface {
 	ExecCommand(containerID string, cmd []string, timeout time.Duration) ([]byte, []byte, error)
 
 	GetImageLabel() (string, error)
+
+	HibernateContainer(containerID string) error
+
+	WakeupContainer(containerID string) error
 }
 
 type CRIVersion struct {

@@ -21,12 +21,12 @@ import (
 
 	fornaxv1 "centaurusinfra.io/fornax-serverless/pkg/apis/core/v1"
 	"centaurusinfra.io/fornax-serverless/pkg/fornaxcore/grpc"
+	"centaurusinfra.io/fornax-serverless/pkg/nodeagent/runtime"
 	"centaurusinfra.io/fornax-serverless/pkg/nodeagent/session"
 	"centaurusinfra.io/fornax-serverless/pkg/nodeagent/types"
 	fornaxtypes "centaurusinfra.io/fornax-serverless/pkg/nodeagent/types"
 	"centaurusinfra.io/fornax-serverless/pkg/util"
 	v1 "k8s.io/api/core/v1"
-	criv1 "k8s.io/cri-api/pkg/apis/runtime/v1"
 )
 
 func BuildFornaxcoreGrpcPodStateForFailedPod(nodeRevision int64, pod *v1.Pod) *grpc.FornaxCoreMessage {
@@ -92,6 +92,8 @@ func PodStateToFornaxState(pod *fornaxtypes.FornaxPod) grpc.PodState_State {
 		grpcState = grpc.PodState_Standby
 	case types.PodStateRunning:
 		grpcState = grpc.PodState_Running
+	case types.PodStateHibernated:
+		grpcState = grpc.PodState_Running
 	case types.PodStateTerminating:
 		grpcState = grpc.PodState_Terminating
 	case types.PodStateTerminated:
@@ -100,7 +102,7 @@ func PodStateToFornaxState(pod *fornaxtypes.FornaxPod) grpc.PodState_State {
 		// check container runtime state
 		allContainerTerminated := true
 		for _, v := range pod.Containers {
-			allContainerTerminated = allContainerTerminated && v.ContainerStatus != nil && v.ContainerStatus.RuntimeStatus != nil && v.ContainerStatus.RuntimeStatus.FinishedAt != 0 && v.ContainerStatus.RuntimeStatus.State == criv1.ContainerState_CONTAINER_EXITED
+			allContainerTerminated = allContainerTerminated && (v.ContainerStatus == nil || runtime.ContainerExit(v.ContainerStatus))
 		}
 		if allContainerTerminated {
 			grpcState = grpc.PodState_Terminated

@@ -38,7 +38,7 @@ func (pl *PodContainerActor) runLifecycleHandler(pod *types.FornaxPod, container
 	switch {
 	case handler.Exec != nil:
 		var msg string
-		stdout, stderr, err := pl.dependencies.CRIRuntimeService.ExecCommand(container.RuntimeContainer.Id, handler.Exec.Command, 0)
+		stdout, stderr, err := pl.dependencies.RuntimeService.ExecCommand(container.RuntimeContainer.Id, handler.Exec.Command, 0)
 		if err != nil {
 			klog.ErrorS(err, "Exec lifecycle hook for Container in Pod failed",
 				"execCommand", handler.Exec.Command,

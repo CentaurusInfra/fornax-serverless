@@ -191,7 +191,7 @@ func (a *PodActor) TerminatePod(gracefulPeriod time.Duration, force bool) (bool,
 
 	allContainerTerminated := true
 	for n, c := range pod.Containers {
-		if podcontainer.ContainerExit(c.ContainerStatus) || force {
+		if runtime.ContainerExit(c.ContainerStatus) || force {
 			klog.InfoS("Terminating stopped container", "pod", types.UniquePodName(pod), "container", n)
 			if err := a.terminateContainer(c); err == nil {
 			} else {

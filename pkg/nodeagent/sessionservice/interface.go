@@ -20,6 +20,7 @@ import (
 	"errors"
 
 	internal "centaurusinfra.io/fornax-serverless/pkg/nodeagent/message"
+	"centaurusinfra.io/fornax-serverless/pkg/nodeagent/types"
 )
 
 var (
@@ -30,7 +31,7 @@ var (
 )
 
 type SessionService interface {
-	OpenSession(podId, sessionId string, sessionData string, stateCallbackFunc func(internal.SessionState)) error
-	CloseSession(podId, sessionId string, graceSeconds uint16) error
-	PingSession(podId, sessionId string, stateCallbackFunc func(internal.SessionState)) error
+	OpenSession(pod *types.FornaxPod, session *types.FornaxSession, stateCallbackFunc func(internal.SessionState)) error
+	CloseSession(pod *types.FornaxPod, session *types.FornaxSession, graceSeconds uint16) error
+	PingSession(pod *types.FornaxPod, session *types.FornaxSession, stateCallbackFunc func(internal.SessionState)) error
 }

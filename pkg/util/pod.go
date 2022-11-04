@@ -220,14 +220,26 @@ func PodHasSession(pod *v1.Pod) (string, bool) {
 	if label, found := pod.GetLabels()[fornaxv1.LabelFornaxCoreApplicationSession]; found {
 		return label, true
 	}
-
 	return "", false
+}
+
+func PodHasHibernateAnnotation(pod *v1.Pod) bool {
+	if _, found := pod.GetAnnotations()[fornaxv1.AnnotationFornaxCoreHibernatePod]; found {
+		return true
+	}
+	return false
+}
+
+func PodHasSessionServiceAnnotation(pod *v1.Pod) bool {
+	if _, found := pod.GetAnnotations()[fornaxv1.AnnotationFornaxCoreSessionServicePod]; found {
+		return true
+	}
+	return false
 }
 
 func GetPodSessionNames(pod *v1.Pod) []string {
 	if label, found := pod.GetLabels()[fornaxv1.LabelFornaxCoreApplicationSession]; found {
 		return strings.Split(label, ",")
 	}
-
 	return []string{}
 }

@@ -58,6 +58,9 @@ type ApplicationSpec struct {
 	// runtime image and resource requirement of a application container
 	Containers []corev1.Container `json:"containers,omitempty"`
 
+	// container will use grpc session service on node agent to start application session
+	UsingNodeSessionService bool `json:"usingNodeSessionService,omitempty"`
+
 	// Data contains the configuration data.
 	// Each key must consist of alphanumeric characters, '-', '_' or '.'.
 	// Values with non-UTF-8 base64 string of byte sequences

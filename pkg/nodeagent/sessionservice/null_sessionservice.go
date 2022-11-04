@@ -21,21 +21,21 @@ import (
 	"centaurusinfra.io/fornax-serverless/pkg/nodeagent/types"
 )
 
-var _ SessionService = &FakeSessionService{}
+var _ SessionService = &NullSessionService{}
 
-type FakeSessionService struct {
+type NullSessionService struct {
 	stateCallbackFuncs map[string]func(internal.SessionState)
 }
 
 // CloseSession implements SessionService
-func (f *FakeSessionService) CloseSession(podId, sessionId string, graceseconds uint16) error {
-	if c, found := f.stateCallbackFuncs[sessionId]; found {
+func (f *NullSessionService) CloseSession(pod *types.FornaxPod, session *types.FornaxSession, graceseconds uint16) error {
+	if c, found := f.stateCallbackFuncs[session.Identifier]; found {
 		c(internal.SessionState{
-			SessionId:      sessionId,
+			SessionId:      session.Identifier,
 			SessionState:   types.SessionStateClosed,
 			ClientSessions: []types.ClientSession{},
 		})
-		delete(f.stateCallbackFuncs, sessionId)
+		delete(f.stateCallbackFuncs, session.Identifier)
 	} else {
 		return SessionNotFound
 	}
@@ -43,10 +43,10 @@ func (f *FakeSessionService) CloseSession(podId, sessionId string, graceseconds 
 }
 
 // OpenSession implements SessionService
-func (f *FakeSessionService) OpenSession(podId string, sessionId string, sessionData string, stateCallbackFunc func(internal.SessionState)) error {
-	f.stateCallbackFuncs[sessionId] = stateCallbackFunc
+func (f *NullSessionService) OpenSession(pod *types.FornaxPod, session *types.FornaxSession, stateCallbackFunc func(internal.SessionState)) error {
+	f.stateCallbackFuncs[session.Identifier] = stateCallbackFunc
 	stateCallbackFunc(internal.SessionState{
-		SessionId:      sessionId,
+		SessionId:      session.Identifier,
 		SessionState:   types.SessionStateReady,
 		ClientSessions: []types.ClientSession{},
 	})
@@ -54,16 +54,16 @@ func (f *FakeSessionService) OpenSession(podId string, sessionId string, session
 }
 
 // Ping implements SessionService
-func (f *FakeSessionService) PingSession(podId, sessionId string, stateCallbackFunc func(internal.SessionState)) error {
-	if _, found := f.stateCallbackFuncs[sessionId]; found {
+func (f *NullSessionService) PingSession(pod *types.FornaxPod, session *types.FornaxSession, stateCallbackFunc func(internal.SessionState)) error {
+	if _, found := f.stateCallbackFuncs[session.Identifier]; found {
 		return nil
 	} else {
 		return SessionNotFound
 	}
 }
 
-func NewFakeSessionService() *FakeSessionService {
-	return &FakeSessionService{
+func NewNullSessionService() *NullSessionService {
+	return &NullSessionService{
 		stateCallbackFuncs: map[string]func(internal.SessionState){},
 	}
 }

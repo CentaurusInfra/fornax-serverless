@@ -224,6 +224,25 @@ func (pm *podManager) TerminatePod(podName string) error {
 	return nil
 }
 
+func (pm *podManager) HibernatePod(podName string) error {
+	fornaxPodState := pm.podStateMap.findPod(podName)
+	if fornaxPodState == nil {
+		return PodNotFoundError
+	}
+	podInCache := fornaxPodState.v1pod
+
+	// send to node agent to terminate pod if this pod is associated with a node
+	if len(fornaxPodState.nodeId) > 0 && util.PodNotTerminated(podInCache) {
+		// pod is bound with node, let node agent terminate it before deletion
+		err := pm.nodeAgentClient.HibernatePod(fornaxPodState.nodeId, fornaxPodState.v1pod)
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
 func (pm *podManager) createPodAndSendEvent(nodeId string, pod *v1.Pod) {
 	var eType ie.PodEventType
 	switch {

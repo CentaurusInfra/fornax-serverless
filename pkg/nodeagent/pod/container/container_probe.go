@@ -135,10 +135,10 @@ func (prober *ContainerProber) ExecProbe() (interface{}, error) {
 		if err != nil {
 			return nil, err
 		}
-		if ContainerExit(status) {
+		if runtime.ContainerExit(status) {
 			// do not probe anymore
 			prober.Stop()
-		} else if ContainerRunning(status) {
+		} else if runtime.ContainerRunning(status) {
 			// probe running container with less frequency
 			prober.Ticker.Reset(time.Duration(RunningContainerProbeSeconds) * time.Second)
 		}

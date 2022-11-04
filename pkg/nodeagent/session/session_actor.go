@@ -27,6 +27,7 @@ import (
 
 type SessionActor struct {
 	stop           bool
+	pod            *types.FornaxPod
 	session        *types.FornaxSession
 	sessionService sessionservice.SessionService
 	supervisor     message.ActorRef
@@ -36,8 +37,9 @@ const (
 	DefaultCloseSessionGraceSeconds = uint16(120)
 )
 
-func NewSessionActor(session *types.FornaxSession, sessionService sessionservice.SessionService, supervisor message.ActorRef) *SessionActor {
+func NewSessionActor(pod *types.FornaxPod, session *types.FornaxSession, sessionService sessionservice.SessionService, supervisor message.ActorRef) *SessionActor {
 	actor := &SessionActor{
+		pod:            pod,
 		session:        session,
 		sessionService: sessionService,
 		supervisor:     supervisor,
@@ -47,8 +49,7 @@ func NewSessionActor(session *types.FornaxSession, sessionService sessionservice
 
 // try to open a session with session service, if it failed, send a session closed message
 func (a *SessionActor) OpenSession() error {
-	podId := a.session.PodIdentifier
-	err := a.sessionService.OpenSession(podId, a.session.Identifier, a.session.Session.Spec.SessionData, a.receiveSessionState)
+	err := a.sessionService.OpenSession(a.pod, a.session, a.receiveSessionState)
 	if err != nil {
 		if err == sessionservice.SessionAlreadyExist {
 			// TODO handle it
@@ -74,7 +75,7 @@ func (a *SessionActor) CloseSession() (err error) {
 	if util.SessionIsOpen(a.session.Session) {
 		// save this state to report back to fornaxcore
 		a.session.Session.Status.SessionStatus = fornaxv1.SessionStatusClosing
-		err = a.sessionService.CloseSession(a.session.PodIdentifier, a.session.Identifier, graceSeconds)
+		err = a.sessionService.CloseSession(a.pod, a.session, graceSeconds)
 		if err != nil && err == sessionservice.SessionNotFound {
 			// send session closed state event
 			a.receiveSessionState(internal.SessionState{
@@ -88,7 +89,7 @@ func (a *SessionActor) CloseSession() (err error) {
 }
 
 func (a *SessionActor) PingSession() error {
-	return a.sessionService.PingSession(a.session.PodIdentifier, a.session.Identifier, a.receiveSessionState)
+	return a.sessionService.PingSession(a.pod, a.session, a.receiveSessionState)
 }
 
 // session actor forward session state to pod to handle

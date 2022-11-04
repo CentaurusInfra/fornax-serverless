@@ -93,7 +93,7 @@ type PodContainerFailed struct {
 
 type PodTerminate struct{}
 
-type PodActive struct{}
+type PodHibernate struct{}
 
 type PodCreate struct {
 	Pod *types.FornaxPod

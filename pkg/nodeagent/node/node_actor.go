@@ -41,21 +41,21 @@ import (
 )
 
 // +enum
-type NodeActorState string
+type NodeState string
 
 const (
-	NodeActorStateInitializing NodeActorState = "Initializing"
-	NodeActorStateInitialized  NodeActorState = "Initialized"
-	NodeActorStateRegistering  NodeActorState = "Registering"
-	NodeActorStateRegistered   NodeActorState = "Registered"
-	NodeActorStateReady        NodeActorState = "Ready"
+	NodeStateInitializing NodeState = "Initializing"
+	NodeStateInitialized  NodeState = "Initialized"
+	NodeStateRegistering  NodeState = "Registering"
+	NodeStateRegistered   NodeState = "Registered"
+	NodeStateReady        NodeState = "Ready"
 )
 
 type FornaxNodeActor struct {
 	nodeMutex       sync.RWMutex
 	stopCh          chan struct{}
 	node            *FornaxNode
-	state           NodeActorState
+	state           NodeState
 	innerActor      message.Actor
 	fornoxCoreRef   message.ActorRef
 	podActors       *PodActorPool
@@ -80,7 +80,7 @@ func (n *FornaxNodeActor) Start() error {
 		err := n.node.Init()
 		if err == nil {
 			klog.InfoS("Load pod state from runtime service and nodeagent store")
-			runtimeSummary, err := LoadPodsFromContainerRuntime(n.node.Dependencies.CRIRuntimeService, n.node.Dependencies.PodStore)
+			runtimeSummary, err := LoadPodsFromContainerRuntime(n.node.Dependencies.RuntimeService, n.node.Dependencies.PodStore)
 			if err != nil {
 				klog.ErrorS(err, "Failed to load container from runtime, wait for next 5 second")
 				time.Sleep(5 * time.Second)
@@ -94,10 +94,10 @@ func (n *FornaxNodeActor) Start() error {
 		}
 	}
 
-	n.state = NodeActorStateRegistering
+	n.state = NodeStateRegistering
 	// register with Fornax core
 	for {
-		if n.state != NodeActorStateRegistering {
+		if n.state != NodeStateRegistering {
 			// if node has received node configuration from fornaxcore
 			break
 		}
@@ -143,8 +143,8 @@ func (n *FornaxNodeActor) startStateReport() {
 	}, 1*time.Minute, n.stopCh)
 }
 
-// https://www.sqlite.org/faq.html#q19,
-// so, call PutNode in go routine, PutNode use provided revision to avoid newer revision is overwriten by older revision
+// https://www.sqlite.org/faq.html#q19, sqlite transaction is slow, so, call PutNode in go routine.
+// PutNode use provided revision to avoid newer revision is overwriten by older revision when there is race condition
 func (n *FornaxNodeActor) incrementNodeRevision() int64 {
 	n.nodeMutex.Lock()
 	defer n.nodeMutex.Unlock()
@@ -163,11 +163,7 @@ func (n *FornaxNodeActor) incrementNodeRevision() int64 {
 	return revision
 }
 
-// sqlite is not great on transaction, update each resource state in its own transaction for safety
-// if there are a lot of in update in queeu, each update will slow down processs a few milliseconds
-// it will impact latency a lot, especially for session which is latency sensitive,
-// https://www.sqlite.org/faq.html#q19,
-// so, call PutPod in go routine, PutPod use provided revision to avoid newer revision is overwriten by older revision of same pod
+// nodeHandler is actor message handler
 func (n *FornaxNodeActor) nodeHandler(msg message.ActorMessage) (interface{}, error) {
 	switch msg.Body.(type) {
 	case *fornaxgrpc.FornaxCoreMessage:
@@ -177,6 +173,8 @@ func (n *FornaxNodeActor) nodeHandler(msg message.ActorMessage) (interface{}, er
 		revision := n.incrementNodeRevision()
 		fppod.Pod.ResourceVersion = fmt.Sprint(revision)
 		n.notify(n.fornoxCoreRef, fornaxpod.BuildFornaxcoreGrpcPodState(revision, fppod))
+		// https://www.sqlite.org/faq.html#q19, sqlite transaction is slow, so, call PutPod in go routine.
+		// PutPod use provided revision to avoid newer revision is overwriten by older revision when there is race condition
 		go func() {
 			n.node.Dependencies.PodStore.PutPod(fppod, revision)
 			if fppod.FornaxPodState == types.PodStateTerminated {
@@ -218,8 +216,8 @@ func (n *FornaxNodeActor) processFornaxCoreMessage(msg *fornaxgrpc.FornaxCoreMes
 		err = n.onPodCreateCommand(msg.GetPodCreate())
 	case fornaxgrpc.MessageType_POD_TERMINATE:
 		err = n.onPodTerminateCommand(msg.GetPodTerminate())
-	case fornaxgrpc.MessageType_POD_ACTIVE:
-		err = n.onPodActiveCommand(msg.GetPodActive())
+	case fornaxgrpc.MessageType_POD_HIBERNATE:
+		err = n.onPodHibernateCommand(msg.GetPodHibernate())
 	case fornaxgrpc.MessageType_SESSION_OPEN:
 		err = n.onSessionOpenCommand(msg.GetSessionOpen())
 	case fornaxgrpc.MessageType_SESSION_CLOSE:
@@ -243,7 +241,7 @@ func (n *FornaxNodeActor) onNodeFullSyncCommand(msg *fornaxgrpc.NodeFullSync) er
 
 // initialize node with node spec provided by fornaxcore, especially pod cidr
 func (n *FornaxNodeActor) onNodeConfigurationCommand(msg *fornaxgrpc.NodeConfiguration) error {
-	if n.state != NodeActorStateRegistering {
+	if n.state != NodeStateRegistering {
 		return fmt.Errorf("node is not in registering state, it does not expect configuration change after registering")
 	}
 
@@ -270,12 +268,12 @@ func (n *FornaxNodeActor) onNodeConfigurationCommand(msg *fornaxgrpc.NodeConfigu
 		return err
 	}
 
-	n.state = NodeActorStateRegistered
+	n.state = NodeStateRegistered
 	// start go routine to check node status until it is ready
 	go func() {
 		for {
 			// finish if node has initialized
-			if n.state != NodeActorStateRegistered {
+			if n.state != NodeStateRegistered {
 				break
 			}
 
@@ -288,7 +286,7 @@ func (n *FornaxNodeActor) onNodeConfigurationCommand(msg *fornaxgrpc.NodeConfigu
 				n.node.V1Node.ResourceVersion = fmt.Sprint(revision)
 				n.node.V1Node.Status.Phase = v1.NodeRunning
 				n.notify(n.fornoxCoreRef, BuildFornaxGrpcNodeReady(n.node, revision))
-				n.state = NodeActorStateReady
+				n.state = NodeStateReady
 				n.startStateReport()
 			} else {
 				time.Sleep(5 * time.Second)
@@ -417,7 +415,7 @@ func (n *FornaxNodeActor) cleanupPodAndActor(fppod *types.FornaxPod) error {
 
 // find pod actor and send a message to it, if pod actor does not exist, create one
 func (n *FornaxNodeActor) onPodCreateCommand(msg *fornaxgrpc.PodCreate) error {
-	if n.state != NodeActorStateReady {
+	if n.state != NodeStateReady {
 		n.notify(n.fornoxCoreRef, internal.PodStatusChange{
 			Pod: &types.FornaxPod{
 				Identifier:              util.Name(msg.Pod),
@@ -473,18 +471,17 @@ func (n *FornaxNodeActor) onPodTerminateCommand(msg *fornaxgrpc.PodTerminate) er
 }
 
 // find pod actor and send a message to it, if pod actor does not exist, return error
-func (n *FornaxNodeActor) onPodActiveCommand(msg *fornaxgrpc.PodActive) error {
-	if n.state != NodeActorStateReady {
+func (n *FornaxNodeActor) onPodHibernateCommand(msg *fornaxgrpc.PodHibernate) error {
+	if n.state != NodeStateReady {
 		return fmt.Errorf("Node is not in ready state to active a standby pod")
 	}
 	podActor := n.podActors.Get(msg.GetPodIdentifier())
 	if podActor == nil {
 		return fmt.Errorf("Pod: %s does not exist, Fornax core is not in sync", msg.GetPodIdentifier())
 	} else {
-		n.notify(podActor.Reference(), internal.PodActive{})
+		n.notify(podActor.Reference(), internal.PodHibernate{})
 	}
 	return nil
-
 }
 
 // build a session actor to start session and monitor session state
@@ -494,7 +491,7 @@ func (n *FornaxNodeActor) onSessionOpenCommand(msg *fornaxgrpc.SessionOpen) erro
 		return err
 	}
 	podActor := n.podActors.Get(msg.GetPodIdentifier())
-	if podActor == nil || n.state != NodeActorStateReady {
+	if podActor == nil || n.state != NodeStateReady {
 		n.notify(n.fornoxCoreRef, internal.SessionStatusChange{
 			Pod: nil,
 			Session: &types.FornaxSession{
@@ -531,7 +528,7 @@ func NewNodeActor(node *FornaxNode) (*FornaxNodeActor, error) {
 		nodeMutex:       sync.RWMutex{},
 		stopCh:          make(chan struct{}),
 		node:            node,
-		state:           NodeActorStateInitializing,
+		state:           NodeStateInitializing,
 		innerActor:      nil,
 		fornoxCoreRef:   nil,
 		podActors:       NewPodActorPool(),

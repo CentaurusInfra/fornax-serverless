@@ -14,29 +14,28 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package container
+package runtime
 
 import (
-	"centaurusinfra.io/fornax-serverless/pkg/nodeagent/runtime"
 	criv1 "k8s.io/cri-api/pkg/apis/runtime/v1"
 )
 
-func ContainerExit(status *runtime.ContainerStatus) bool {
+func ContainerExit(status *ContainerStatus) bool {
 	return status != nil && status.RuntimeStatus != nil && status.RuntimeStatus.FinishedAt != 0 && status.RuntimeStatus.State == criv1.ContainerState_CONTAINER_EXITED
 }
 
-func ContainerExitNormal(status *runtime.ContainerStatus) bool {
+func ContainerExitNormal(status *ContainerStatus) bool {
 	return ContainerExit(status) && status.RuntimeStatus.ExitCode == 0
 }
 
-func ContainerExitAbnormal(status *runtime.ContainerStatus) bool {
+func ContainerExitAbnormal(status *ContainerStatus) bool {
 	return ContainerExit(status) && status.RuntimeStatus.ExitCode != 0
 }
 
-func ContainerStatusUnknown(status *runtime.ContainerStatus) bool {
+func ContainerStatusUnknown(status *ContainerStatus) bool {
 	return status != nil && status.RuntimeStatus != nil && status.RuntimeStatus.State == criv1.ContainerState_CONTAINER_UNKNOWN
 }
 
-func ContainerRunning(status *runtime.ContainerStatus) bool {
+func ContainerRunning(status *ContainerStatus) bool {
 	return status != nil && status.RuntimeStatus != nil && status.RuntimeStatus.State == criv1.ContainerState_CONTAINER_RUNNING
 }

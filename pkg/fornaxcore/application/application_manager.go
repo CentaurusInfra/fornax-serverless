@@ -377,7 +377,10 @@ func (am *ApplicationManager) syncApplication(ctx context.Context, applicationKe
 				} else if numOfDesiredUnoccupiedPod < numOfUnoccupiedPod {
 					action = fornaxv1.DeploymentActionDeleteInstance
 				}
-				syncErr = am.deployApplicationPods(pool, application, numOfDesiredUnoccupiedPod, numOfUnoccupiedPod)
+				// pending session will need pods immediately, the rest of pods can be created as a standby pod
+				desiredAddition := numOfDesiredUnoccupiedPod - numOfUnoccupiedPod
+				numOfNonStandbyPod := numOfPendingSession - numOfUnoccupiedPod
+				syncErr = am.deployApplicationPods(pool, application, desiredAddition, numOfNonStandbyPod)
 
 				// take care of timeout and deleting pods
 				am.pruneDeadPods(pool)

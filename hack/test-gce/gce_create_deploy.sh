@@ -3,13 +3,19 @@
 set -e
 
 # Enter the nodeagent number which you want to created 
-echo -e "## Enter nodeagent number which you want to created VM in your test:"
-read instance_num
-echo -e "\n"
+use_input(){
+    inst=`gcloud compute instances list --project quark-serverless --format="table(name)" --filter="name=fornaxcore" | awk '{print $1}'`
+    if [[ $inst == "" ]];
+    then
+        echo -e "## Enter nodeagent number which you want to created VM in your test:"
+        read instance_num
+        echo -e "\n"
 
-echo -e "## Enter account number which you want to created VM in your test:"
-read account_number
-echo -e "\n"
+        echo -e "## Enter account number which you want to created VM in your test:"
+        read account_number
+        echo -e "\n"
+    fi
+}
 
 instance_create() {
     # fornaxcore
@@ -42,9 +48,10 @@ instance_create() {
     else
         echo -e "instance: $inst already exist"
     fi
-
+ 
+    echo -e "## Please waiting instance ready.\n"
+    sleep 30
     echo -e "## All instances created done\n"
-    sleep 5
 }
 
 # copy exe file to the each instance
@@ -60,21 +67,22 @@ deploy_instance_by_filter() {
         if [[ $name == *"fornaxcore"* ]]; then
             echo "copy file to fornaxcore instance: $name"
             gcloud compute ssh $name --command="mkdir -p ~/go/src/centaurusinfra.io/fornax-serverless/bin" --project=quark-serverless --zone=us-central1-a > /dev/null 2>&1 &
-            gcloud compute scp ./bin/fornaxcore ./bin/fornaxtest $name:~/go/src/centaurusinfra.io/fornax-serverless/bin/ --project=quark-serverless --zone=us-central1-a 
-            gcloud compute scp ./kubeconfig $name:~/go/src/centaurusinfra.io/fornax-serverless/ --project=quark-serverless --zone=us-central1-a
-            gcloud compute scp ./hack/test-gce/fornaxcore_deploy.sh ./hack/test-gce/fornaxcore_start.sh  ./hack/test-gce/fornaxcore_status.sh $name:~/ --project=quark-serverless --zone=us-central1-a
+            gcloud compute scp ./bin/fornaxcore ./bin/fornaxtest $name:~/go/src/centaurusinfra.io/fornax-serverless/bin/ --project=quark-serverless --zone=us-central1-a &
+            gcloud compute scp ./kubeconfig $name:~/go/src/centaurusinfra.io/fornax-serverless/ --project=quark-serverless --zone=us-central1-a &
+            gcloud compute scp ./hack/test-gce/fornaxcore_deploy.sh ./hack/test-gce/fornaxcore_start.sh  ./hack/test-gce/fornaxcore_status.sh $name:~/ --project=quark-serverless --zone=us-central1-a &
         fi
 
         if [[ $name == *"nodeagent"* ]]; then
             echo "copy file to nodeagent instance: $name"
             gcloud compute ssh $name --command="mkdir -p ~/go/src/centaurusinfra.io/fornax-serverless/bin" --project=quark-serverless --zone=us-central1-a > /dev/null 2>&1 &
-            gcloud compute scp ./bin/nodeagent $name:~/go/src/centaurusinfra.io/fornax-serverless/bin/ --project=quark-serverless --zone=us-central1-a 
-            gcloud compute scp ./hack/test-gce/nodeagent_deploy.sh ./hack/test-gce/nodeagent_start.sh  ./hack/test-gce/nodeagent_status.sh $name:~/ --project=quark-serverless --zone=us-central1-a
+            gcloud compute scp ./bin/nodeagent $name:~/go/src/centaurusinfra.io/fornax-serverless/bin/ --project=quark-serverless --zone=us-central1-a &
+            gcloud compute scp ./hack/test-gce/nodeagent_deploy.sh ./hack/test-gce/nodeagent_start.sh  ./hack/test-gce/nodeagent_status.sh $name:~/ --project=quark-serverless --zone=us-central1-a &
         fi
     done
     
+    echo -e "## Please waiting file copy done.\n"
+    sleep 30
     echo -e "Copy file is done.\n"
-    sleep 2
 }
 
 install_required_software(){
@@ -97,7 +105,8 @@ install_required_software(){
         fi
     done
 
-    sleep 15
+    echo -e "## Please waiting software to install.\n"
+    sleep 30
     echo -e "install and configue is done.\n"
 }
 
@@ -130,6 +139,8 @@ check_knownhosts_google(){
         rm -rf ~/.ssh/google_compute_known_hosts
     fi
 }
+
+use_input
 
 # key_gen
 key_config_ssh

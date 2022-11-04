@@ -26,6 +26,16 @@ var _ RuntimeService = &FakeRuntimeService{}
 
 type FakeRuntimeService struct{}
 
+// HibernateContainer implements RuntimeService
+func (*FakeRuntimeService) HibernateContainer(containerID string) error {
+	panic("unimplemented")
+}
+
+// WakeupContainer implements RuntimeService
+func (*FakeRuntimeService) WakeupContainer(containerID string) error {
+	panic("unimplemented")
+}
+
 // StopContainer implements RuntimeService
 func (*FakeRuntimeService) StopContainer(containerID string, gracePeriod time.Duration) error {
 	panic("unimplemented")

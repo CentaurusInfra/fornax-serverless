@@ -58,10 +58,10 @@ func (a *PodContainerActor) Stop() {
 
 func (a *PodContainerActor) Start() {
 	klog.InfoS("Starting container actor", "pod", types.UniquePodName(a.pod), "container", a.container.ContainerSpec.Name, "init container", a.container.InitContainer)
-
 	a.innerActor.Start()
 
 	if a.container.ContainerStatus.RuntimeStatus != nil {
+		a.dependencies.RuntimeService.WakeupContainer(a.container.RuntimeContainer.Id)
 		// recovered container actor from node agent db already has a container status loaded, only need to startup probers
 		a.startStartupProbers()
 	} else {
@@ -69,9 +69,7 @@ func (a *PodContainerActor) Start() {
 		a.container.State = types.ContainerStateCreated
 		a.notify(internal.PodContainerCreated{Pod: a.pod, Container: a.container})
 
-		if a.container.InitContainer || types.PodIsNotStandBy(a.pod) {
-			a.startContainer()
-		}
+		a.startContainer()
 	}
 }
 
@@ -95,7 +93,7 @@ func (a *PodContainerActor) containerHandler(msg message.ActorMessage) (interfac
 
 func (a *PodContainerActor) startContainer() error {
 	klog.InfoS("Starting container", "pod", types.UniquePodName(a.pod), "container", a.container.ContainerSpec.Name)
-	err := a.dependencies.CRIRuntimeService.StartContainer(a.container.RuntimeContainer.Id)
+	err := a.dependencies.RuntimeService.StartContainer(a.container.RuntimeContainer.Id)
 	if err != nil {
 		klog.ErrorS(err, "Failed to start container", "pod", types.UniquePodName(a.pod), "container", a.container.ContainerSpec.Name)
 		a.notify(internal.PodContainerFailed{Pod: a.pod, Container: a.container})
@@ -114,7 +112,7 @@ func (a *PodContainerActor) startStartupProbers() {
 			a.container.RuntimeContainer.Id,
 			a.container.ContainerSpec.StartupProbe.DeepCopy(),
 			StartupProbe,
-			a.dependencies.CRIRuntimeService,
+			a.dependencies.RuntimeService,
 		)
 		a.probers[StartupProbe] = startupProber
 		startupProber.Start()
@@ -129,7 +127,7 @@ func (a *PodContainerActor) startStartupProbers() {
 		a.container.RuntimeContainer.Id,
 		NewRuntimeStatusProbeSpec(),
 		RuntimeStatusProbe,
-		a.dependencies.CRIRuntimeService,
+		a.dependencies.RuntimeService,
 	)
 	a.probers[RuntimeStatusProbe] = runtimeStatusProber
 	runtimeStatusProber.Start()
@@ -184,13 +182,13 @@ func (a *PodContainerActor) onContainerProbeResult(result PodContainerProbeResul
 			}
 
 			// when container exit, report it
-			if ContainerExit(a.container.ContainerStatus) && !a.container.InitContainer {
+			if runtime.ContainerExit(a.container.ContainerStatus) && !a.container.InitContainer {
 				klog.InfoS("Container exit", "pod", types.UniquePodName(a.pod), "container", a.container.ContainerSpec.Name, "exit code", a.container.ContainerStatus.RuntimeStatus.ExitCode, "finished at", a.container.ContainerStatus.RuntimeStatus.FinishedAt)
 				a.onContainerFailed()
 			}
 
 			// use runtime status probe as readiness probe if it does not have it
-			if a.container.ContainerSpec.ReadinessProbe == nil && ContainerRunning(a.container.ContainerStatus) {
+			if a.container.ContainerSpec.ReadinessProbe == nil && runtime.ContainerRunning(a.container.ContainerStatus) {
 				if a.container.State == types.ContainerStateStarted {
 					a.onContainerReady()
 				}
@@ -210,7 +208,7 @@ func (a *PodContainerActor) onContainerFailed() (interface{}, error) {
 func (a *PodContainerActor) onContainerReady() (interface{}, error) {
 	pod := a.pod
 	container := a.container
-	a.container.State = types.ContainerStateReady
+	a.container.State = types.ContainerStateRunning
 	klog.InfoS("Container ready", "pod", pod.Identifier, "containerName", container.ContainerSpec.Name)
 	a.notify(internal.PodContainerReady{Pod: a.pod, Container: a.container})
 	return nil, nil
@@ -239,7 +237,7 @@ func (a *PodContainerActor) onContainerStarted() (interface{}, error) {
 				a.container.RuntimeContainer.Id,
 				a.container.ContainerSpec.LivenessProbe.DeepCopy(),
 				LivenessProbe,
-				a.dependencies.CRIRuntimeService,
+				a.dependencies.RuntimeService,
 			)
 			a.probers[LivenessProbe] = prober
 			prober.Start()
@@ -250,7 +248,7 @@ func (a *PodContainerActor) onContainerStarted() (interface{}, error) {
 				a.container.RuntimeContainer.Id,
 				a.container.ContainerSpec.ReadinessProbe.DeepCopy(),
 				ReadinessProbe,
-				a.dependencies.CRIRuntimeService,
+				a.dependencies.RuntimeService,
 			)
 			a.probers[ReadinessProbe] = prober
 			prober.Start()
@@ -274,6 +272,10 @@ func (a *PodContainerActor) inStoppingProcess() bool {
 }
 
 func (a *PodContainerActor) stopContainer(timeout time.Duration) (interface{}, error) {
+	if a.container.State == types.ContainerStateHibernated {
+		// wake up container and stop it, TODO, remove it after quark able to stop without wake up
+		a.dependencies.RuntimeService.WakeupContainer(a.container.ContainerStatus.RuntimeStatus.Id)
+	}
 	a.container.State = types.ContainerStateStopping
 	pod := a.pod
 	container := a.container
@@ -303,7 +305,7 @@ func (a *PodContainerActor) stopContainer(timeout time.Duration) (interface{}, e
 		}
 
 		// call runtime to stop container
-		err = a.dependencies.CRIRuntimeService.StopContainer(container.RuntimeContainer.Id, timeout)
+		err = a.dependencies.RuntimeService.StopContainer(container.RuntimeContainer.Id, timeout)
 		if err != nil {
 			klog.ErrorS(err, "Stop pod container failed", "pod", pod.Identifier, "containerName", container.ContainerSpec.Name)
 			return nil, err
@@ -316,7 +318,7 @@ func (a *PodContainerActor) stopContainer(timeout time.Duration) (interface{}, e
 
 		// pull stopped container status immediately to speed up state report and metrics
 		var status *runtime.ContainerStatus
-		status, err = a.dependencies.CRIRuntimeService.GetContainerStatus(container.RuntimeContainer.Id)
+		status, err = a.dependencies.RuntimeService.GetContainerStatus(container.RuntimeContainer.Id)
 		if err != nil {
 			klog.ErrorS(err, "Stop pod container failed", "pod", pod.Identifier, "containerName", container.ContainerSpec.Name)
 			return nil, err

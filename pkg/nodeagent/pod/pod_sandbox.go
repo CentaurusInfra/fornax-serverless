@@ -53,7 +53,7 @@ func (a *PodActor) createPodSandbox() (*runtime.Pod, error) {
 
 	runtimeHandler := a.nodeConfig.RuntimeHandler
 	klog.InfoS("Call runtime to create sandbox", "pod", types.UniquePodName(a.pod), "sandboxConfig", podSandboxConfig)
-	runtimepod, err := a.dependencies.CRIRuntimeService.CreateSandbox(podSandboxConfig, runtimeHandler)
+	runtimepod, err := a.dependencies.RuntimeService.CreateSandbox(podSandboxConfig, runtimeHandler)
 	if err != nil {
 		message := fmt.Sprintf("Failed to create sandbox for pod %q: %v", format.Pod(pod), err)
 		klog.ErrorS(err, message)
@@ -69,7 +69,7 @@ func (a *PodActor) removePodSandbox(podSandboxId string, podSandboxConfig *criv1
 	var err error
 
 	// remove pod sandbox, assume all containers have been terminated
-	err = a.dependencies.CRIRuntimeService.TerminatePod(podSandboxId, []string{})
+	err = a.dependencies.RuntimeService.TerminatePod(podSandboxId, []string{})
 	if err != nil {
 		klog.ErrorS(err, "Failed to remove pod sandbox", "Pod", types.UniquePodName(a.pod))
 		return err

@@ -270,11 +270,9 @@ func BuildATestPodCreate(appId string) *grpc.FornaxCoreMessage {
 
 	// update node, send node configuration
 	podId := uuid.New().String()
-	mode := grpc.PodCreate_Active
 	body := grpc.FornaxCoreMessage_PodCreate{
 		PodCreate: &grpc.PodCreate{
 			PodIdentifier: podId,
-			Mode:          mode,
 			Pod:           testPod,
 			ConfigMap:     &v1.ConfigMap{},
 		},

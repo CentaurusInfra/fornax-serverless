@@ -185,10 +185,10 @@ func (am *ApplicationManager) deleteApplicationPod(pool *ApplicationPool, podNam
 	return nil
 }
 
-func (am *ApplicationManager) createApplicationPod(application *fornaxv1.Application) (*v1.Pod, error) {
+func (am *ApplicationManager) createApplicationPod(application *fornaxv1.Application, standby bool) (*v1.Pod, error) {
 	uid := uuid.New()
 	name := fmt.Sprintf("%s-%s-%d", application.Name, rand.String(16), uid.ClockSequence())
-	podTemplate := am.getPodApplicationPodTemplate(uid, name, application)
+	podTemplate := am.getPodApplicationPodTemplate(uid, name, application, standby)
 	pod, err := am.podManager.AddPod("", podTemplate)
 	if err != nil {
 		return nil, err
@@ -200,7 +200,7 @@ func (am *ApplicationManager) createApplicationPod(application *fornaxv1.Applica
 // getPodApplicationPodTemplate will translate application container spec to a pod spec,
 // it add application specific environment variables
 // to enable container to setup session connection with node and client
-func (am *ApplicationManager) getPodApplicationPodTemplate(uid uuid.UUID, name string, application *fornaxv1.Application) *v1.Pod {
+func (am *ApplicationManager) getPodApplicationPodTemplate(uid uuid.UUID, name string, application *fornaxv1.Application, standby bool) *v1.Pod {
 	enableServiceLinks := false
 	setHostnameAsFQDN := false
 	mountServiceAccount := false
@@ -306,6 +306,14 @@ func (am *ApplicationManager) getPodApplicationPodTemplate(uid uuid.UUID, name s
 		containers = append(containers, *cont)
 	}
 	pod.Spec.Containers = containers
+	if standby {
+		pod.Annotations[fornaxv1.AnnotationFornaxCoreHibernatePod] = "hibernate"
+	}
+
+	if application.Spec.UsingNodeSessionService {
+		pod.Annotations[fornaxv1.AnnotationFornaxCoreSessionServicePod] = "sessionservicepod"
+	}
+
 	return pod
 }
 
@@ -367,7 +375,7 @@ func (am *ApplicationManager) getPodsToBeDelete(pool *ApplicationPool, numOfDesi
 		}
 	}
 
-	// pick any running pod
+	// pick any running idle pod
 	for _, p := range idlePods {
 		pod := am.podManager.FindPod(p.podName)
 		if pod == nil || pod.Status.Phase == v1.PodRunning {
@@ -381,10 +389,13 @@ func (am *ApplicationManager) getPodsToBeDelete(pool *ApplicationPool, numOfDesi
 	return podsToDelete
 }
 
-func (am *ApplicationManager) deployApplicationPods(pool *ApplicationPool, application *fornaxv1.Application, numOfDesiredPod, numOfIdleOrPendingPod int) error {
+// deployApplicationPods create pods when desiredAddition > 0, and delete pods when desiredAddition < 0
+// when create pods, it create active pods or hibernate pods according application spec's usingNodeSessionService attr
+// when delete pods, it pickup pending pods and running pods which does not have session yet
+// keep standby pods during deletion to reduce memory usage on node
+func (am *ApplicationManager) deployApplicationPods(pool *ApplicationPool, application *fornaxv1.Application, desiredAddition int) error {
 	var err error
 
-	desiredAddition := numOfDesiredPod - numOfIdleOrPendingPod
 	applicationBurst := util.ApplicationScalingBurst(application)
 	if desiredAddition > 0 {
 		if desiredAddition > applicationBurst {
@@ -394,8 +405,9 @@ func (am *ApplicationManager) deployApplicationPods(pool *ApplicationPool, appli
 		klog.InfoS("Creating pods", "application", pool.appName, "addition", desiredAddition)
 		createdPods := []*v1.Pod{}
 		createErrors := []error{}
+		standby := !application.Spec.UsingNodeSessionService
 		for i := 0; i < desiredAddition; i++ {
-			pod, err := am.createApplicationPod(application)
+			pod, err := am.createApplicationPod(application, standby)
 			if err != nil {
 				klog.ErrorS(err, "Create pod failed", "application", pool.appName)
 				if apierrors.HasStatusCause(err, v1.NamespaceTerminatingCause) {

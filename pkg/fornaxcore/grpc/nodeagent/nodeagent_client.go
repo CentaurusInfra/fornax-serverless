@@ -42,6 +42,7 @@ type NodeAgentClient interface {
 	FullSyncNode(nodeId string) error
 	CreatePod(nodeId string, pod *v1.Pod) error
 	TerminatePod(nodeId string, pod *v1.Pod) error
+	HibernatePod(nodeId string, pod *v1.Pod) error
 	OpenSession(nodeId string, pod *v1.Pod, session *fornaxv1.ApplicationSession) error
 	CloseSession(nodeId string, pod *v1.Pod, session *fornaxv1.ApplicationSession) error
 }

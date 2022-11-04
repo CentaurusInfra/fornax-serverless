@@ -27,7 +27,9 @@ import (
 	"centaurusinfra.io/fornax-serverless/pkg/nodeagent/dependency"
 	internal "centaurusinfra.io/fornax-serverless/pkg/nodeagent/message"
 	podcontainer "centaurusinfra.io/fornax-serverless/pkg/nodeagent/pod/container"
+	"centaurusinfra.io/fornax-serverless/pkg/nodeagent/runtime"
 	"centaurusinfra.io/fornax-serverless/pkg/nodeagent/session"
+	"centaurusinfra.io/fornax-serverless/pkg/nodeagent/sessionservice"
 	"centaurusinfra.io/fornax-serverless/pkg/nodeagent/types"
 	"centaurusinfra.io/fornax-serverless/pkg/util"
 	v1 "k8s.io/api/core/v1"
@@ -109,9 +111,8 @@ func (a *PodActor) recoverContainerAndSessionActors() {
 	for _, sess := range a.pod.Sessions {
 		if !util.SessionIsClosed(sess.Session) {
 			klog.InfoS("Recover session actor on pod", "pod", types.UniquePodName(a.pod), "session", sess.Identifier, "status", sess.Session.Status)
-			actor := session.NewSessionActor(sess, a.dependencies.SessionService, a.innerActor.Reference())
+			actor := session.NewSessionActor(a.pod, sess, a.dependencies.SessionService, a.innerActor.Reference())
 			a.sessionActors[sess.Identifier] = actor
-			//ping session give session service pod's sessionStateCallback
 			actor.PingSession()
 		}
 	}
@@ -136,8 +137,8 @@ func (a *PodActor) podHandler(msg message.ActorMessage) (interface{}, error) {
 	switch msg.Body.(type) {
 	case internal.PodCreate:
 		err = a.create()
-	case internal.PodActive:
-		err = a.active()
+	case internal.PodHibernate:
+		err = a.hibernate()
 	case internal.PodTerminate:
 		err = a.terminate(false)
 	case internal.PodContainerCreated:
@@ -272,8 +273,26 @@ func (a *PodActor) cleanup() error {
 	return nil
 }
 
-func (a *PodActor) active() error {
-	// TODO, when container runtime support standby mode
+func (a *PodActor) hibernate() error {
+	for _, v := range a.pod.Containers {
+		err := a.hibernateContainer(v)
+		if err != nil {
+			return err
+		}
+		return nil
+	}
+	return nil
+}
+
+func (a *PodActor) hibernateContainer(container *types.FornaxContainer) error {
+	err := a.dependencies.RuntimeService.HibernateContainer(container.ContainerStatus.RuntimeStatus.Id)
+	if err != nil {
+		klog.ErrorS(err, "Failed to hibernate Container", "Container", container.ContainerStatus.RuntimeStatus.Id)
+		return err
+	} else {
+		a.pod.FornaxPodState = types.PodStateHibernated
+		container.State = types.ContainerStateHibernated
+	}
 	return nil
 }
 
@@ -289,7 +308,7 @@ func (a *PodActor) handlePodError() (err error) {
 	case pod.FornaxPodState != types.PodStateTerminated && pod.RuntimePod != nil && pod.RuntimePod.Sandbox == nil:
 		// pod create failed to get sandbox details
 		var sandbox *criv1.PodSandbox
-		sandbox, err = a.dependencies.CRIRuntimeService.GetPodSandbox(pod.RuntimePod.Id)
+		sandbox, err = a.dependencies.RuntimeService.GetPodSandbox(pod.RuntimePod.Id)
 		if err == nil && sandbox == nil {
 			// sandbox not found, failed
 			pod.FornaxPodState = types.PodStateTerminated
@@ -317,13 +336,10 @@ func (a *PodActor) handlePodError() (err error) {
 func (n *PodActor) onPodContainerCreated(msg internal.PodContainerCreated) error {
 	pod := msg.Pod
 	container := msg.Container
-	klog.InfoS("Pod Container created", "Pod", types.UniquePodName(pod), "ContainerName", container.ContainerSpec.Name)
+	klog.InfoS("Pod Container created", "Pod", types.UniquePodName(pod), "Container", container.ContainerSpec.Name)
 
 	if n.pod.FornaxPodState == types.PodStateTerminating || n.pod.FornaxPodState == types.PodStateTerminated {
-		klog.InfoS("Pod Container created after when pod is in terminating state",
-			"Pod", types.UniquePodName(pod),
-			"ContainerName", container.ContainerSpec.Name,
-		)
+		klog.InfoS("Pod Container created after when pod is in terminating state", "Pod", types.UniquePodName(pod), "Container", container.ContainerSpec.Name)
 		n.terminateContainer(container)
 	}
 
@@ -334,7 +350,7 @@ func (n *PodActor) onPodContainerCreated(msg internal.PodContainerCreated) error
 func (a *PodActor) onPodContainerStarted(msg internal.PodContainerStarted) error {
 	pod := msg.Pod
 	container := msg.Container
-	klog.InfoS("Pod Container started", "Pod", types.UniquePodName(pod), "ContainerName", container.ContainerSpec.Name)
+	klog.InfoS("Pod Container started", "Pod", types.UniquePodName(pod), "Container", container.ContainerSpec.Name)
 	// TODO, update pod cpu, memory resource usage
 	return nil
 }
@@ -342,7 +358,7 @@ func (a *PodActor) onPodContainerStarted(msg internal.PodContainerStarted) error
 func (a *PodActor) onPodContainerStopped(msg internal.PodContainerStopped) error {
 	pod := msg.Pod
 	container := msg.Container
-	klog.InfoS("Pod Container stopped", "Pod", types.UniquePodName(pod), "ContainerName", container.ContainerSpec.Name)
+	klog.InfoS("Pod Container stopped", "Pod", types.UniquePodName(pod), "Container", container.ContainerSpec.Name)
 
 	// TODO, release cpu, memory resource stat usage
 	a.handlePodContainerExit(pod, container)
@@ -352,7 +368,7 @@ func (a *PodActor) onPodContainerStopped(msg internal.PodContainerStopped) error
 func (a *PodActor) onPodContainerFailed(msg internal.PodContainerFailed) error {
 	pod := msg.Pod
 	container := msg.Container
-	klog.InfoS("Pod Container Failed", "Pod", types.UniquePodName(pod), "ContainerName", container.ContainerSpec.Name)
+	klog.InfoS("Pod Container Failed", "Pod", types.UniquePodName(pod), "Container", container.ContainerSpec.Name)
 	a.handlePodContainerExit(pod, container)
 	return nil
 }
@@ -364,9 +380,9 @@ func (a *PodActor) handlePodContainerExit(pod *types.FornaxPod, container *types
 		delete(a.containerActors, container.ContainerSpec.Name)
 	}
 	if container.InitContainer {
-		if podcontainer.ContainerExitNormal(container.ContainerStatus) {
+		if runtime.ContainerExitNormal(container.ContainerStatus) {
 			// init container is expected to run to end
-		} else if podcontainer.ContainerExitAbnormal(container.ContainerStatus) {
+		} else if runtime.ContainerExitAbnormal(container.ContainerStatus) {
 			// init container failed, terminate pod
 			a.terminate(true)
 		}
@@ -379,54 +395,67 @@ func (a *PodActor) handlePodContainerExit(pod *types.FornaxPod, container *types
 func (a *PodActor) onPodContainerReady(msg internal.PodContainerReady) error {
 	pod := a.pod
 	container := msg.Container
-	klog.InfoS("Pod Container is ready", "Pod", types.UniquePodName(pod), "ContainerName", container.ContainerSpec.Name)
+	klog.InfoS("Pod Container is ready", "Pod", types.UniquePodName(pod), "Container", container.ContainerSpec.Name)
 
 	allContainerReady := true
 	for _, v := range a.pod.Containers {
 		if v.InitContainer {
-			allContainerReady = allContainerReady && podcontainer.ContainerExit(v.ContainerStatus)
+			allContainerReady = allContainerReady && runtime.ContainerExit(v.ContainerStatus)
 		} else {
-			allContainerReady = allContainerReady && podcontainer.ContainerRunning(v.ContainerStatus)
+			allContainerReady = allContainerReady && runtime.ContainerRunning(v.ContainerStatus)
 		}
 	}
 
 	if allContainerReady {
 		pod.FornaxPodState = types.PodStateRunning
+		// hibernate pod if pod spec has hibernate annotation
+		if util.PodHasHibernateAnnotation(pod.Pod) && a.nodeConfig.RuntimeHandler == runtime.QuarkRuntime {
+			a.hibernateContainer(container)
+		}
 	}
 	return nil
-}
-
-func (a *PodActor) createSession(state types.SessionState, s *fornaxv1.ApplicationSession) *types.FornaxSession {
-	fornaxSession := &types.FornaxSession{
-		Identifier:     util.Name(s),
-		PodIdentifier:  a.pod.Identifier,
-		Session:        s,
-		ClientSessions: map[string]*types.ClientSession{},
-	}
-
-	return fornaxSession
 }
 
 // build a session actor to start session and monitor session state
 func (a *PodActor) onSessionOpenCommand(msg internal.SessionOpen) (err error) {
 	klog.InfoS("Open session", "Pod", a.pod.Identifier, "session", msg.SessionId)
-	if a.pod.FornaxPodState != types.PodStateRunning {
+	if a.pod.FornaxPodState == types.PodStateHibernated {
+		for _, v := range a.pod.Containers {
+			if v.State == types.ContainerStateHibernated {
+				err := a.dependencies.RuntimeService.WakeupContainer(v.RuntimeContainer.Id)
+				if err != nil {
+					// if a pod can not be wakeup, terminate it to get a new one
+					return a.terminate(true)
+				}
+				v.State = types.ContainerStateRunning
+			}
+		}
+		a.pod.FornaxPodState = types.PodStateRunning
+	} else if a.pod.FornaxPodState != types.PodStateRunning {
 		return fmt.Errorf("Pod: %s is not in running state, can not open session", msg.SessionId)
 	}
-
 	if v, found := a.pod.Sessions[msg.SessionId]; found {
 		if util.SessionIsOpen(v.Session) {
 			return fmt.Errorf("There is already a open session for %s", msg.SessionId)
 		}
-		// same session is resend to this pod with new spec, try to reopen
 	}
 
-	sess := a.createSession(types.SessionStateStarting, msg.Session.DeepCopy())
-	a.pod.Sessions[msg.SessionId] = sess
-
-	sactor := session.NewSessionActor(sess, a.dependencies.SessionService, a.innerActor.Reference())
+	sess := &types.FornaxSession{
+		Identifier:     util.Name(msg.Session),
+		PodIdentifier:  a.pod.Identifier,
+		Session:        msg.Session.DeepCopy(),
+		ClientSessions: map[string]*types.ClientSession{},
+	}
+	var sessService sessionservice.SessionService
+	if util.PodHasSessionServiceAnnotation(a.pod.Pod) {
+		sessService = a.dependencies.SessionService
+	} else {
+		sessService = sessionservice.NewNullSessionService()
+	}
+	sactor := session.NewSessionActor(a.pod, sess, sessService, a.innerActor.Reference())
 	err = sactor.OpenSession()
 	if err == nil {
+		a.pod.Sessions[msg.SessionId] = sess
 		a.sessionActors[msg.SessionId] = sactor
 	}
 
@@ -487,10 +516,12 @@ func (a *PodActor) handleSessionState(s internal.SessionState) {
 	}
 
 	if util.SessionIsClosed(session.Session) {
-		// only remove actor, do not remove session tables in pod as pod send all session back to fornax even session is closed
 		delete(a.sessionActors, session.Identifier)
 		if session.Session.Spec.KillInstanceWhenSessionClosed {
 			a.terminate(false)
+		} else if util.PodHasHibernateAnnotation(a.pod.Pod) && a.nodeConfig.RuntimeHandler == runtime.QuarkRuntime {
+			// hibernate again when session is closed
+			a.hibernate()
 		}
 	}
 }

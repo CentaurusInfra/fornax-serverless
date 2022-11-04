@@ -35,7 +35,7 @@ import (
 	"centaurusinfra.io/fornax-serverless/pkg/nodeagent/pod"
 	"centaurusinfra.io/fornax-serverless/pkg/nodeagent/session"
 	"centaurusinfra.io/fornax-serverless/pkg/nodeagent/types"
-	fornaxtypes "centaurusinfra.io/fornax-serverless/pkg/nodeagent/types"
+	nodetypes "centaurusinfra.io/fornax-serverless/pkg/nodeagent/types"
 	"centaurusinfra.io/fornax-serverless/pkg/util"
 
 	"github.com/pkg/errors"
@@ -50,7 +50,7 @@ type SimulationNodeActor struct {
 	nodeMutex       sync.RWMutex
 	stopCh          chan struct{}
 	node            *node.FornaxNode
-	state           node.NodeActorState
+	state           node.NodeState
 	innerActor      message.Actor
 	fornoxCoreRef   message.ActorRef
 }
@@ -64,12 +64,12 @@ func (n *SimulationNodeActor) Stop() error {
 func (n *SimulationNodeActor) Start() error {
 	n.innerActor.Start()
 
-	n.state = node.NodeActorStateRegistering
+	n.state = node.NodeStateRegistering
 	var count int32
 	n.incrementNodeRevision()
 	// register with fornax core
 	for {
-		if n.state != node.NodeActorStateRegistering {
+		if n.state != node.NodeStateRegistering {
 			// if node has received node configuration from fornaxcore
 			break
 		}
@@ -140,8 +140,8 @@ func (n *SimulationNodeActor) processFornaxCoreMessage(msg *fornaxgrpc.FornaxCor
 			defer n.podsConcurrency.Release(1)
 			n.onPodTerminateCommand(msg.GetPodTerminate())
 		}()
-	case fornaxgrpc.MessageType_POD_ACTIVE:
-		err = n.onPodActiveCommand(msg.GetPodActive())
+	case fornaxgrpc.MessageType_POD_HIBERNATE:
+		err = n.onPodHibernateCommand(msg.GetPodHibernate())
 	case fornaxgrpc.MessageType_SESSION_OPEN:
 		go func() {
 			n.onSessionOpenCommand(msg.GetSessionOpen())
@@ -169,7 +169,7 @@ func (n *SimulationNodeActor) onNodeFullSyncCommand(msg *fornaxgrpc.NodeFullSync
 
 // initialize node with node spec provided by fornaxcore, especially pod cidr
 func (n *SimulationNodeActor) onNodeConfigurationCommand(msg *fornaxgrpc.NodeConfiguration) error {
-	if n.state != node.NodeActorStateRegistering {
+	if n.state != node.NodeStateRegistering {
 		return fmt.Errorf("node is not in registering state, it does not expect configuration change after registering")
 	}
 
@@ -182,12 +182,12 @@ func (n *SimulationNodeActor) onNodeConfigurationCommand(msg *fornaxgrpc.NodeCon
 		return err
 	}
 
-	n.state = node.NodeActorStateRegistered
+	n.state = node.NodeStateRegistered
 	// start go routine to check node status until it is ready
 	go func() {
 		for {
 			// finish if node has initialized
-			if n.state != node.NodeActorStateRegistered {
+			if n.state != node.NodeStateRegistered {
 				break
 			}
 
@@ -203,7 +203,7 @@ func (n *SimulationNodeActor) onNodeConfigurationCommand(msg *fornaxgrpc.NodeCon
 					n.node.V1Node.Status.Phase = v1.NodeRunning
 					n.notify(n.fornoxCoreRef, node.BuildFornaxGrpcNodeReady(n.node, revision))
 				}()
-				n.state = node.NodeActorStateReady
+				n.state = node.NodeStateReady
 				n.startStateReport()
 			} else {
 				time.Sleep(1 * time.Second)
@@ -231,7 +231,7 @@ func (n *SimulationNodeActor) initializeNodeDaemons(pods []*v1.Pod) error {
 
 		v := n.node.Pods.Get(util.Name(p))
 		if v == nil {
-			_, err := n.createPodAndActor(fornaxtypes.PodStateRunning, p.DeepCopy(), nil, true)
+			_, err := n.createPodAndActor(nodetypes.PodStateRunning, p.DeepCopy(), nil, true)
 			if err != nil {
 				return err
 			}
@@ -240,23 +240,23 @@ func (n *SimulationNodeActor) initializeNodeDaemons(pods []*v1.Pod) error {
 	return nil
 }
 
-func (n *SimulationNodeActor) buildAFornaxPod(state fornaxtypes.PodState,
+func (n *SimulationNodeActor) buildAFornaxPod(state nodetypes.PodState,
 	v1pod *v1.Pod,
 	configMap *v1.ConfigMap,
-	isDaemon bool) (*fornaxtypes.FornaxPod, error) {
+	isDaemon bool) (*nodetypes.FornaxPod, error) {
 	errs := pod.ValidatePodSpec(v1pod)
 	if len(errs) > 0 {
 		return nil, errors.New("Pod spec is invalid")
 	}
-	fornaxPod := &fornaxtypes.FornaxPod{
+	fornaxPod := &nodetypes.FornaxPod{
 		Identifier:              util.Name(v1pod),
 		FornaxPodState:          state,
 		Daemon:                  isDaemon,
 		Pod:                     v1pod.DeepCopy(),
 		ConfigMap:               configMap,
 		RuntimePod:              nil,
-		Containers:              map[string]*fornaxtypes.FornaxContainer{},
-		Sessions:                map[string]*fornaxtypes.FornaxSession{},
+		Containers:              map[string]*nodetypes.FornaxContainer{},
+		Sessions:                map[string]*nodetypes.FornaxSession{},
 		LastStateTransitionTime: time.Now(),
 	}
 	pod.SetPodStatus(fornaxPod, n.node.V1Node)
@@ -272,10 +272,10 @@ func (n *SimulationNodeActor) buildAFornaxPod(state fornaxtypes.PodState,
 	return fornaxPod, nil
 }
 
-func (n *SimulationNodeActor) createPodAndActor(state fornaxtypes.PodState,
+func (n *SimulationNodeActor) createPodAndActor(state nodetypes.PodState,
 	v1Pod *v1.Pod,
 	v1Config *v1.ConfigMap,
-	isDaemon bool) (*fornaxtypes.FornaxPod, error) {
+	isDaemon bool) (*nodetypes.FornaxPod, error) {
 	// create fornax pod obj
 	fpod, err := n.buildAFornaxPod(state, v1Pod, v1Config, isDaemon)
 	if err != nil {
@@ -290,13 +290,13 @@ func (n *SimulationNodeActor) createPodAndActor(state fornaxtypes.PodState,
 // find pod actor and send a message to it, if pod actor does not exist, create one
 func (n *SimulationNodeActor) onPodCreateCommand(msg *fornaxgrpc.PodCreate) error {
 	klog.InfoS("Creating Pod", "pod", msg.PodIdentifier, "node", n.node.V1Node.Name)
-	if n.state != node.NodeActorStateReady {
+	if n.state != node.NodeStateReady {
 		return fmt.Errorf("Node is not in ready state to create a new pod")
 	}
 	v := n.node.Pods.Get(msg.GetPodIdentifier())
 	if v == nil {
 		fpod, err := n.createPodAndActor(
-			fornaxtypes.PodStateCreating,
+			nodetypes.PodStateCreating,
 			msg.GetPod().DeepCopy(),
 			msg.GetConfigMap().DeepCopy(),
 			false,
@@ -337,7 +337,7 @@ func (n *SimulationNodeActor) onPodCreateCommand(msg *fornaxgrpc.PodCreate) erro
 		fpod.Pod.Status.Conditions = conditions
 
 		time.Sleep(1 * time.Second)
-		fpod.FornaxPodState = fornaxtypes.PodStateRunning
+		fpod.FornaxPodState = nodetypes.PodStateRunning
 		func() {
 			n.nodeMutex.Lock()
 			defer n.nodeMutex.Unlock()
@@ -361,7 +361,7 @@ func (n *SimulationNodeActor) onPodTerminateCommand(msg *fornaxgrpc.PodTerminate
 	} else {
 		time.Sleep(1 * time.Second)
 		fpod.Pod.Status.Phase = v1.PodSucceeded
-		fpod.FornaxPodState = fornaxtypes.PodStateTerminated
+		fpod.FornaxPodState = nodetypes.PodStateTerminated
 		func() {
 			n.nodeMutex.Lock()
 			defer n.nodeMutex.Unlock()
@@ -376,14 +376,14 @@ func (n *SimulationNodeActor) onPodTerminateCommand(msg *fornaxgrpc.PodTerminate
 }
 
 // find pod actor and send a message to it, if pod actor does not exist, return error
-func (n *SimulationNodeActor) onPodActiveCommand(msg *fornaxgrpc.PodActive) error {
+func (n *SimulationNodeActor) onPodHibernateCommand(msg *fornaxgrpc.PodHibernate) error {
 	panic("not implemented")
 }
 
 // find pod actor to let it open a session, if pod actor does not exist, return failure
 func (n *SimulationNodeActor) onSessionOpenCommand(msg *fornaxgrpc.SessionOpen) error {
 	klog.InfoS("Opening session", "session", msg.SessionIdentifier, "pod", msg.PodIdentifier, "node", n.node.V1Node.Name)
-	if n.state != node.NodeActorStateReady {
+	if n.state != node.NodeStateReady {
 		return fmt.Errorf("node is not in ready state to open a session")
 	}
 	sess := &fornaxv1.ApplicationSession{}
@@ -399,7 +399,7 @@ func (n *SimulationNodeActor) onSessionOpenCommand(msg *fornaxgrpc.SessionOpen) 
 			Identifier:     sessId,
 			PodIdentifier:  fpod.Identifier,
 			Session:        sess,
-			ClientSessions: map[string]*fornaxtypes.ClientSession{},
+			ClientSessions: map[string]*nodetypes.ClientSession{},
 		}
 		time.Sleep(3 * time.Millisecond)
 		func() {
@@ -466,7 +466,7 @@ func NewNodeActor(hostIp, hostName string, nodeConfig *config.SimulationNodeConf
 		nodeMutex:       sync.RWMutex{},
 		stopCh:          make(chan struct{}),
 		node:            fpnode,
-		state:           node.NodeActorStateInitializing,
+		state:           node.NodeStateInitializing,
 		innerActor:      nil,
 		fornoxCoreRef:   nil,
 	}

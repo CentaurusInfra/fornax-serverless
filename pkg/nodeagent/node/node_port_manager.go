@@ -23,7 +23,6 @@ import (
 
 	"centaurusinfra.io/fornax-serverless/pkg/nodeagent/config"
 	v1 "k8s.io/api/core/v1"
-	"k8s.io/klog/v2"
 )
 
 const (
@@ -169,7 +168,6 @@ func (npm *nodePortManager) AllocatePodPortMapping(nodeIp string, pod *v1.Pod) e
 		updatedContSpec := cont.DeepCopy()
 		ports := []v1.ContainerPort{}
 		for _, contPort := range updatedContSpec.Ports {
-			klog.InfoS("GWJ, hostport", "addr", nodeIp)
 			port := contPort.DeepCopy()
 			for _, v := range containerPorts {
 				if v.ContainerPort == port.ContainerPort {
@@ -177,10 +175,8 @@ func (npm *nodePortManager) AllocatePodPortMapping(nodeIp string, pod *v1.Pod) e
 					port.HostIP = nodeIp
 				}
 			}
-			klog.InfoS("GWJ, hostport", "port", port)
 			ports = append(ports, *port)
 		}
-		klog.InfoS("GWJ, hostport", "ports", ports)
 		updatedContSpec.Ports = ports
 		conts = append(conts, *updatedContSpec)
 	}

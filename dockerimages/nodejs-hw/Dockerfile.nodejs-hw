@@ -1,0 +1,25 @@
+FROM node:16-alpine as builder
+
+# Create app directory
+WORKDIR /nodejs-hw
+
+# Install app dependencies
+# A wildcard is used to ensure both package.json AND package-lock.json are copied
+# where available (npm@5+)
+COPY ./dockerimages/nodejs-hw/package*.json ./
+COPY ./dockerimages/nodejs-hw/server.js ./
+
+RUN npm install --production
+RUN npm install -g @zeit/ncc
+
+RUN ncc build server.js -o dist
+
+RUN rm -rf node_modules
+
+# Bundle app source
+FROM builder
+WORKDIR /nodejs-hw
+COPY --from=builder /nodejs-hw/dist/index.js .
+
+EXPOSE 8080
+CMD [ "node", "index.js" ]

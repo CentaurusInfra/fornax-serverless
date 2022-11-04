@@ -63,7 +63,8 @@ var (
 				},
 			},
 		}},
-		ConfigData: map[string]string{},
+		UsingNodeSessionService: true,
+		ConfigData:              map[string]string{},
 		ScalingPolicy: fornaxv1.ScalingPolicy{
 			MinimumInstance:         0,
 			MaximumInstance:         500000,
@@ -80,6 +81,36 @@ var (
 		KillInstanceWhenSessionClosed: false,
 		CloseGracePeriodSeconds:       &CloseGracePeriodSeconds,
 		OpenTimeoutSeconds:            5,
+	}
+
+	NoSessionWrapperEchoServerSpec = &fornaxv1.ApplicationSpec{
+		Containers: []v1.Container{{
+			Name:  "echoserver",
+			Image: "centaurusinfra.io/fornax-serverless/echoserver:v0.1.0",
+			Ports: []v1.ContainerPort{{
+				Name:          "echoserver",
+				ContainerPort: 80,
+			}},
+			Resources: v1.ResourceRequirements{
+				Limits: map[v1.ResourceName]resource.Quantity{
+					"memory": util.ResourceQuantity(50*1024*1024, v1.ResourceMemory),
+					"cpu":    util.ResourceQuantity(0.05*1000, v1.ResourceCPU),
+				},
+				Requests: map[v1.ResourceName]resource.Quantity{
+					"memory": util.ResourceQuantity(50*1024*1024, v1.ResourceMemory),
+					"cpu":    util.ResourceQuantity(0.05*1000, v1.ResourceCPU),
+				},
+			},
+		}},
+		UsingNodeSessionService: false,
+		ConfigData:              map[string]string{},
+		ScalingPolicy: fornaxv1.ScalingPolicy{
+			MinimumInstance:         0,
+			MaximumInstance:         500000,
+			Burst:                   10,
+			ScalingPolicyType:       "idle_session_number",
+			IdleSessionNumThreshold: &fornaxv1.IdelSessionNumThreshold{HighWaterMark: 0, LowWaterMark: 0},
+		},
 	}
 )
 
@@ -239,6 +270,10 @@ func cleanupAppFullCycleTest(namespace, appName string, sessions []*TestSession)
 
 func createAndWaitForApplicationSetup(namespace, appName string, testConfig config.TestConfiguration) *fornaxv1.Application {
 	appSpec := SessionWrapperEchoServerSpec.DeepCopy()
+	if testConfig.NoNodeSessionService {
+		appSpec = NoSessionWrapperEchoServerSpec.DeepCopy()
+	}
+
 	appSpec.ScalingPolicy.Burst = uint32(testConfig.NumOfBurstPodsPerApp)
 	appSpec.ScalingPolicy.MinimumInstance = uint32(testConfig.NumOfInitPodsPerApp)
 	ta, err := createApplication(namespace, appName, appSpec)

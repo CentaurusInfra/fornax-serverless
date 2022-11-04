@@ -27,6 +27,7 @@ type TestConfiguration struct {
 	NumOfInitPodsPerApp  int
 	NumOfSessionPerApp   int
 	AppNamePrefix        string
+	NoNodeSessionService bool
 }
 
 type TestCase string
@@ -45,6 +46,7 @@ func AddConfigFlags(flagSet *pflag.FlagSet, simuConfig *TestConfiguration) {
 	flagSet.IntVar(&simuConfig.NumOfSessionPerApp, "num-of-session-per-app", simuConfig.NumOfSessionPerApp, "how many application sessions are created for a app")
 	flagSet.IntVar(&simuConfig.NumOfTestCycle, "num-of-test-cycle", simuConfig.NumOfSessionPerApp, "how many test run before exit")
 	flagSet.StringVar(&simuConfig.AppNamePrefix, "app-name-prefix", simuConfig.AppNamePrefix, "app name prefix")
+	flagSet.BoolVar(&simuConfig.NoNodeSessionService, "no-session-service", simuConfig.NoNodeSessionService, "do not use node session service to open session if has this flag")
 }
 
 func DefaultConfiguration() *TestConfiguration {
@@ -56,5 +58,6 @@ func DefaultConfiguration() *TestConfiguration {
 		NumOfSessionPerApp:   1,
 		NumOfTestCycle:       1,
 		AppNamePrefix:        "echo",
+		NoNodeSessionService: false,
 	}
 }

@@ -99,17 +99,37 @@ run-fornaxcore-local: ## Download apiserver-boot cmd locally if necessary.
 
 .PHONY: docker-build
 docker-build: test ## Build docker image
-	@sudo docker build -f ./Dockerfile.sessionwrapper -t centaurusinfra.io/fornax-serverless/session-wrapper:${VERSION} .
+	@sudo docker build -f ./dockerimages/Dockerfile.echoserver -t centaurusinfra.io/fornax-serverless/echoserver:${VERSION} .
+	@sudo docker build -f ./dockerimages/Dockerfile.sessionwrapper -t centaurusinfra.io/fornax-serverless/session-wrapper:${VERSION} .
+	@sudo docker build -f ./dockerimages/nodejs-hw/Dockerfile.nodejs-hw -t centaurusinfra.io/fornax-serverless/nodejs-hw:${VERSION} .
 
 .PHONY: docker-push
 docker-push: ## Push docker image into docker hub registry
+	@sudo docker push centaurusinfra.io/fornax-serverless/echoserver:${VERSION}
 	@sudo docker push centaurusinfra.io/fornax-serverless/session-wrapper:${VERSION}
+	@sudo docker push centaurusinfra.io/fornax-serverless/nodejs-hw:${VERSION}
 
+## Push docker image into a local containerd for test
 .PHONY: containerd-local-push
-containerd-local-push: ## Push docker image into a local containerd for test
+containerd-local-push: containerd-local-push-session-wrapper  containerd-local-push-echoserver containerd-local-push-nodejs-hw
+
+.PHONY: containerd-local-push-session-wrapper
+containerd-local-push-session-wrapper:
 	@sudo docker image save -o /tmp/centaurusinfra.io.fornax-serverless.session-wrapper.img centaurusinfra.io/fornax-serverless/session-wrapper:${VERSION}
 	@sudo crictl rmi centaurusinfra.io/fornax-serverless/session-wrapper:${VERSION}
 	@sudo ctr -n=k8s.io image import /tmp/centaurusinfra.io.fornax-serverless.session-wrapper.img
+
+.PHONY: containerd-local-push-echoserver
+containerd-local-push-echoserver:
+	@sudo docker image save -o /tmp/centaurusinfra.io.fornax-serverless.echoserver.img centaurusinfra.io/fornax-serverless/echoserver:${VERSION}
+	@sudo crictl rmi centaurusinfra.io/fornax-serverless/echoserver:${VERSION}
+	@sudo ctr -n=k8s.io image import /tmp/centaurusinfra.io.fornax-serverless.echoserver.img
+
+.PHONY: containerd-local-push-nodejs-hw
+containerd-local-push-nodejs-hw:
+	@sudo docker image save -o /tmp/centaurusinfra.io.fornax-serverless.nodejs-hw.img centaurusinfra.io/fornax-serverless/nodejs-hw:${VERSION}
+	@sudo crictl rmi centaurusinfra.io/fornax-serverless/nodejs-hw:${VERSION}
+	@sudo ctr -n=k8s.io image import /tmp/centaurusinfra.io.fornax-serverless.nodejs-hw.img
 
 .PHONY: check
 check:

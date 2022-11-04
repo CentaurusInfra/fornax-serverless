@@ -42,6 +42,8 @@ const (
 	PodStateTerminated PodState = "Terminated"
 	// PosStateFailed is a abnormal pod exit status when pod met unexpected condtion
 	PodStateFailed PodState = "Failed"
+	// one of pod container is hibernated
+	PodStateHibernated PodState = "Hibernated"
 )
 
 type ContainerState string
@@ -53,8 +55,8 @@ const (
 	ContainerStateStopped     ContainerState = "Stopped"
 	ContainerStateTerminated  ContainerState = "Terminated"
 	ContainerStateTerminating ContainerState = "Terminating"
-	ContainerStateStandby     ContainerState = "Standby"
-	ContainerStateReady       ContainerState = "Ready"
+	ContainerStateRunning     ContainerState = "Running"
+	ContainerStateHibernated  ContainerState = "Hibernated"
 	ContainerStateStarted     ContainerState = "Started"
 )
 
@@ -109,11 +111,6 @@ type FornaxSession struct {
 
 func UniquePodName(pod *FornaxPod) string {
 	return fmt.Sprintf("Namespace:%s,Name:%s,UID:%s", pod.Pod.Namespace, pod.Pod.Name, pod.Pod.UID)
-}
-
-func PodIsNotStandBy(pod *FornaxPod) bool {
-	//TODO if not standby pod
-	return true
 }
 
 func PodHasOpenSessions(pod *FornaxPod) bool {

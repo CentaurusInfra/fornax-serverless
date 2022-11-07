@@ -40,10 +40,10 @@ rust_install(){
 
 rustup_install(){
     echo -e "## RUSTUP INSTALL"
-    rustup update nightly-2021-12-04-x86_64-unknown-linux-gnu
-    rustup toolchain install nightly-2021-12-04-x86_64-unknown-linux-gnu
-    rustup default nightly-2021-12-04-x86_64-unknown-linux-gnu
-    rustup component add rust-src --toolchain nightly-2021-12-04-x86_64-unknown-linux-gnu
+    rustup update nightly-2022-08-11-x86_64-unknown-linux-gnu
+    rustup toolchain install nightly-2022-08-11-x86_64-unknown-linux-gnu
+    rustup default nightly-2022-08-11-x86_64-unknown-linux-gnu
+    rustup component add rust-src --toolchain nightly-2022-08-11-x86_64-unknown-linux-gnu
     rustup --version
     echo -e "## DONE\n"
 }

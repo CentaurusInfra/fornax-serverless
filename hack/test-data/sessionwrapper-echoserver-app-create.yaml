@@ -5,6 +5,7 @@ metadata:
   labels:
     name: sessionwrapper-echoserver
 spec:
+  usingNodeSessionService: true
   scalingPolicy:
     minimumInstance: 110
     maximumInstance: 200

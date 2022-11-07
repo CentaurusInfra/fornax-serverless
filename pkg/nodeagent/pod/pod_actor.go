@@ -111,7 +111,13 @@ func (a *PodActor) recoverContainerAndSessionActors() {
 	for _, sess := range a.pod.Sessions {
 		if !util.SessionIsClosed(sess.Session) {
 			klog.InfoS("Recover session actor on pod", "pod", types.UniquePodName(a.pod), "session", sess.Identifier, "status", sess.Session.Status)
-			actor := session.NewSessionActor(a.pod, sess, a.dependencies.SessionService, a.innerActor.Reference())
+			var sessService sessionservice.SessionService
+			if util.PodHasSessionServiceAnnotation(a.pod.Pod) {
+				sessService = a.dependencies.SessionService
+			} else {
+				sessService = sessionservice.NewNullSessionService()
+			}
+			actor := session.NewSessionActor(a.pod, sess, sessService, a.innerActor.Reference())
 			a.sessionActors[sess.Identifier] = actor
 			actor.PingSession()
 		}

@@ -62,6 +62,8 @@ func (f *NullSessionService) PingSession(pod *types.FornaxPod, session *types.Fo
 	}
 }
 
+// NullSessionService used when pod do not use session service to open/close session, have a NullSessionService just make the pod actor handle sessions in same way for all pods no matter they use session service or not.
+// it does not check session status, it just return a dumb message to fool pod actor
 func NewNullSessionService() *NullSessionService {
 	return &NullSessionService{
 		stateCallbackFuncs: map[string]func(internal.SessionState){},

@@ -5,16 +5,15 @@ metadata:
   labels:
     name: nginx-mysql
 spec:
-  sessionConfig:
-    numOfSessionOfInstance: 1
+  usingNodeSessionService: false
   scalingPolicy:
     minimumInstance: 0
     maximumInstance: 3
     burst: 1
     scalingPolicyType: idle_session_number
     idleSessionNumThreshold:
-      highWaterMark: 10
-      lowWaterMark: 3
+      highWaterMark: 1
+      lowWaterMark: 0
   containers:
     - image: nginx:latest
       name: nginx
@@ -43,7 +42,6 @@ spec:
         limits:
           memory: "500M"
           cpu: "0.5"
-  workingMode: Standlone
   configData:
     config1: data1
     config2: data2

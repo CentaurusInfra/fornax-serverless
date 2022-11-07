@@ -1,13 +1,13 @@
 apiVersion: core.fornax-serverless.centaurusinfra.io/v1
 kind: Application
 metadata:
-  name: nginx
+  name: nodejs-hw
   labels:
-    name: nginx
+    name: nodejs-hw
 spec:
   usingNodeSessionService: false
   scalingPolicy:
-    minimumInstance: 0
+    minimumInstance: 1
     maximumInstance: 30
     burst: 1
     scalingPolicyType: idle_session_number
@@ -15,8 +15,8 @@ spec:
       highWaterMark: 3
       lowWaterMark: 0
   containers:
-    - image: nginx:latest
-      name: nginx
+    - image: centaurusinfra.io/fornax-serverless/nodejs-hw:v0.1.0
+      name: nodejs-hw
       resources:
         requests:
           memory: "500M"
@@ -25,8 +25,8 @@ spec:
           memory: "500M"
           cpu: "0.5"
       ports:
-        - containerPort: 80
-          name: nginx
+        - containerPort: 8080
+          name: nodejs
   configData:
     config1: data1
     config2: data2

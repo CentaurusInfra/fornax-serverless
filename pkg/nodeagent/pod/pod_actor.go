@@ -325,9 +325,9 @@ func (a *PodActor) handlePodError() (err error) {
 			err = a.terminate(true)
 		}
 	case pod.FornaxPodState != types.PodStateTerminated && pod.RuntimePod != nil && pod.RuntimePod.Sandbox != nil:
-		if pod.FornaxPodState == types.PodStateRunning {
+		if pod.FornaxPodState == types.PodStateRunning || pod.FornaxPodState == types.PodStateHibernated {
+			// a running pod should have at a least container
 			if len(a.containerActors) == 0 {
-				// a running pod should have at a least container
 				err = a.terminate(true)
 			}
 		} else {

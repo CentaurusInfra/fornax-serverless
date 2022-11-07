@@ -71,23 +71,9 @@ func Name(obj interface{}) string {
 func MergeObjectMeta(fromMeta, toMeta *metav1.ObjectMeta) {
 	toMeta.ResourceVersion = fromMeta.ResourceVersion
 
-	labels := map[string]string{}
-	for k, v := range toMeta.GetLabels() {
-		labels[k] = v
-	}
-	for k, v := range fromMeta.GetLabels() {
-		labels[k] = v
-	}
-	toMeta.Labels = labels
+	toMeta.Labels = fromMeta.GetLabels()
 
-	annotations := map[string]string{}
-	for k, v := range toMeta.GetAnnotations() {
-		annotations[k] = v
-	}
-	for k, v := range fromMeta.GetAnnotations() {
-		annotations[k] = v
-	}
-	toMeta.Annotations = annotations
+	toMeta.Annotations = fromMeta.GetAnnotations()
 
 	if fromMeta.DeletionTimestamp != nil && toMeta.DeletionTimestamp == nil {
 		toMeta.DeletionTimestamp = fromMeta.DeletionTimestamp

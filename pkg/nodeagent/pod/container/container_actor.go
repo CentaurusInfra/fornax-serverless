@@ -61,7 +61,6 @@ func (a *PodContainerActor) Start() {
 	a.innerActor.Start()
 
 	if a.container.ContainerStatus.RuntimeStatus != nil {
-		a.dependencies.RuntimeService.WakeupContainer(a.container.RuntimeContainer.Id)
 		// recovered container actor from node agent db already has a container status loaded, only need to startup probers
 		a.startStartupProbers()
 	} else {

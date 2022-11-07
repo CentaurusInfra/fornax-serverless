@@ -60,11 +60,13 @@ func BuildFornaxcoreGrpcPodState(nodeRevision int64, pod *fornaxtypes.FornaxPod)
 	}
 
 	podWithSession := pod.Pod.DeepCopy()
+	labels := podWithSession.GetLabels()
 	if len(sessionLables) > 0 {
-		podWithSession.GetLabels()[fornaxv1.LabelFornaxCoreApplicationSession] = strings.Join(sessionLables, ",")
+		labels[fornaxv1.LabelFornaxCoreApplicationSession] = strings.Join(sessionLables, ",")
 	} else {
-		delete(podWithSession.GetLabels(), fornaxv1.LabelFornaxCoreApplicationSession)
+		delete(labels, fornaxv1.LabelFornaxCoreApplicationSession)
 	}
+	podWithSession.Labels = labels
 
 	s := grpc.PodState{
 		NodeRevision:  nodeRevision,

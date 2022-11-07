@@ -280,7 +280,7 @@ func (pool *ApplicationPool) addSession(sessionId string, session *fornaxv1.Appl
 	} else if util.SessionIsClosing(session) {
 		newState = SessionStateDeleting
 	} else {
-		// do not add a terminal state session, instead of deleting if session exist in pool
+		// do not add a terminal state session, instead of deleting and return
 		pool._deleteSessionNoLock(session)
 		return
 	}

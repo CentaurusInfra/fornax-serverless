@@ -283,7 +283,7 @@ func (pm *podManager) AddPod(nodeId string, pod *v1.Pod) (*v1.Pod, error) {
 		return newPod, nil
 	} else {
 		podInCache := fornaxPodState.v1pod.DeepCopy()
-		if podInCache.ResourceVersion == pod.ResourceVersion {
+		if podInCache.ResourceVersion >= pod.ResourceVersion {
 			return podInCache, nil
 		}
 		if len(nodeId) > 0 {

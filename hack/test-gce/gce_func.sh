@@ -77,6 +77,20 @@ delete_app() {
         kubectl delete application --kubeconfig kubeconfig --namespace fornaxtest echo$i &
     done
 
+    # delete application
+    names=`kubectl get application --kubeconfig kubeconfig --namespace fornaxtest | awk '{if(NR>1) print $1}'`
+    for name in $names
+    do
+        kubectl delete application --kubeconfig kubeconfig --namespace fornaxtest $name &
+    done
+
+    # Delete session
+    names=`kubectl get applicationsession --kubeconfig kubeconfig --namespace fornaxtest | awk '{if(NR>1) print $1}'`
+    for name in $names
+    do
+        kubectl delete applicationsessions --kubeconfig kubeconfig --namespace fornaxtest $name &
+    done
+
     # check if app exist
     kubectl get application --kubeconfig kubeconfig --namespace fornaxtest
     # get appsession info

@@ -29,7 +29,8 @@ EXPOSE 8080
 #ENV SOME_ENV=SOME_VALUE
 
 #FROM gcr.io/distroless/base-debian11
-FROM gcr.io/distroless/static-debian11
+#FROM gcr.io/distroless/static-debian11
+FROM busybox
 
 COPY --from=build /opt/bin/echoserver /opt/bin/echoserver
 

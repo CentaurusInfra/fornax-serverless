@@ -118,7 +118,6 @@ func (am *ApplicationManager) onApplicationSessionUpdateEvent(old, cur interface
 	pool := am.getOrCreateApplicationPool(applicationKey)
 
 	if v := pool.getSession(string(newCopy.GetUID())); v != nil {
-		oldCopy = v.session.DeepCopy()
 		updateSessionPool(pool, newCopy)
 		am.enqueueApplication(applicationKey)
 	} else {

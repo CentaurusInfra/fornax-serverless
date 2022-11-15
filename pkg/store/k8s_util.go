@@ -28,7 +28,6 @@ import (
 	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/runtime"
 	apistorage "k8s.io/apiserver/pkg/storage"
-	"k8s.io/klog/v2"
 )
 
 // continueToken is a simple structured object for encoding the state of a continue token.
@@ -45,7 +44,7 @@ type continueToken struct {
 func AppendListItem(v reflect.Value, obj runtime.Object, rev uint64, pred apistorage.SelectionPredicate) error {
 	// being unable to set the version does not prevent the object from being extracted
 	if err := SetObjectResourceVersion(obj, rev); err != nil {
-		klog.Errorf("failed to update object version: %v", err)
+		return err
 	}
 	if matched, err := pred.Matches(obj); err == nil && matched {
 		v.Set(reflect.Append(v, reflect.ValueOf(obj).Elem()))
@@ -116,7 +115,6 @@ func DecodeContinue(continueValue, keyPrefix string) (fromKey string, rv int64, 
 
 // encodeContinue returns a string representing the encoded continuation of the current query.
 func EncodeContinue(key, keyPrefix string, resourceVersion uint64) (string, error) {
-	klog.InfoS("encode continue key", "key", key, "keyprefix", keyPrefix, "rev", resourceVersion)
 	nextKey := strings.TrimPrefix(key, keyPrefix)
 	if nextKey == key {
 		return "", fmt.Errorf("unable to encode next field: the key and key prefix do not match")

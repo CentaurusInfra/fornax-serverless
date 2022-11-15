@@ -88,7 +88,7 @@ func (pool *ApplicationPool) addOrUpdatePod(podName string, podState Application
 			return p
 		}
 		if p.state != PodStatePending && podState == PodStatePending {
-			// do not change a pod state which already not pending
+			// do not change a pod state to pending if pod is not pending anymore
 			return p
 		}
 	}

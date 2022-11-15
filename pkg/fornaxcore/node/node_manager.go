@@ -19,7 +19,6 @@ package node
 import (
 	"context"
 	"encoding/json"
-	"strconv"
 	"sync"
 	"time"
 
@@ -94,10 +93,11 @@ func (nm *nodeManager) UpdatePodState(nodeId string, pod *v1.Pod, sessions []*fo
 	if nodeWS := nm.nodes.get(nodeId); nodeWS != nil {
 		nodeWS.LastSeen = time.Now()
 		if existingPod := nm.podManager.FindPod(podName); existingPod != nil {
-			existingPodRv, _ := strconv.Atoi(existingPod.ResourceVersion)
-			podRv, _ := strconv.Atoi(pod.ResourceVersion)
-			if existingPodRv >= podRv {
-				// we already have pod with newer version
+			largerRv, err := util.ResourceVersionLargerThan(pod, existingPod)
+			if err != nil {
+				return err
+			}
+			if !largerRv {
 				return nil
 			}
 		}

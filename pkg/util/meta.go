@@ -17,9 +17,12 @@ limitations under the License.
 package util
 
 import (
+	"strconv"
 	"time"
 
+	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/tools/cache"
 )
 
@@ -82,4 +85,19 @@ func MergeObjectMeta(fromMeta, toMeta *metav1.ObjectMeta) {
 	if fromMeta.DeletionGracePeriodSeconds != nil && toMeta.DeletionGracePeriodSeconds == nil {
 		toMeta.DeletionGracePeriodSeconds = fromMeta.DeletionGracePeriodSeconds
 	}
+}
+
+func ResourceVersionLargerThan(newObj, oldObj runtime.Object) (bool, error) {
+	aObjAccessor, err := meta.Accessor(newObj)
+	if err != nil {
+		return false, err
+	}
+	aRv, _ := strconv.Atoi(aObjAccessor.GetResourceVersion())
+
+	bObjAccessor, err := meta.Accessor(oldObj)
+	if err != nil {
+		return false, err
+	}
+	bRv, _ := strconv.Atoi(bObjAccessor.GetResourceVersion())
+	return aRv > bRv, nil
 }

@@ -293,7 +293,7 @@ func (ps *podScheduler) updatePodOccupiedResourceList(snode *SchedulableNode, po
 func (ps *podScheduler) printScheduleSummary() {
 	activeNum, retryNum := ps.scheduleQueue.Length()
 	klog.InfoS("Scheduler summary", "active queue length", activeNum, "backoff queue length", retryNum, "available nodes", ps.nodePool.size(), "schedulers", len(ps.schedulers))
-	ps.nodePool.printSummary()
+	// ps.nodePool.printSummary()
 }
 
 type nodeChunkScheduler struct {

@@ -48,7 +48,7 @@ const (
 	DefaultRootPath                   = "/var/lib/nodeagent"
 	DefaultDBName                     = "nodeagent.sqlite"
 	DefaultContainerRuntimeEndpoint   = "/run/containerd/containerd.sock"
-	DefaultMaxPods                    = 1000
+	DefaultMaxPods                    = 2000
 	DefaultPodPidLimits               = -1
 	DefaultCgroupRoot                 = "/"
 	DefaultCgroupDriver               = "cgroupfs"

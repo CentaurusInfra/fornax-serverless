@@ -283,7 +283,11 @@ func (pm *podManager) AddPod(nodeId string, pod *v1.Pod) (*v1.Pod, error) {
 		return newPod, nil
 	} else {
 		podInCache := fornaxPodState.v1pod.DeepCopy()
-		if podInCache.ResourceVersion >= pod.ResourceVersion {
+		largerRv, err := util.ResourceVersionLargerThan(pod, podInCache)
+		if err != nil {
+			return nil, err
+		}
+		if !largerRv {
 			return podInCache, nil
 		}
 		if len(nodeId) > 0 {
@@ -296,7 +300,7 @@ func (pm *podManager) AddPod(nodeId string, pod *v1.Pod) (*v1.Pod, error) {
 			}
 			util.MergePod(pod, podInCache)
 			switch {
-			case util.PodIsTerminated(pod):
+			case util.PodIsTerminated(podInCache):
 				pm.podStateMap.deletePod(fornaxPodState)
 				pm.podUpdates <- &ie.PodEvent{NodeId: nodeId, Pod: podInCache.DeepCopy(), Type: ie.PodEventTypeTerminate}
 			default:

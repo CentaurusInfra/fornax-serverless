@@ -422,7 +422,7 @@ func (am *ApplicationManager) pruneDeadPods(pool *ApplicationPool) {
 			// only delete pending pods which scheduled to a node but did not report back by node,
 			// delete a pod not scheduled to a node, will trigger creating another unnecessary pending pod
 			if pod.Status.StartTime != nil && pod.Status.StartTime.Time.Before(pendingTimeoutCutoff) && len(pod.Status.HostIP) > 0 {
-				am.deleteApplicationPod(pool, ap.podName, false)
+				am.deleteApplicationPod(pool, ap.podName)
 			}
 		} else {
 			pool.deletePod(ap.podName)
@@ -430,15 +430,8 @@ func (am *ApplicationManager) pruneDeadPods(pool *ApplicationPool) {
 	}
 
 	for _, ap := range deletingPods {
-		pod := am.podManager.FindPod(ap.podName)
-		if pod != nil {
-			if pod.DeletionTimestamp != nil && pod.DeletionTimestamp.Time.Before(time.Now().Add(-1*time.Duration(*pod.DeletionGracePeriodSeconds)*time.Second)) {
-				// forcely to retry
-				am.deleteApplicationPod(pool, ap.podName, true)
-			}
-		} else {
-			pool.deletePod(ap.podName)
-		}
+		// retry
+		am.deleteApplicationPod(pool, ap.podName)
 	}
 }
 

@@ -285,8 +285,9 @@ func (nm *nodeMonitor) updateOrCreateNode(nodeId string, v1node *v1.Node, revisi
 		}
 		nm.nodeManager.SyncNodePodStates(nodeId, podStates)
 	} else {
-		if err := nm.validateNodeRevision(nodeWRev, revision); err != nil {
-			return err
+		if nodeWRev.Revision > revision && revision != 1 {
+			klog.Warning("received a revision which is older than current revision", "node", v1node, "currRevision", nodeWRev.Revision, "revision", revision)
+			return nil
 		}
 		nodeWRev.Revision = revision
 		_, err := nm.nodeManager.UpdateNode(nodeId, v1node)

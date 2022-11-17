@@ -163,16 +163,10 @@ func (m *PodActor) generateContainerConfig(container *v1.Container, imageRef *cr
 
 func (a *PodActor) terminateContainer(container *types.FornaxContainer) error {
 	pod := a.pod
-	klog.InfoS("Terminate container and remove it",
-		"Pod", types.UniquePodName(pod),
-		"ContainerName", container.ContainerSpec.Name,
-	)
-
+	klog.InfoS("Terminate container and remove it", "Pod", types.UniquePodName(pod), "ContainerName", container.ContainerSpec.Name)
 	err := a.dependencies.RuntimeService.TerminateContainer(container.RuntimeContainer.Id)
 	if err != nil {
-		klog.ErrorS(err, "stop pod container failed",
-			"Pod", types.UniquePodName(pod),
-			"containerName", container.ContainerSpec.Name)
+		klog.ErrorS(err, "terminate pod container failed", "Pod", types.UniquePodName(pod), "containerName", container.ContainerSpec.Name)
 		return err
 	}
 

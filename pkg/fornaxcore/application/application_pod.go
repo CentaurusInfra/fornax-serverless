@@ -99,7 +99,7 @@ func (am *ApplicationManager) handlePodAddUpdateFromNode(pod *v1.Pod) {
 		ap := pool.getPod(podName)
 		if ap != nil && ap.state == PodStateDeleting {
 			// this pod was requested to terminate, and node did not receive termination or failed to do it, try it again
-			am.deleteApplicationPod(pool, ap.podName, true)
+			am.deleteApplicationPod(pool, ap.podName)
 			return
 		}
 		if ap != nil && ap.state == PodStateAllocated {
@@ -158,15 +158,19 @@ func (am *ApplicationManager) handlePodDeleteFromNode(pod *v1.Pod) {
 	am.enqueueApplication(applicationKey)
 }
 
-func (am *ApplicationManager) deleteApplicationPod(pool *ApplicationPool, podName string, retry bool) error {
+func (am *ApplicationManager) deleteApplicationPod(pool *ApplicationPool, podName string) error {
 	podState := pool.getPod(podName)
 	if podState == nil {
 		return nil
 	}
 
-	if podState.state == PodStateDeleting && !retry {
-		// already in deleting, skip unless forcely retry
-		return nil
+	if podState.state == PodStateDeleting {
+		pod := am.podManager.FindPod(podName)
+		if pod != nil && pod.DeletionTimestamp != nil && pod.DeletionTimestamp.Time.Before(time.Now().Add(-1*time.Duration(*pod.DeletionGracePeriodSeconds)*time.Second)) {
+			// retry if deleting timeout
+		} else {
+			return nil
+		}
 	}
 
 	pool.addOrUpdatePod(podName, PodStateDeleting, []string{})
@@ -435,7 +439,7 @@ func (am *ApplicationManager) deployApplicationPods(pool *ApplicationPool, appli
 		deleteErrors := []error{}
 		podsToDelete := am.getPodsToBeDelete(pool, desiredSubstraction)
 		for _, ap := range podsToDelete {
-			err := am.deleteApplicationPod(pool, ap.podName, false)
+			err := am.deleteApplicationPod(pool, ap.podName)
 			if err != nil {
 				deleteErrors = append(deleteErrors, err)
 			}
@@ -474,7 +478,7 @@ func (am *ApplicationManager) cleanupPodOfApplication(pool *ApplicationPool) err
 	deleteErrors := []error{}
 	pods := pool.podList()
 	for _, ap := range pods {
-		err := am.deleteApplicationPod(pool, ap.podName, false)
+		err := am.deleteApplicationPod(pool, ap.podName)
 		if err != nil {
 			deleteErrors = append(deleteErrors, err)
 		}

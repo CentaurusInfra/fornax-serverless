@@ -65,8 +65,8 @@ type FornaxNodeActor struct {
 func (n *FornaxNodeActor) Stop() error {
 	n.stopCh <- struct{}{}
 	n.innerActor.Stop()
-	for _, v := range n.podActors.List() {
-		v.Stop()
+	for _, actor := range n.podActors.List() {
+		actor.Stop()
 	}
 	return nil
 }

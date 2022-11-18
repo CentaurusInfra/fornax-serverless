@@ -50,10 +50,10 @@ func (a *PodContainerActor) Reference() message.ActorRef {
 func (a *PodContainerActor) Stop() {
 	klog.InfoS("Stopping container actor", "pod", types.UniquePodName(a.pod), "container", a.container.ContainerSpec.Name)
 
-	a.innerActor.Stop()
 	for _, v := range a.probers {
 		v.Stop()
 	}
+	a.innerActor.Stop()
 }
 
 func (a *PodContainerActor) Start() {
@@ -81,7 +81,7 @@ func (a *PodContainerActor) containerHandler(msg message.ActorMessage) (interfac
 	var reply interface{}
 	switch msg.Body.(type) {
 	case internal.PodContainerStopping:
-		reply, err = a.stopContainer(msg.Body.(internal.PodContainerStopping).GracePeriod)
+		err = a.stopContainer(msg.Body.(internal.PodContainerStopping).GracePeriod)
 	case internal.PodContainerStarting:
 		err = a.startContainer()
 	case internal.PodOOM:
@@ -213,7 +213,7 @@ func (a *PodContainerActor) onContainerReady() (interface{}, error) {
 	return nil, nil
 }
 
-func (a *PodContainerActor) onContainerStarted() (interface{}, error) {
+func (a *PodContainerActor) onContainerStarted() error {
 	pod := a.pod
 	container := a.container
 	if a.container.State == types.ContainerStateCreated {
@@ -223,7 +223,7 @@ func (a *PodContainerActor) onContainerStarted() (interface{}, error) {
 
 	if a.inStoppingProcess() {
 		klog.InfoS("Container is being terminated, ignore startup probe message", "pod", pod.Identifier, "containerName", container.ContainerSpec.Name)
-		return nil, nil
+		return nil
 	}
 
 	// start liveness and readiness prober for non init container
@@ -258,26 +258,26 @@ func (a *PodContainerActor) onContainerStarted() (interface{}, error) {
 			errMsg, err := a.runLifecycleHandler(pod, container, container.ContainerSpec.Lifecycle.PostStart)
 			if err != nil {
 				klog.ErrorS(err, "Post start lifecycle handler failed", "pod", pod.Identifier, "containerName", container.ContainerSpec.Name, "errMsg", errMsg)
-				return nil, err
+				return err
 			}
 		}
 	}
 
-	return nil, nil
+	return nil
 }
 
 func (a *PodContainerActor) inStoppingProcess() bool {
 	return a.container.State == types.ContainerStateStopping || a.container.State == types.ContainerStateStopped || a.container.State == types.ContainerStateTerminating || a.container.State == types.ContainerStateTerminated
 }
 
-func (a *PodContainerActor) stopContainer(timeout time.Duration) (interface{}, error) {
-	if a.container.State == types.ContainerStateHibernated {
-		// wake up container and stop it, TODO, remove it after quark able to stop without wake up
+func (a *PodContainerActor) stopContainer(timeout time.Duration) error {
+	pod := a.pod
+	container := a.container
+	// wake up container and stop it, TODO, remove it after quark able to stop without wake up
+	if container != nil && container.State == types.ContainerStateHibernated {
 		a.dependencies.RuntimeService.WakeupContainer(a.container.ContainerStatus.RuntimeStatus.Id)
 	}
 	a.container.State = types.ContainerStateStopping
-	pod := a.pod
-	container := a.container
 
 	// execute prestop lifecycle handler
 	if container != nil && container.RuntimeContainer != nil {
@@ -307,7 +307,7 @@ func (a *PodContainerActor) stopContainer(timeout time.Duration) (interface{}, e
 		err = a.dependencies.RuntimeService.StopContainer(container.RuntimeContainer.Id, timeout)
 		if err != nil {
 			klog.ErrorS(err, "Stop pod container failed", "pod", pod.Identifier, "containerName", container.ContainerSpec.Name)
-			return nil, err
+			return err
 		}
 
 		// stop probers except runtime status prober, let it to update runtime status
@@ -320,7 +320,7 @@ func (a *PodContainerActor) stopContainer(timeout time.Duration) (interface{}, e
 		status, err = a.dependencies.RuntimeService.GetContainerStatus(container.RuntimeContainer.Id)
 		if err != nil {
 			klog.ErrorS(err, "Stop pod container failed", "pod", pod.Identifier, "containerName", container.ContainerSpec.Name)
-			return nil, err
+			return err
 		} else {
 			a.container.ContainerStatus = status
 		}
@@ -332,7 +332,7 @@ func (a *PodContainerActor) stopContainer(timeout time.Duration) (interface{}, e
 		Pod:       pod,
 		Container: container,
 	})
-	return nil, nil
+	return nil
 }
 
 func NewPodContainerActor(supervisor message.ActorRef, pod *types.FornaxPod, container *types.FornaxContainer, dependencies *dependency.Dependencies) *PodContainerActor {

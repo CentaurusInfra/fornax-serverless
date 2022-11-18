@@ -333,7 +333,6 @@ func (ps *podScheduler) initializeChunkSchedulers() {
 	numOfNodesPerScheduler := ps.policy.NumOfEvaluatedNodes
 	chunkSchedulers := []*nodeChunkScheduler{}
 	allNodes := ps.nodePool.GetNodes()
-	klog.InfoS("Reinitialize chunk schedulers", "available nodes", len(allNodes))
 	numOfSchedulers := int(math.Ceil(float64(len(allNodes)) / float64(numOfNodesPerScheduler)))
 	for i := 0; i < numOfSchedulers; i++ {
 		nodes := allNodes[i*numOfNodesPerScheduler : int(math.Min(float64((i+1)*numOfNodesPerScheduler), float64(len(allNodes))))]

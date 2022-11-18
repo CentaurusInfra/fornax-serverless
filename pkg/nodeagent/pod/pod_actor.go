@@ -61,8 +61,8 @@ func (n *PodActor) Reference() message.ActorRef {
 
 func (n *PodActor) Stop() error {
 	n.stop = true
-	for _, v := range n.containerActors {
-		v.Stop()
+	for _, actor := range n.containerActors {
+		actor.Stop()
 	}
 	n.innerActor.Stop()
 	return nil
@@ -162,15 +162,16 @@ func (a *PodActor) podHandler(msg message.ActorMessage) (interface{}, error) {
 	case internal.SessionClose:
 		err = a.onSessionCloseCommand(msg.Body.(internal.SessionClose))
 	case internal.SessionState:
-		a.handleSessionState(msg.Body.(internal.SessionState))
-		if a.pod.FornaxPodState == types.PodStateTerminating {
+		err = a.handleSessionState(msg.Body.(internal.SessionState))
+		if err != nil || a.pod.FornaxPodState == types.PodStateTerminating {
 			// when pod termination was requested, recheck if pod can be finally terminated after session closed
 			err = a.terminate(false)
 		}
 	case HouseKeeping:
 		// calibarate pod error and cleanup, return if cleanup failed, do not change previous error state
 		if a.lastError != nil {
-			err = a.handlePodError()
+			klog.InfoS("Pod actor house keeping", "pod", types.UniquePodName(a.pod), "state", a.pod.FornaxPodState)
+			err = a.podHouseKeeping()
 		}
 	default:
 	}
@@ -185,6 +186,7 @@ func (a *PodActor) podHandler(msg message.ActorMessage) (interface{}, error) {
 			a.lastError = a.cleanup()
 			if a.lastError == nil {
 				// only notify if cleanup did not fail, no need to send uncleaned pod to fornax core, it could still running
+				klog.InfoS("PodState changed", "pod", types.UniquePodName(a.pod), "old state", oldPodState, "new state", a.pod.FornaxPodState)
 				a.notify(a.supervisor, internal.PodStatusChange{Pod: a.pod})
 			}
 		} else {
@@ -281,6 +283,7 @@ func (a *PodActor) cleanup() error {
 
 func (a *PodActor) hibernate() error {
 	for _, v := range a.pod.Containers {
+		// quark hibernate whole pod when it received hibernate call for any container, so, just need to call it once
 		err := a.hibernateContainer(v)
 		if err != nil {
 			return err
@@ -302,16 +305,20 @@ func (a *PodActor) hibernateContainer(container *types.FornaxContainer) error {
 	return nil
 }
 
-func (a *PodActor) handlePodError() (err error) {
+func (a *PodActor) podHouseKeeping() (err error) {
 	pod := a.pod
-	klog.InfoS("Handle Pod error", "pod", types.UniquePodName(pod), "err", a.lastError, "podState", a.pod.FornaxPodState)
+	klog.InfoS("House keeping pod error", "pod", types.UniquePodName(pod), "err", a.lastError, "podState", a.pod.FornaxPodState)
+	if pod.FornaxPodState == types.PodStateTerminated || pod.FornaxPodState == types.PodStateRunning || pod.FornaxPodState == types.PodStateHibernated {
+		return nil
+	}
+
 	switch {
 	case pod.FornaxPodState == types.PodStateTerminating:
 		err = a.terminate(true)
-	case pod.FornaxPodState != types.PodStateTerminated && pod.RuntimePod == nil:
+	case pod.RuntimePod == nil:
 		// pod create failed create a sandbox
 		pod.FornaxPodState = types.PodStateTerminated
-	case pod.FornaxPodState != types.PodStateTerminated && pod.RuntimePod != nil && pod.RuntimePod.Sandbox == nil:
+	case pod.RuntimePod != nil && pod.RuntimePod.Sandbox == nil:
 		// pod create failed to get sandbox details
 		var sandbox *criv1.PodSandbox
 		sandbox, err = a.dependencies.RuntimeService.GetPodSandbox(pod.RuntimePod.Id)
@@ -324,15 +331,7 @@ func (a *PodActor) handlePodError() (err error) {
 			pod.RuntimePod.Sandbox = sandbox
 			err = a.terminate(true)
 		}
-	case pod.FornaxPodState != types.PodStateTerminated && pod.RuntimePod != nil && pod.RuntimePod.Sandbox != nil:
-		if pod.FornaxPodState == types.PodStateRunning || pod.FornaxPodState == types.PodStateHibernated {
-			// a running pod should have at a least container
-			if len(a.containerActors) == 0 {
-				err = a.terminate(true)
-			}
-		} else {
-			err = a.terminate(true)
-		}
+	case pod.RuntimePod != nil && pod.RuntimePod.Sandbox != nil:
 	default:
 	}
 
@@ -346,7 +345,10 @@ func (n *PodActor) onPodContainerCreated(msg internal.PodContainerCreated) error
 
 	if n.pod.FornaxPodState == types.PodStateTerminating || n.pod.FornaxPodState == types.PodStateTerminated {
 		klog.InfoS("Pod Container created after when pod is in terminating state", "Pod", types.UniquePodName(pod), "Container", container.ContainerSpec.Name)
-		n.terminateContainer(container)
+		err := n.terminateContainer(container)
+		if err != nil {
+			return err
+		}
 	}
 
 	// TODO, update pod cpu, memory resource usage
@@ -367,19 +369,17 @@ func (a *PodActor) onPodContainerStopped(msg internal.PodContainerStopped) error
 	klog.InfoS("Pod Container stopped", "Pod", types.UniquePodName(pod), "Container", container.ContainerSpec.Name)
 
 	// TODO, release cpu, memory resource stat usage
-	a.handlePodContainerExit(pod, container)
-	return nil
+	return a.handlePodContainerExit(pod, container)
 }
 
 func (a *PodActor) onPodContainerFailed(msg internal.PodContainerFailed) error {
 	pod := msg.Pod
 	container := msg.Container
 	klog.InfoS("Pod Container Failed", "Pod", types.UniquePodName(pod), "Container", container.ContainerSpec.Name)
-	a.handlePodContainerExit(pod, container)
-	return nil
+	return a.handlePodContainerExit(pod, container)
 }
 
-func (a *PodActor) handlePodContainerExit(pod *types.FornaxPod, container *types.FornaxContainer) {
+func (a *PodActor) handlePodContainerExit(pod *types.FornaxPod, container *types.FornaxContainer) error {
 	actor, found := a.containerActors[container.ContainerSpec.Name]
 	if found {
 		actor.Stop()
@@ -390,11 +390,12 @@ func (a *PodActor) handlePodContainerExit(pod *types.FornaxPod, container *types
 			// init container is expected to run to end
 		} else if runtime.ContainerExitAbnormal(container.ContainerStatus) {
 			// init container failed, terminate pod
-			a.terminate(true)
+			return a.terminate(true)
 		}
 	} else {
-		a.terminate(true)
+		return a.terminate(true)
 	}
+	return nil
 }
 
 // when a container report it's ready, set pod to running state if all container are ready and init containers exit normally
@@ -484,11 +485,11 @@ func (a *PodActor) onSessionCloseCommand(msg internal.SessionClose) error {
 
 // simply update application session status and copy client session
 // if a session timeout, terminate pod,it could close other sessions on it
-func (a *PodActor) handleSessionState(s internal.SessionState) {
+func (a *PodActor) handleSessionState(s internal.SessionState) error {
 	session, found := a.pod.Sessions[s.SessionId]
 	if !found {
 		klog.Warningf("Received session state from unknown session %s", s.SessionId)
-		return
+		return nil
 	}
 	newStatus := session.Session.Status.DeepCopy()
 
@@ -524,12 +525,13 @@ func (a *PodActor) handleSessionState(s internal.SessionState) {
 	if util.SessionIsClosed(session.Session) {
 		delete(a.sessionActors, session.Identifier)
 		if session.Session.Spec.KillInstanceWhenSessionClosed {
-			a.terminate(false)
+			return a.terminate(false)
 		} else if util.PodHasHibernateAnnotation(a.pod.Pod) && a.nodeConfig.RuntimeHandler == runtime.QuarkRuntime {
 			// hibernate again when session is closed
-			a.hibernate()
+			return a.hibernate()
 		}
 	}
+	return nil
 }
 
 func NewPodActor(supervisor message.ActorRef, pod *types.FornaxPod, nodeConfig *config.NodeConfiguration, dependencies *dependency.Dependencies, err error) *PodActor {

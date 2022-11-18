@@ -51,7 +51,7 @@ func (a *LocalChannelActorRef) Receive(msg ActorMessage) error {
 	func() {
 		defer func() {
 			if err := recover(); err != nil {
-				klog.Errorf("channel panic occurred: %v", err)
+				klog.Errorf("channel panic occurred: %v, %v", err, msg)
 				err = errors.New("channel panic")
 			}
 		}()
@@ -125,10 +125,15 @@ func (a *LocalChannelActor) Start() {
 
 // Stop implements Actor
 func (a *LocalChannelActor) Stop() {
-	a.channel <- ActorMessage{
-		Sender: nil,
-		Body:   ActorStop{},
-	}
+	func() {
+		defer func() {
+			if err := recover(); err != nil {
+				klog.Errorf("channel panic occurred: %v, %v", err)
+			}
+		}()
+
+		a.channel <- ActorMessage{Sender: nil, Body: ActorStop{}}
+	}()
 }
 
 // OnReceive implements Actor

@@ -72,7 +72,7 @@ copy_execute_file() {
 
 # delete all app and clear node in the instance
 delete_app() {
-    for i in {0..100}
+    for i in {0..1}
     do
         kubectl delete application --kubeconfig kubeconfig --namespace fornaxtest echo$i &
     done
@@ -226,4 +226,17 @@ install_gce_cli(){
     gcloud components update
 
     sudo rm -rf /usr/bin/snap    
+}
+
+# add ssh public key, must use . and can access from putty
+add_pub_key_to_instance() {
+  names=`gcloud compute instances list --project quark-serverless --format="table(name)" | awk '{print $1}'`
+  for name in $names
+  do
+    if [[ $name == *"fornaxcore"* ]] || [[ $name == *"nodeagent"* ]]; then
+        echo "add public key to instance name: $name"
+        gcloud compute instances add-metadata $name --metadata-from-file ssh-keys=./.ssh/gce.pub  --zone=us-central1-a &
+        sleep 1
+    fi
+  done
 }

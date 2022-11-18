@@ -207,7 +207,7 @@ func TestPodStore_PutPod_NotUpdated(t *testing.T) {
 	defer os.Remove("./test.db")
 	testPod := NewATestPod("testPod1", 1)
 	testPod.FornaxPodState = "PodStateRunning"
-	testPod2 := NewATestPod("testPod1", 2)
+	testPod2 := NewATestPod("testPod1", 0)
 	testPod2.FornaxPodState = "PodStateTerminated"
 	tests := []struct {
 		name     string
@@ -224,7 +224,7 @@ func TestPodStore_PutPod_NotUpdated(t *testing.T) {
 		{
 			name:     "duplicateReplace",
 			args:     testPod2,
-			revision: 1,
+			revision: 0,
 			wantErr:  false,
 		},
 		{
@@ -242,7 +242,7 @@ func TestPodStore_PutPod_NotUpdated(t *testing.T) {
 	}
 
 	if s, err := store.GetPod("testPod1"); err != nil || s == nil || s.Pod.ResourceVersion != testPod.Pod.ResourceVersion || s.FornaxPodState != testPod.FornaxPodState {
-		t.Error("pod is updated although revision is not bumped")
+		t.Error("pod is updated although revision is lower version")
 	}
 }
 
@@ -388,7 +388,7 @@ func TestSessionStore_PutSession_NotUpdated(t *testing.T) {
 		{
 			name:     "upd",
 			session:  testSession2,
-			revision: 1,
+			revision: 0,
 			wantErr:  false,
 		},
 	}

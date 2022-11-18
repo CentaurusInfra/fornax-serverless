@@ -44,6 +44,8 @@ const (
 	PodStateFailed PodState = "Failed"
 	// one of pod container is hibernated
 	PodStateHibernated PodState = "Hibernated"
+	// pod artifacts are cleaned, eg. pod dir, cgroup
+	PodStateCleanup PodState = "Cleanup"
 )
 
 type ContainerState string

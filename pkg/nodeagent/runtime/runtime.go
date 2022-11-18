@@ -34,7 +34,7 @@ import (
 )
 
 const (
-	DefaultTimeout = 10 * time.Second
+	DefaultTimeout = 15 * time.Second
 )
 
 var _ RuntimeService = &remoteRuntimeManager{}
@@ -363,11 +363,16 @@ var (
 	k8sCriNamespaceContext = namespaces.WithNamespace(backgroundCtx, "k8s.io")
 )
 
+func getContextWithTimeout(timeout time.Duration) (context.Context, context.CancelFunc) {
+	return context.WithTimeout(k8sCriNamespaceContext, timeout)
+}
+
 // HibernateContainer implements RuntimeService using containerd client to hibernate
 func (r *remoteRuntimeManager) HibernateContainer(containerID string) error {
 	klog.InfoS("Hibernate Container", "ContainerID", containerID)
-	// t, err := c.Task(context.Background(), cio.NullIO(""))
-	_, err := r.containerdService.TaskService().Kill(k8sCriNamespaceContext, &tasks.KillRequest{
+	ctx, cancel := getContextWithTimeout(DefaultTimeout)
+	defer cancel()
+	_, err := r.containerdService.TaskService().Kill(ctx, &tasks.KillRequest{
 		ContainerID: containerID,
 		ExecID:      "",
 		Signal:      19,
@@ -379,7 +384,9 @@ func (r *remoteRuntimeManager) HibernateContainer(containerID string) error {
 // WakeupContainer implements RuntimeService
 func (r *remoteRuntimeManager) WakeupContainer(containerID string) error {
 	klog.InfoS("Wakeup Container", "ContainerID", containerID)
-	_, err := r.containerdService.TaskService().Kill(k8sCriNamespaceContext, &tasks.KillRequest{
+	ctx, cancel := getContextWithTimeout(DefaultTimeout)
+	defer cancel()
+	_, err := r.containerdService.TaskService().Kill(ctx, &tasks.KillRequest{
 		ContainerID: containerID,
 		ExecID:      "",
 		Signal:      18,

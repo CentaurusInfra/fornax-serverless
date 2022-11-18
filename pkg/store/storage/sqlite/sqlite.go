@@ -147,7 +147,7 @@ func (s *sqLiteStore) getUdpStmt() (*sql.Stmt, error) {
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	stmt, err := s.DB.Prepare(fmt.Sprintf("update %s set identifier = ?, revision =?, content =? where identifier = ? and revision < ?", s.Table))
+	stmt, err := s.DB.Prepare(fmt.Sprintf("update %s set identifier = ?, revision =?, content =? where identifier = ? and revision <= ?", s.Table))
 	if err != nil {
 		return nil, err
 	}

@@ -19,6 +19,7 @@ package node
 import (
 	"encoding/json"
 	"fmt"
+	"strconv"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -170,14 +171,22 @@ func (n *FornaxNodeActor) nodeHandler(msg message.ActorMessage) (interface{}, er
 		return n.processFornaxCoreMessage(msg.Body.(*fornaxgrpc.FornaxCoreMessage))
 	case internal.PodStatusChange:
 		fppod := msg.Body.(internal.PodStatusChange).Pod
-		revision := n.incrementNodeRevision()
-		fppod.Pod.ResourceVersion = fmt.Sprint(revision)
-		n.notify(n.fornoxCoreRef, fornaxpod.BuildFornaxcoreGrpcPodState(revision, fppod))
+		var revision int64
+		rv, err := strconv.Atoi(fppod.Pod.ResourceVersion)
+		if err == nil {
+			revision = int64(rv)
+		}
+		// only bump node revision and report to fornaxcore when pod is in steady or failed state
+		if !types.PodInTransitState(fppod) {
+			revision = n.incrementNodeRevision()
+			fppod.Pod.ResourceVersion = fmt.Sprint(revision)
+			n.notify(n.fornoxCoreRef, fornaxpod.BuildFornaxcoreGrpcPodState(revision, fppod))
+		}
 		// https://www.sqlite.org/faq.html#q19, sqlite transaction is slow, so, call PutPod in go routine.
-		// PutPod use provided revision to avoid newer revision is overwriten by older revision when there is race condition
+		// PutPod use provided revision to avoid newer revision is overwriten by older revision when there is race condition between go routines
 		go func() {
 			n.node.Dependencies.PodStore.PutPod(fppod, revision)
-			if fppod.FornaxPodState == types.PodStateTerminated {
+			if fppod.FornaxPodState == types.PodStateCleanup {
 				err := n.cleanupPodAndActor(fppod)
 				if err != nil {
 					klog.ErrorS(err, "failed to cleanup pod store and actor")
@@ -460,11 +469,23 @@ func (n *FornaxNodeActor) onPodCreateCommand(msg *fornaxgrpc.PodCreate) error {
 }
 
 // find pod actor and send a message to it, if pod actor does not exist, return error
-func (n *FornaxNodeActor) onPodTerminateCommand(msg *fornaxgrpc.PodTerminate) error {
-	podActor := n.podActors.Get(msg.GetPodIdentifier())
-	if podActor == nil {
+func (n *FornaxNodeActor) onPodTerminateCommand(msg *fornaxgrpc.PodTerminate) (err error) {
+	fpod := n.node.Pods.Get(msg.GetPodIdentifier())
+	if fpod == nil {
 		return fmt.Errorf("Pod: %s does not exist, Fornax core is not in sync", msg.GetPodIdentifier())
 	} else {
+		podActor := n.podActors.Get(msg.GetPodIdentifier())
+		if (fpod.FornaxPodState == types.PodStateTerminating || fpod.FornaxPodState == types.PodStateTerminated) && podActor != nil {
+			// avoid repeating termination if pod is in terminating process and has a pod actor work on it
+			return nil
+		}
+		if podActor == nil {
+			klog.Warningf("Pod actor %s already exit, create a new one", msg.GetPodIdentifier())
+			_, podActor, err = n.startPodActor(fpod)
+			if err != nil {
+				return err
+			}
+		}
 		n.notify(podActor.Reference(), internal.PodTerminate{})
 	}
 	return nil

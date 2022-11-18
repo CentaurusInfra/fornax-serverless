@@ -25,8 +25,13 @@ import (
 	"centaurusinfra.io/fornax-serverless/pkg/nodeagent/types"
 
 	v1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/klog/v2"
 	"k8s.io/kubernetes/pkg/kubelet/metrics"
+)
+
+const (
+	DefaultStopContainerGracePeriod = 30 * time.Second
 )
 
 func ValidatePodSpec(apiPod *v1.Pod) []error {
@@ -191,21 +196,26 @@ func (a *PodActor) TerminatePod(gracefulPeriod time.Duration, force bool) (bool,
 
 	allContainerTerminated := true
 	for n, c := range pod.Containers {
-		if runtime.ContainerExit(c.ContainerStatus) || force {
-			klog.InfoS("Terminating stopped container", "pod", types.UniquePodName(pod), "container", n)
-			if err := a.terminateContainer(c); err == nil {
-			} else {
-				allContainerTerminated = false
-				return false, err
-			}
-		} else {
+		if !runtime.ContainerExit(c.ContainerStatus) && !force {
 			allContainerTerminated = false
 			klog.InfoS("Notify running container to stop", "pod", types.UniquePodName(pod), "container", n)
+			if gracefulPeriod == 0 {
+				gracefulPeriod = DefaultStopContainerGracePeriod
+			}
 			a.notifyContainer(c.ContainerSpec.Name, internal.PodContainerStopping{
 				Pod:         pod,
 				Container:   c,
 				GracePeriod: gracefulPeriod,
 			})
+			wait.Poll(1*time.Second, DefaultStopContainerGracePeriod, func() (done bool, err error) {
+				return c.ContainerStatus == nil || runtime.ContainerExit(c.ContainerStatus), nil
+			})
+		}
+
+		klog.InfoS("Terminating container", "pod", types.UniquePodName(pod), "container", n)
+		if err := a.terminateContainer(c); err != nil {
+			allContainerTerminated = false
+			return false, err
 		}
 	}
 

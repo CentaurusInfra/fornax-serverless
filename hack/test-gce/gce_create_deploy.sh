@@ -24,7 +24,7 @@ instance_create() {
     then
         echo -e "will create a instance: fornaxcore"
         # 32 cpu and 120G memory
-        gcloud compute instances create fornaxcore --project=quark-serverless --zone=us-central1-a --machine-type=n1-standard-32 --network-interface=network-tier=PREMIUM,subnet=default --maintenance-policy=MIGRATE --provisioning-model=STANDARD --service-account=$account_number-compute@developer.gserviceaccount.com --scopes=https://www.googleapis.com/auth/cloud-platform --tags=http-server,https-server --create-disk=auto-delete=yes,boot=yes,device-name=instance-1,image=projects/ubuntu-os-cloud/global/images/ubuntu-2004-focal-v20221018,mode=rw,size=50,type=projects/quark-serverless/zones/us-central1-a/diskTypes/pd-ssd --no-shielded-secure-boot --shielded-vtpm --shielded-integrity-monitoring --reservation-affinity=any &
+        gcloud compute instances create fornaxcore --project=quark-serverless --zone=us-central1-a --machine-type=n1-standard-32 --network-interface=network-tier=PREMIUM,subnet=default --maintenance-policy=MIGRATE --provisioning-model=STANDARD --service-account=$account_number-compute@developer.gserviceaccount.com --scopes=https://www.googleapis.com/auth/cloud-platform --tags=http-server,https-server --create-disk=auto-delete=yes,boot=yes,device-name=instance-1,image=projects/ubuntu-os-cloud/global/images/ubuntu-2004-focal-v20221018,mode=rw,size=30,type=projects/quark-serverless/zones/us-central1-a/diskTypes/pd-ssd --no-shielded-secure-boot --shielded-vtpm --shielded-integrity-monitoring --reservation-affinity=any &
         # 2 cpu and 4G Memory
         # gcloud compute instances create fornaxcore --project=quark-serverless --zone=us-central1-a --machine-type=e2-medium --network-interface=network-tier=PREMIUM,subnet=default --maintenance-policy=MIGRATE --provisioning-model=STANDARD --service-account=$account_number-compute@developer.gserviceaccount.com --scopes=https://www.googleapis.com/auth/cloud-platform --tags=http-server,https-server --create-disk=auto-delete=yes,boot=yes,device-name=instance-1,image=projects/ubuntu-os-cloud/global/images/ubuntu-2004-focal-v20220927,mode=rw,size=50,type=projects/quark-serverless/zones/us-central1-a/diskTypes/pd-ssd --no-shielded-secure-boot --shielded-vtpm --shielded-integrity-monitoring --reservation-affinity=any &
     else
@@ -41,7 +41,7 @@ instance_create() {
             instance_name='nodeagent-'$i
             echo -e "created $instance_name \n"
             # 32 cpu and 120G memory
-            gcloud compute instances create $instance_name --project=quark-serverless --zone=us-central1-a --machine-type=n1-standard-32 --network-interface=network-tier=PREMIUM,subnet=default --maintenance-policy=MIGRATE --provisioning-model=STANDARD --service-account=$account_number-compute@developer.gserviceaccount.com --scopes=https://www.googleapis.com/auth/cloud-platform --tags=http-server,https-server --create-disk=auto-delete=yes,boot=yes,device-name=instance-1,image=projects/ubuntu-os-cloud/global/images/ubuntu-2004-focal-v20221018,mode=rw,size=50,type=projects/quark-serverless/zones/us-central1-a/diskTypes/pd-ssd --no-shielded-secure-boot --shielded-vtpm --shielded-integrity-monitoring --reservation-affinity=any &
+            gcloud compute instances create $instance_name --project=quark-serverless --zone=us-central1-a --machine-type=n1-standard-32 --network-interface=network-tier=PREMIUM,subnet=default --maintenance-policy=MIGRATE --provisioning-model=STANDARD --service-account=$account_number-compute@developer.gserviceaccount.com --scopes=https://www.googleapis.com/auth/cloud-platform --tags=http-server,https-server --create-disk=auto-delete=yes,boot=yes,device-name=instance-1,image=projects/ubuntu-os-cloud/global/images/ubuntu-2004-focal-v20221018,mode=rw,size=30,type=projects/quark-serverless/zones/us-central1-a/diskTypes/pd-ssd --no-shielded-secure-boot --shielded-vtpm --shielded-integrity-monitoring --reservation-affinity=any &
             # 2 cpu and 4G Memory
             # gcloud compute instances create $instance_name --project=quark-serverless --zone=us-central1-a --machine-type=e2-medium --network-interface=network-tier=PREMIUM,subnet=default --maintenance-policy=MIGRATE --provisioning-model=STANDARD --service-account=$account_number-compute@developer.gserviceaccount.com --scopes=https://www.googleapis.com/auth/cloud-platform --tags=http-server,https-server --create-disk=auto-delete=yes,boot=yes,device-name=instance-1,image=projects/ubuntu-os-cloud/global/images/ubuntu-2004-focal-v20220927,mode=rw,size=50,type=projects/quark-serverless/zones/us-central1-a/diskTypes/pd-ssd --no-shielded-secure-boot --shielded-vtpm --shielded-integrity-monitoring --reservation-affinity=any &
         done
@@ -50,8 +50,29 @@ instance_create() {
     fi
  
     echo -e "## Please waiting instance ready.\n"
-    sleep 30
+    sleep 120
     echo -e "## All instances created done\n"
+}
+
+copy_basicfile_to_instance() {
+    echo -e "## Copy basic file to the instance\n"
+    names=`gcloud compute instances list --project quark-serverless --format="table(name)" | awk '{print $1}'`
+    for name in $names
+    do
+        if [ $name == "NAME" ]; then
+            continue
+        fi
+
+        if [[ $name == *"fornaxcore"* ]] || [[ $name == *"nodeagent"* ]]; then
+            echo "copy file to instance: $name"
+            gcloud compute ssh $name --command="mkdir -p ~/go/src/centaurusinfra.io/fornax-serverless/bin" --project=quark-serverless --zone=us-central1-a > /dev/null 2>&1 &
+            gcloud compute scp ./kubeconfig $name:~/ --project=quark-serverless --zone=us-central1-a &
+        fi
+    done
+    
+    echo -e "## Please waiting basic file copy done.\n"
+    sleep 30
+    echo -e "Copy basic file is done.\n"    
 }
 
 # copy exe file to the each instance
@@ -106,7 +127,7 @@ install_required_software(){
     done
 
     echo -e "## Please waiting software to install.\n"
-    sleep 30
+    sleep 150
     echo -e "install and configue is done.\n"
 }
 
@@ -149,6 +170,8 @@ key_config_ssh
 # check_knownhosts_google
 
 instance_create
+
+copy_basicfile_to_instance
 
 deploy_instance_by_filter
 

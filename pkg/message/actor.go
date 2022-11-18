@@ -39,7 +39,8 @@ type ActorRef interface {
 var _ ActorRef = &LocalChannelActorRef{}
 
 type LocalChannelActorRef struct {
-	Channel *chan ActorMessage
+	Identifier string
+	Channel    *chan ActorMessage
 }
 
 func Send(from, to ActorRef, msg interface{}) error {
@@ -87,7 +88,8 @@ func NewLocalChannelActor(identifier string, messageProcessor MessageProcessFunc
 // Reference implements Actor
 func (a *LocalChannelActor) Reference() ActorRef {
 	ref := LocalChannelActorRef{
-		Channel: &a.channel,
+		Identifier: a.Identifier,
+		Channel:    &a.channel,
 	}
 	return &ref
 }

@@ -100,6 +100,8 @@ func PodStateToFornaxState(pod *fornaxtypes.FornaxPod) grpc.PodState_State {
 		grpcState = grpc.PodState_Terminating
 	case types.PodStateTerminated:
 		grpcState = grpc.PodState_Terminated
+	case types.PodStateCleanup:
+		grpcState = grpc.PodState_Terminated
 	case types.PodStateFailed:
 		// check container runtime state
 		allContainerTerminated := true

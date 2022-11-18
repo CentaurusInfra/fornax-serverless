@@ -88,18 +88,7 @@ type PodStatus struct {
 	ContainerStatuses map[string]*criv1.ContainerStatus
 }
 
-// ContainerWorkingStatus represents the cri status of a container and fornax status.
+// ContainerStatus represents the cri status of a container and fornax status.
 type ContainerStatus struct {
-	WorkingStatus ContainerWorkingStatus
 	RuntimeStatus *criv1.ContainerStatus
 }
-
-// ContainerWorkingStatus is a fornax container status which can put a container in standby
-type ContainerWorkingStatus string
-
-const (
-	// container is in ContainerActive status when it's fullly running
-	ContainerActive ContainerWorkingStatus = "Active"
-	// container is in ContainerStandby status when it's pause at entry point
-	ContainerStandby ContainerWorkingStatus = "Standby"
-)

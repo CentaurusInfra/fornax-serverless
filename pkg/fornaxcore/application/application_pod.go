@@ -42,11 +42,12 @@ import (
 type ApplicationPodState uint8
 
 const (
-	DefaultPodPendingTimeoutDuration                     = 10 * time.Second
-	PodStatePending                  ApplicationPodState = 0 // pod is pending schedule, waiting for node ack
-	PodStateAllocated                ApplicationPodState = 1 // pod is assigned to a session
-	PodStateDeleting                 ApplicationPodState = 2 // pod is being deleted
-	PodStateIdle                     ApplicationPodState = 3 // pod is available to assign a session
+	DefaultPodDeletingTimeoutDuration                     = 30 * time.Second
+	DefaultPodPendingTimeoutDuration                      = 30 * time.Second
+	PodStatePending                   ApplicationPodState = 0 // pod is pending schedule, waiting for node ack
+	PodStateAllocated                 ApplicationPodState = 1 // pod is assigned to a session
+	PodStateDeleting                  ApplicationPodState = 2 // pod is being deleted
+	PodStateIdle                      ApplicationPodState = 3 // pod is available to assign a session
 )
 
 type ApplicationPod struct {
@@ -166,8 +167,9 @@ func (am *ApplicationManager) deleteApplicationPod(pool *ApplicationPool, podNam
 
 	if podState.state == PodStateDeleting {
 		pod := am.podManager.FindPod(podName)
-		if pod != nil && pod.DeletionTimestamp != nil && pod.DeletionTimestamp.Time.Before(time.Now().Add(-1*time.Duration(*pod.DeletionGracePeriodSeconds)*time.Second)) {
-			// retry if deleting timeout
+		if pod != nil && pod.DeletionTimestamp != nil && pod.DeletionTimestamp.Time.Before(time.Now().Add(-1*DefaultPodDeletingTimeoutDuration)) {
+			// reset pod deletiontimestamp and retry if deletion timeout
+			pod.DeletionTimestamp = nil
 		} else {
 			return nil
 		}

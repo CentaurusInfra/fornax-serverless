@@ -96,6 +96,12 @@ func ToV1PodPhase(fppod *types.FornaxPod) v1.PodPhase {
 		podPhase = v1.PodRunning
 	case types.PodStateTerminating:
 		podPhase = v1.PodUnknown
+	case types.PodStateCleanup:
+		if fppod.RuntimePod == nil || fppod.RuntimePod.Sandbox == nil {
+			podPhase = v1.PodFailed
+		} else {
+			podPhase = v1.PodSucceeded
+		}
 	case types.PodStateTerminated:
 		if fppod.RuntimePod == nil || fppod.RuntimePod.Sandbox == nil {
 			podPhase = v1.PodFailed

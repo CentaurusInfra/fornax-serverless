@@ -66,7 +66,7 @@ copy_basicfile_to_instance() {
         if [[ $name == *"fornaxcore"* ]] || [[ $name == *"nodeagent"* ]]; then
             echo "copy file to instance: $name"
             gcloud compute ssh $name --command="mkdir -p ~/go/src/centaurusinfra.io/fornax-serverless/bin" --project=quark-serverless --zone=us-central1-a > /dev/null 2>&1 &
-            gcloud compute scp ./kubeconfig $name:~/ --project=quark-serverless --zone=us-central1-a &
+            gcloud compute scp ./hack/test-gce/nodeagent_podcount.sh $name:~/ --project=quark-serverless --zone=us-central1-a &
         fi
     done
     
@@ -127,7 +127,7 @@ install_required_software(){
     done
 
     echo -e "## Please waiting software to install.\n"
-    sleep 150
+    sleep 120
     echo -e "install and configue is done.\n"
 }
 

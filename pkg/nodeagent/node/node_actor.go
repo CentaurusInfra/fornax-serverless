@@ -29,7 +29,7 @@ import (
 	"centaurusinfra.io/fornax-serverless/pkg/message"
 	"centaurusinfra.io/fornax-serverless/pkg/nodeagent/fornaxcore"
 	internal "centaurusinfra.io/fornax-serverless/pkg/nodeagent/message"
-	fornaxpod "centaurusinfra.io/fornax-serverless/pkg/nodeagent/pod"
+	podutil "centaurusinfra.io/fornax-serverless/pkg/nodeagent/pod"
 	"centaurusinfra.io/fornax-serverless/pkg/nodeagent/session"
 	"centaurusinfra.io/fornax-serverless/pkg/nodeagent/types"
 	"centaurusinfra.io/fornax-serverless/pkg/util"
@@ -171,6 +171,12 @@ func (n *FornaxNodeActor) nodeHandler(msg message.ActorMessage) (interface{}, er
 		return n.processFornaxCoreMessage(msg.Body.(*fornaxgrpc.FornaxCoreMessage))
 	case internal.PodStatusChange:
 		fppod := msg.Body.(internal.PodStatusChange).Pod
+		if fppod.FornaxPodState == types.PodStateCleanup {
+			err := n.cleanupPodStoreAndActor(fppod)
+			if err != nil {
+				klog.ErrorS(err, "failed to cleanup pod store and actor")
+			}
+		}
 		var revision int64
 		rv, err := strconv.Atoi(fppod.Pod.ResourceVersion)
 		if err == nil {
@@ -180,17 +186,14 @@ func (n *FornaxNodeActor) nodeHandler(msg message.ActorMessage) (interface{}, er
 		if !types.PodInTransitState(fppod) {
 			revision = n.incrementNodeRevision()
 			fppod.Pod.ResourceVersion = fmt.Sprint(revision)
-			n.notify(n.fornoxCoreRef, fornaxpod.BuildFornaxcoreGrpcPodState(revision, fppod))
+			n.notify(n.fornoxCoreRef, podutil.BuildFornaxcoreGrpcPodState(revision, fppod))
 		}
 		// https://www.sqlite.org/faq.html#q19, sqlite transaction is slow, so, call PutPod in go routine.
 		// PutPod use provided revision to avoid newer revision is overwriten by older revision when there is race condition between go routines
 		go func() {
-			n.node.Dependencies.PodStore.PutPod(fppod, revision)
-			if fppod.FornaxPodState == types.PodStateCleanup {
-				err := n.cleanupPodAndActor(fppod)
-				if err != nil {
-					klog.ErrorS(err, "failed to cleanup pod store and actor")
-				}
+		// pod has been removed from store in cleanup state, do not save it back
+			if fppod.FornaxPodState != types.PodStateCleanup {
+				n.node.Dependencies.PodStore.PutPod(fppod, revision)
 			}
 		}()
 	case internal.SessionStatusChange:
@@ -308,7 +311,7 @@ func (n *FornaxNodeActor) onNodeConfigurationCommand(msg *fornaxgrpc.NodeConfigu
 func (n *FornaxNodeActor) initializeNodeDaemons(pods []*v1.Pod) error {
 	for _, p := range pods {
 		klog.Infof("Initialize daemon pod, %v", p)
-		errs := fornaxpod.ValidatePodSpec(p)
+		errs := podutil.ValidatePodSpec(p)
 		if len(errs) != 0 {
 			return errors.Errorf("Pod spec is invalid %v", errs)
 		}
@@ -339,7 +342,7 @@ func (n *FornaxNodeActor) initializeNodeDaemons(pods []*v1.Pod) error {
 // buildAFornaxPod validate pod spec, and allocate host port for pod container port, it also set pod lables,
 // modified pod spec will saved in store and return back to FornaxCore to make pod spec in sync
 func (n *FornaxNodeActor) buildAFornaxPod(state types.PodState, v1pod *v1.Pod, configMap *v1.ConfigMap, isDaemon bool) (*types.FornaxPod, error) {
-	errs := fornaxpod.ValidatePodSpec(v1pod)
+	errs := podutil.ValidatePodSpec(v1pod)
 	if len(errs) > 0 {
 		return nil, errors.New("Pod spec is invalid")
 	}
@@ -353,11 +356,11 @@ func (n *FornaxNodeActor) buildAFornaxPod(state types.PodState, v1pod *v1.Pod, c
 		Sessions:                map[string]*types.FornaxSession{},
 		LastStateTransitionTime: time.Now(),
 	}
-	fornaxpod.SetPodStatus(fornaxPod, n.node.V1Node)
+	podutil.SetPodStatus(fornaxPod, n.node.V1Node)
 	fornaxPod.Pod.Labels[fornaxv1.LabelFornaxCoreNode] = util.Name(n.node.V1Node)
 
 	if configMap != nil {
-		errs = fornaxpod.ValidateConfigMapSpec(configMap)
+		errs = podutil.ValidateConfigMapSpec(configMap)
 		if len(errs) > 0 {
 			return nil, errors.New("ConfigMap spec is invalid")
 		}
@@ -381,19 +384,19 @@ func (n *FornaxNodeActor) buildAFornaxPod(state types.PodState, v1pod *v1.Pod, c
 
 // startPodActor start a actor for a pod
 // set pod node related information in case node name and ip changed
-func (n *FornaxNodeActor) startPodActor(fpod *types.FornaxPod) (*types.FornaxPod, *fornaxpod.PodActor, error) {
+func (n *FornaxNodeActor) startPodActor(fpod *types.FornaxPod) (*types.FornaxPod, *podutil.PodActor, error) {
 	fpod.Pod = fpod.Pod.DeepCopy()
 	fpod.Pod.Status.HostIP = n.node.V1Node.Status.Addresses[0].Address
 	fpod.Pod.Labels[fornaxv1.LabelFornaxCoreNode] = util.Name(n.node.V1Node)
 
-	fpActor := fornaxpod.NewPodActor(n.innerActor.Reference(), fpod, &n.node.NodeConfig, n.node.Dependencies, fornaxpod.ErrRecoverPod)
+	fpActor := podutil.NewPodActor(n.innerActor.Reference(), fpod, &n.node.NodeConfig, n.node.Dependencies, podutil.ErrRecoverPod)
 	n.node.Pods.Add(fpod.Identifier, fpod)
 	n.podActors.Add(fpod.Identifier, fpActor)
 	fpActor.Start()
 	return fpod, fpActor, nil
 }
 
-func (n *FornaxNodeActor) createPodAndActor(state types.PodState, v1Pod *v1.Pod, v1Config *v1.ConfigMap, isDaemon bool) (*types.FornaxPod, *fornaxpod.PodActor, error) {
+func (n *FornaxNodeActor) createPodAndActor(state types.PodState, v1Pod *v1.Pod, v1Config *v1.ConfigMap, isDaemon bool) (*types.FornaxPod, *podutil.PodActor, error) {
 	// create fornax pod obj
 	fpod, err := n.buildAFornaxPod(state, v1Pod, v1Config, isDaemon)
 	if err != nil {
@@ -410,7 +413,7 @@ func (n *FornaxNodeActor) createPodAndActor(state types.PodState, v1Pod *v1.Pod,
 	return n.startPodActor(fpod)
 }
 
-func (n *FornaxNodeActor) cleanupPodAndActor(fppod *types.FornaxPod) error {
+func (n *FornaxNodeActor) cleanupPodStoreAndActor(fppod *types.FornaxPod) error {
 	klog.InfoS("Cleanup pod actor and store", "pod", types.UniquePodName(fppod), "state", fppod.FornaxPodState)
 	actor := n.podActors.Get(string(fppod.Identifier))
 	if actor != nil {
@@ -475,7 +478,7 @@ func (n *FornaxNodeActor) onPodTerminateCommand(msg *fornaxgrpc.PodTerminate) (e
 		return fmt.Errorf("Pod: %s does not exist, Fornax core is not in sync", msg.GetPodIdentifier())
 	} else {
 		podActor := n.podActors.Get(msg.GetPodIdentifier())
-		if (fpod.FornaxPodState == types.PodStateTerminating || fpod.FornaxPodState == types.PodStateTerminated) && podActor != nil {
+		if types.PodInTerminating(fpod) && podActor != nil {
 			// avoid repeating termination if pod is in terminating process and has a pod actor work on it
 			return nil
 		}

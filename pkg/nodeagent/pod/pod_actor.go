@@ -183,11 +183,12 @@ func (a *PodActor) podHandler(msg message.ActorMessage) (interface{}, error) {
 		a.houseKeepingError = nil
 		if a.pod.FornaxPodState == types.PodStateTerminated {
 			a.houseKeepingError = a.cleanup()
+			SetPodStatus(a.pod, nil)
 		}
 	}
 
-	// do not notify fornax core in transit state to avoid unnecessary pod state sync
-	if oldPodState != a.pod.FornaxPodState {
+	// notify fornax core when state changed or pod cleaned
+	if oldPodState != a.pod.FornaxPodState || a.pod.FornaxPodState == types.PodStateCleanup {
 		klog.InfoS("PodState changed", "pod", types.UniquePodName(a.pod), "old state", oldPodState, "new state", a.pod.FornaxPodState)
 		a.notify(a.supervisor, internal.PodStatusChange{Pod: a.pod})
 	}
@@ -288,7 +289,7 @@ func (a *PodActor) hibernate() error {
 }
 
 func (a *PodActor) hibernateContainer(container *types.FornaxContainer) error {
-	klog.InfoS("Hibernate Container", "Pod", types.UniquePodName(a.pod), "Container", container.ContainerSpec.Name)
+	klog.InfoS("Hibernate Container", "Pod", types.UniquePodName(a.pod), "Container", container.ContainerSpec.Name, "PodId", a.pod.RuntimePod.Id)
 	err := a.dependencies.RuntimeService.HibernateContainer(container.ContainerStatus.RuntimeStatus.Id)
 	if err != nil {
 		klog.ErrorS(err, "Failed to hibernate Container", "Container", container.ContainerStatus.RuntimeStatus.Id)
@@ -297,7 +298,6 @@ func (a *PodActor) hibernateContainer(container *types.FornaxContainer) error {
 		a.pod.FornaxPodState = types.PodStateHibernated
 		container.State = types.ContainerStateHibernated
 	}
-	klog.InfoS("Done Hibernate Container", "Pod", types.UniquePodName(a.pod), "Container", container.ContainerSpec.Name)
 	return nil
 }
 
@@ -312,7 +312,7 @@ func (a *PodActor) podHouseKeeping() (err error) {
 	case pod.FornaxPodState == types.PodStateTerminating:
 		err = a.terminate(true)
 	case pod.RuntimePod == nil:
-		// pod create failed create a sandbox
+		// pod create failed to create a sandbox
 		pod.FornaxPodState = types.PodStateTerminated
 	case pod.RuntimePod != nil && pod.RuntimePod.Sandbox == nil:
 		// pod create failed to get sandbox details

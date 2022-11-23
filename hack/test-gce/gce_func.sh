@@ -240,3 +240,19 @@ add_pub_key_to_instance() {
     fi
   done
 }
+
+download_logs_file() {
+    # copy file to 95 machine, first gzip file
+    name=fornaxcore
+    gcloud compute scp $name:~/go/src/centaurusinfra.io/fornax-serverless/fornaxcore.logs.gz ~/tmp/ --project=quark-serverless --zone=us-central1-a
+
+    name=nodeagent-1
+    gcloud compute scp $name:~/go/src/centaurusinfra.io/fornax-serverless/nodeagent1.logs.gz ~/tmp/ --project=quark-serverless --zone=us-central1-a
+
+    name=nodeagent-6
+    gcloud compute scp $name:~/go/src/centaurusinfra.io/fornax-serverless/nodeagent6.logs.gz ~/tmp/ --project=quark-serverless --zone=us-central1-a
+
+    # copy file from 95 machine to local machine
+    scp ubuntu@10.218.233.95:~/tmp/fornaxcore.logs.gz c:/temp
+    scp ubuntu@10.218.233.95:~/tmp/nodeagent1.logs.gz c:/temp
+}

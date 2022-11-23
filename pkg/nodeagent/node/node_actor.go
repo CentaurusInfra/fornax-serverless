@@ -191,7 +191,7 @@ func (n *FornaxNodeActor) nodeHandler(msg message.ActorMessage) (interface{}, er
 		// https://www.sqlite.org/faq.html#q19, sqlite transaction is slow, so, call PutPod in go routine.
 		// PutPod use provided revision to avoid newer revision is overwriten by older revision when there is race condition between go routines
 		go func() {
-		// pod has been removed from store in cleanup state, do not save it back
+			// pod has been removed from store in cleanup state, do not save it back
 			if fppod.FornaxPodState != types.PodStateCleanup {
 				n.node.Dependencies.PodStore.PutPod(fppod, revision)
 			}

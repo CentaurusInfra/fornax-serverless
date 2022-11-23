@@ -12,14 +12,15 @@ remove_fornaxcore_nodeagent_file() {
     do
         if [[ $name == *"fornaxcore"* ]]; then
             echo "remove fornaxcore and fornaxtest file in the instance: $name"
-            gcloud compute --project=quark-serverless ssh ubuntu@$name --command="cd ~/go/src/centaurusinfra.io/fornax-serverless/bin && rm fornaxcore fornaxtest" --zone=us-central1-a &
+            gcloud compute --project=quark-serverless ssh $name --command="cd ~/go/src/centaurusinfra.io/fornax-serverless/bin && rm fornaxcore fornaxtest" --zone=us-central1-a &
         fi
 
         if [[ $name == *"nodeagent"* ]]; then
             echo "remove nodeagent file in instance: $name"
-            gcloud compute --project=quark-serverless ssh ubuntu@$name --command="cd ~/go/src/centaurusinfra.io/fornax-serverless/bin && rm nodeagent" --zone=us-central1-a &
+            gcloud compute --project=quark-serverless ssh $name --command="cd ~/go/src/centaurusinfra.io/fornax-serverless/bin && rm nodeagent" --zone=us-central1-a &
         fi
-    done 
+    done
+    sleep 2 
     echo -e "Remove file is done.\n"   
 }
 

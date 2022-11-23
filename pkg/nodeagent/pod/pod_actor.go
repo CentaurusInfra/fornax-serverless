@@ -412,7 +412,7 @@ func (a *PodActor) onPodContainerReady(msg internal.PodContainerReady) error {
 	if allContainerReady {
 		pod.FornaxPodState = types.PodStateRunning
 		// hibernate pod if pod spec has hibernate annotation
-		if util.PodHasHibernateAnnotation(pod.Pod) && a.nodeConfig.RuntimeHandler == runtime.QuarkRuntime {
+		if util.PodHasHibernateAnnotation(pod.Pod) && (a.nodeConfig.RuntimeHandler == runtime.QuarkRuntime || a.nodeConfig.RuntimeHandler == runtime.QuarkRuntime_D) {
 			a.hibernateContainer(container)
 		}
 	}
@@ -483,7 +483,6 @@ func (a *PodActor) onSessionCloseCommand(msg internal.SessionClose) error {
 // simply update application session status and copy client session
 // if a session timeout, terminate pod,it could close other sessions on it
 func (a *PodActor) handleSessionState(s internal.SessionState) error {
-	klog.InfoS("GWJ Handle session state", "session", s.SessionId, "state", s.SessionState)
 	session, found := a.pod.Sessions[s.SessionId]
 	if !found {
 		klog.Warningf("Received session state from unknown session %s", s.SessionId)

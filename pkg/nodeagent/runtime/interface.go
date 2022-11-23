@@ -23,8 +23,9 @@ import (
 )
 
 const (
-	QuarkRuntime = "quark"
-	RuncRuntime  = "runc"
+	QuarkRuntime   = "quark"
+	QuarkRuntime_D = "quark_d"
+	RuncRuntime    = "runc"
 )
 
 type RuntimeService interface {

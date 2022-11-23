@@ -17,6 +17,8 @@ limitations under the License.
 package session
 
 import (
+	"time"
+
 	fornaxv1 "centaurusinfra.io/fornax-serverless/pkg/apis/core/v1"
 	"centaurusinfra.io/fornax-serverless/pkg/message"
 	internal "centaurusinfra.io/fornax-serverless/pkg/nodeagent/message"
@@ -49,7 +51,10 @@ func NewSessionActor(pod *types.FornaxPod, session *types.FornaxSession, session
 
 // try to open a session with session service, if it failed, send a session closed message
 func (a *SessionActor) OpenSession() error {
-	err := a.sessionService.OpenSession(a.pod, a.session, a.receiveSessionState)
+	err := util.BackoffExec(1*time.Millisecond, 10*time.Millisecond, 2*time.Second, 2, func() error {
+		return a.sessionService.OpenSession(a.pod, a.session, a.receiveSessionState)
+	})
+
 	if err != nil {
 		if err == sessionservice.SessionAlreadyExist {
 			// TODO handle it
@@ -63,7 +68,6 @@ func (a *SessionActor) OpenSession() error {
 		}
 	}
 	return nil
-
 }
 
 // try to open a session with session service, if it failed, send a session closed message

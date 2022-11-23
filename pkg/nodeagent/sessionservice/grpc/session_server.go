@@ -270,11 +270,6 @@ func (g *GrpcSessionService) OpenSession(pod *types.FornaxPod, session *types.Fo
 	podId := pod.Identifier
 	sessionId := session.Identifier
 	sessionData := session.Session.Spec.SessionData
-	heartbeat := g.getSessionHeartbeat(sessionId)
-	if heartbeat != nil {
-		return sessionservice.SessionAlreadyExist
-	}
-	heartbeat = g.createHeartBeat(pod, session, stateCallbackFunc)
 	messageType := MessageType_OPEN_SESSION
 	body := SessionMessage_OpenSession{
 		OpenSession: &OpenSession{
@@ -297,6 +292,11 @@ func (g *GrpcSessionService) OpenSession(pod *types.FornaxPod, session *types.Fo
 		klog.ErrorS(err, "Failed to dispatch open session message to pod", "pod", podId, "session", sessionId)
 		return err
 	}
+	heartbeat := g.getSessionHeartbeat(sessionId)
+	if heartbeat != nil {
+		return sessionservice.SessionAlreadyExist
+	}
+	heartbeat = g.createHeartBeat(pod, session, stateCallbackFunc)
 	return nil
 }
 

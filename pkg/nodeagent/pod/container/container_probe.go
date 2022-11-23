@@ -37,7 +37,7 @@ const (
 	ReadinessProbe               ProbeType = "readiness"
 	StartupProbe                 ProbeType = "startup"
 	RuntimeStatusProbe           ProbeType = "runtime"
-	RunningContainerProbeSeconds           = int32(10)
+	RunningContainerProbeSeconds           = int32(5)
 	InitialContainerProbeSeconds           = int32(1)
 )
 
@@ -75,10 +75,6 @@ func (prober *ContainerProber) Stop() {
 func (prober *ContainerProber) Start() {
 	go func() {
 		for {
-			select {
-			case _ = <-prober.Ticker.C:
-			}
-
 			if prober.stop {
 				prober.Ticker.Stop()
 				break
@@ -124,6 +120,11 @@ func (prober *ContainerProber) Start() {
 			}
 
 			prober.probeResultFunc(msg, obj)
+
+			select {
+			case _ = <-prober.Ticker.C:
+			}
+
 		}
 	}()
 }
@@ -183,7 +184,7 @@ func NewRuntimeStatusProbeSpec() *v1.Probe {
 		},
 		InitialDelaySeconds: InitialContainerProbeSeconds,
 		TimeoutSeconds:      10,
-		PeriodSeconds:       InitialContainerProbeSeconds,
+		PeriodSeconds:       RunningContainerProbeSeconds,
 		SuccessThreshold:    1,
 		FailureThreshold:    1,
 	}

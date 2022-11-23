@@ -54,7 +54,7 @@ func DefaultConfiguration() *TestConfiguration {
 		TestCase:             AppFullCycleTest,
 		NumOfApps:            1,
 		NumOfInitPodsPerApp:  0,
-		NumOfBurstPodsPerApp: 2,
+		NumOfBurstPodsPerApp: 1,
 		NumOfSessionPerApp:   1,
 		NumOfTestCycle:       1,
 		AppNamePrefix:        "echo",

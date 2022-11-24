@@ -292,17 +292,11 @@ func (pm *podManager) AddOrUpdatePod(nodeId string, pod *v1.Pod) (*v1.Pod, error
 				return nil, err
 			}
 		}
+		util.MergePod(pod, podInCache)
 		if util.PodIsTerminated(pod) {
-			if util.PodIsTerminated(podInCache) {
-				util.MergePod(pod, podInCache)
-				// no need to send second terminate event, node could have not finally clean this pod
-			} else {
-				util.MergePod(pod, podInCache)
-				pm.podStateMap.deletePod(fornaxPodState)
-				pm.podUpdates <- &ie.PodEvent{NodeId: nodeId, Pod: podInCache.DeepCopy(), Type: ie.PodEventTypeTerminate}
-			}
+			pm.podStateMap.deletePod(fornaxPodState)
+			pm.podUpdates <- &ie.PodEvent{NodeId: nodeId, Pod: podInCache.DeepCopy(), Type: ie.PodEventTypeTerminate}
 		} else {
-			util.MergePod(pod, podInCache)
 			fornaxPodState.nodeId = nodeId
 			fornaxPodState.v1pod = podInCache.DeepCopy()
 			pm.podUpdates <- &ie.PodEvent{NodeId: nodeId, Pod: podInCache.DeepCopy(), Type: ie.PodEventTypeUpdate}

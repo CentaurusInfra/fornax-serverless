@@ -261,23 +261,18 @@ func (pm *podManager) updatePodAndSendEvent(nodeId string, pod *v1.Pod, oldPodSt
 
 // AddPod is called when node agent report a newly implemented pod or application try to create a new pending pod
 // if pod come from application, and in pending state, add it into scheduler pool.
-// add pod when it does not exist in pod manager, even it's terminated, still add it,
-// pod will be eventually deleted next time when node update does not include this pod anymore
 // if a pod is reported back by node agent, check revision, skip update if no change
-// when pod owner have determinted pod should be deleted, termiante this pod reported by node
-func (pm *podManager) AddPod(nodeId string, pod *v1.Pod) (*v1.Pod, error) {
+// if pod is terminated, delete it, otherwise add or update it.
+// when pod in cache has delete timestamp, termiante pod reported by node
+func (pm *podManager) AddOrUpdatePod(nodeId string, pod *v1.Pod) (*v1.Pod, error) {
 	fornaxPodState := pm.podStateMap.findPod(util.Name(pod))
 	if fornaxPodState == nil {
 		newPod := pod.DeepCopy()
-		if util.PodIsTerminated(newPod) {
-			if newPod.DeletionTimestamp == nil {
-				newPod.DeletionTimestamp = util.NewCurrentMetaTime()
-			}
+		if !util.PodIsTerminated(newPod) {
 			pm.createPodAndSendEvent(nodeId, newPod)
-		} else if len(nodeId) > 0 {
-			pm.createPodAndSendEvent(nodeId, newPod)
-		} else {
-			pm.createPodAndSendEvent(nodeId, newPod)
+		}
+
+		if len(nodeId) == 0 && util.PodIsPending(newPod) {
 			pm.podScheduler.AddPod(newPod, 0*time.Second)
 		}
 		return newPod, nil
@@ -290,25 +285,24 @@ func (pm *podManager) AddPod(nodeId string, pod *v1.Pod) (*v1.Pod, error) {
 		if !largerRv {
 			return podInCache, nil
 		}
-		if len(nodeId) > 0 {
-			if podInCache.DeletionTimestamp != nil && util.PodNotTerminated(pod) {
-				klog.InfoS("Terminate a running pod which was request to terminate", "pod", util.Name(pod))
-				err := pm.nodeAgentClient.TerminatePod(nodeId, pod)
-				if err != nil {
-					return nil, err
-				}
+		if len(nodeId) > 0 && podInCache.DeletionTimestamp != nil && util.PodNotTerminated(pod) {
+			klog.InfoS("Terminate a running pod which was request to terminate", "pod", util.Name(pod))
+			err := pm.nodeAgentClient.TerminatePod(nodeId, pod)
+			if err != nil {
+				return nil, err
 			}
-			util.MergePod(pod, podInCache)
-			switch {
-			case util.PodIsTerminated(podInCache):
-				pm.podStateMap.deletePod(fornaxPodState)
-				pm.podUpdates <- &ie.PodEvent{NodeId: nodeId, Pod: podInCache.DeepCopy(), Type: ie.PodEventTypeTerminate}
-			default:
-				fornaxPodState.v1pod = podInCache.DeepCopy()
-				fornaxPodState.nodeId = nodeId
-				pm.podUpdates <- &ie.PodEvent{NodeId: nodeId, Pod: podInCache.DeepCopy(), Type: ie.PodEventTypeUpdate}
-			}
+		}
+		util.MergePod(pod, podInCache)
+		if util.PodIsTerminated(pod) {
+			pm.podStateMap.deletePod(fornaxPodState)
+			pm.podUpdates <- &ie.PodEvent{NodeId: nodeId, Pod: podInCache.DeepCopy(), Type: ie.PodEventTypeTerminate}
 		} else {
+			fornaxPodState.nodeId = nodeId
+			fornaxPodState.v1pod = podInCache.DeepCopy()
+			pm.podUpdates <- &ie.PodEvent{NodeId: nodeId, Pod: podInCache.DeepCopy(), Type: ie.PodEventTypeUpdate}
+		}
+
+		if len(nodeId) == 0 && util.PodIsPending(podInCache) {
 			pm.podScheduler.AddPod(podInCache, 0*time.Second)
 		}
 		return podInCache, nil

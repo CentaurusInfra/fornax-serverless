@@ -285,7 +285,7 @@ func (pm *podManager) AddOrUpdatePod(nodeId string, pod *v1.Pod) (*v1.Pod, error
 		if !largerRv {
 			return podInCache, nil
 		}
-		if podInCache.DeletionTimestamp != nil && util.PodNotTerminated(pod) {
+		if len(nodeId) > 0 && podInCache.DeletionTimestamp != nil && util.PodNotTerminated(pod) {
 			klog.InfoS("Terminate a running pod which was request to terminate", "pod", util.Name(pod))
 			err := pm.nodeAgentClient.TerminatePod(nodeId, pod)
 			if err != nil {

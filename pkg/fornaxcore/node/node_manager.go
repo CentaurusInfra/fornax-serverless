@@ -101,7 +101,7 @@ func (nm *nodeManager) UpdatePodState(nodeId string, pod *v1.Pod, sessions []*fo
 				return nil
 			}
 		}
-		updatedPod, err := nm.podManager.AddPod(nodeId, pod)
+		updatedPod, err := nm.podManager.AddOrUpdatePod(nodeId, pod)
 		if err != nil {
 			return err
 		}

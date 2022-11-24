@@ -195,7 +195,7 @@ func (am *ApplicationManager) createApplicationPod(application *fornaxv1.Applica
 	uid := uuid.New()
 	name := fmt.Sprintf("%s-%s-%d", application.Name, rand.String(16), uid.ClockSequence())
 	podTemplate := am.getPodApplicationPodTemplate(uid, name, application, standby)
-	pod, err := am.podManager.AddPod("", podTemplate)
+	pod, err := am.podManager.AddOrUpdatePod("", podTemplate)
 	if err != nil {
 		return nil, err
 	}

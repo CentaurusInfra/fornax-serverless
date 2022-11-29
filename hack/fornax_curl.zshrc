@@ -13,6 +13,10 @@ post_session() {
  curl -H 'Content-Type: application/yaml' -X POST -d "$(cat $2)" http://127.0.0.1:8001/apis/core.fornax-serverless.centaurusinfra.io/v1/namespaces/$1/applicationsessions
 }
 
+fornax_apply() {
+ kubectl apply --kubeconfig kubeconfig --validate=false --namespace $1 -f $2
+}
+
 patch_app() {
  kubectl patch --kubeconfig kubeconfig --namespace $1 application $2 --patch-file $3
 }

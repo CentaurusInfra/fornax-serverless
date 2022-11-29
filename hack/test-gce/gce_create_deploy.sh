@@ -50,7 +50,7 @@ instance_create() {
     fi
  
     echo -e "## Please waiting instance ready.\n"
-    sleep 180
+    sleep 100
     echo -e "## All instances created done\n"
 }
 

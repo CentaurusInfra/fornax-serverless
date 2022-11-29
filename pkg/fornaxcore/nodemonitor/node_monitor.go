@@ -87,7 +87,7 @@ func (nm *nodeMonitor) OnSessionUpdate(message *grpc.FornaxCoreMessage) (*grpc.F
 	}
 	defer func() {
 		et := time.Now().UnixMicro()
-		klog.InfoS("Done Received a session state", "node", nodeId, "session", util.Name(session), "node revision", revision, "status", session.Status, "took-micro", et-st)
+		klog.V(5).InfoS("Done Received a session state", "node", nodeId, "session", util.Name(session), "node revision", revision, "status", session.Status, "took-micro", et-st)
 	}()
 
 	nodeWRev := nm.nodes.get(nodeId)
@@ -98,7 +98,7 @@ func (nm *nodeMonitor) OnSessionUpdate(message *grpc.FornaxCoreMessage) (*grpc.F
 		return nil, err
 	}
 	if revision == nodeWRev.Revision {
-		klog.InfoS("Received a session with same revision of current node state, node probably send its state earlier with this revison, continue to handle single session state", "session", util.Name(session))
+		klog.InfoS("Received a session with same revision of current node revision, continue to handle single session state", "session", util.Name(session))
 	}
 
 	nodeWRev.Revision = revision
@@ -208,7 +208,7 @@ func (nm *nodeMonitor) OnNodeReady(message *grpc.FornaxCoreMessage) (*grpc.Forna
 func (nm *nodeMonitor) OnNodeStateUpdate(message *grpc.FornaxCoreMessage) (*grpc.FornaxCoreMessage, error) {
 	nodeState := message.GetNodeState()
 	nodeId := message.GetNodeIdentifier().GetIdentifier()
-	klog.InfoS("Received a node state", "node", nodeId, "revision", nodeState.GetNodeRevision(), "pods", len(nodeState.GetPodStates()))
+	klog.V(5).InfoS("Received a node state", "node", nodeId, "revision", nodeState.GetNodeRevision(), "pods", len(nodeState.GetPodStates()))
 	err := nm.updateOrCreateNode(nodeId, nodeState.GetNode(), nodeState.GetNodeRevision(), nodeState.GetPodStates())
 	if err != nil {
 		klog.ErrorS(err, "Failed to sync a node", "node", nodeId)
@@ -223,11 +223,11 @@ func (nm *nodeMonitor) OnPodStateUpdate(message *grpc.FornaxCoreMessage) (*grpc.
 	podState := message.GetPodState()
 	revision := podState.GetNodeRevision()
 	nodeId := message.GetNodeIdentifier()
-	klog.InfoS("Received a pod state", "nodeId", nodeId, "pod", util.Name(podState.GetPod()), "pod phase", podState.GetPod().Status.Phase, "condition", k8spodutil.IsPodReady(podState.GetPod()), "node revision", revision)
+	klog.V(5).InfoS("Received a pod state", "nodeId", nodeId, "pod", util.Name(podState.GetPod()), "pod phase", podState.GetPod().Status.Phase, "condition", k8spodutil.IsPodReady(podState.GetPod()), "node revision", revision)
 	st := time.Now().UnixMicro()
 	defer func() {
 		et := time.Now().UnixMicro()
-		klog.InfoS("Done update pod state", "pod", util.Name(podState.GetPod()), "took-micro", et-st)
+		klog.V(5).InfoS("Done update pod state", "pod", util.Name(podState.GetPod()), "took-micro", et-st)
 	}()
 
 	nodeWRev := nm.nodes.get(nodeId.GetIdentifier())
@@ -238,7 +238,7 @@ func (nm *nodeMonitor) OnPodStateUpdate(message *grpc.FornaxCoreMessage) (*grpc.
 		return nil, err
 	}
 	if revision == nodeWRev.Revision {
-		klog.InfoS("Received a pod with same revision of current node, node probably send its state earlier with this revison, continue to handle single pod state", "pod", podState.Pod.Name)
+		klog.InfoS("Received a pod with same revision as current node revision, continue to handle single pod state", "pod", podState.Pod.Name)
 	}
 
 	nodeWRev.Revision = revision
@@ -285,6 +285,7 @@ func (nm *nodeMonitor) updateOrCreateNode(nodeId string, v1node *v1.Node, revisi
 		}
 		nm.nodeManager.SyncNodePodStates(nodeId, podStates)
 	} else {
+		// 1 is initial revision of new node
 		if nodeWRev.Revision > revision && revision != 1 {
 			klog.Warning("received a revision which is older than current revision", "node", v1node, "currRevision", nodeWRev.Revision, "revision", revision)
 			return nil

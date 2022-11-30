@@ -96,7 +96,7 @@ func (am *ApplicationManager) onApplicationSessionAddEvent(obj interface{}) {
 
 	klog.InfoS("Application session created", "session", util.Name(session))
 	if v := pool.getSession(string(session.GetUID())); v != nil {
-		am.onApplicationSessionUpdateEvent(v.session, session)
+		am.onApplicationSessionUpdateEvent(v.session, v)
 		return
 	} else {
 		if !util.SessionInTerminalState(session) {
@@ -119,13 +119,12 @@ func (am *ApplicationManager) onApplicationSessionUpdateEvent(old, cur interface
 
 	if v := pool.getSession(string(newCopy.GetUID())); v != nil {
 		updateSessionPool(pool, newCopy)
-		am.enqueueApplication(applicationKey)
 	} else {
 		if !util.SessionInTerminalState(newCopy) {
 			updateSessionPool(pool, newCopy)
 		}
-		am.enqueueApplication(applicationKey)
 	}
+	am.enqueueApplication(applicationKey)
 }
 
 // callback from Application informer when ApplicationSession is physically deleted
@@ -143,8 +142,7 @@ func (am *ApplicationManager) onApplicationSessionDeleteEvent(obj interface{}) {
 	if pool == nil {
 		return
 	}
-	oldCopy := pool.getSession(string(session.GetUID()))
-	if oldCopy != nil {
+	if oldCopy := pool.getSession(string(session.GetUID())); oldCopy != nil {
 		if oldCopy.session.DeletionTimestamp == nil {
 			oldCopy.session.DeletionTimestamp = util.NewCurrentMetaTime()
 		}
@@ -168,14 +166,15 @@ func (ps PendingSessions) Swap(i, j int) {
 	ps[i], ps[j] = ps[j], ps[i]
 }
 
-// deployApplicationSessions grab a list of pending session and try to allocate them to pods and call OpenSession on choosen pod.
-// session status change in memory to SessionStatusStarting, but do not update etcd to avoid unnecessary resync.
-// session status will be changed in etcd until pod report back, if fornax core restart and lost these memory state, it rely on pod to report back.
-// It also cleanup session when a session is in Starting or Pending state for more than a timeout duration.
+// deployApplicationSessions group session into pending, timeout, deleting states, and
+// 1, assign pending session to idle pods and call OpenSession on choosen pod.
+// session status change in memory to SessionStatusStarting, session is store in node and report back,
+// if fornax core restart and lost these memory state, it rely on pod to report back.
+// 2, It cleanup timeout session which stuck in pending or starting session for more than a timeout duration.
+// and call node to close session if session is in starting state which was sent to a pod before.
 // session is changed to SessionStatusTimeout, session client need to create a new session.
-// It also cleanup session in deletingSessions when a session is in Starting or Pending state for more than a timeout duration.
-// session is changed to SessionStatusClosed, session client need to create a new session.
-// session timedout and closed are removed from application pool's session list, so, syncApplicationPods do not need to consider these sessions anymore
+// 3, if a session is being deleted by client(aka, close session), it call node to close session session,
+// timedout and closed session are removed from application's session pool
 func (am *ApplicationManager) deployApplicationSessions(pool *ApplicationPool, application *fornaxv1.Application) error {
 	pendingSessions, deletingSessions, timeoutSessions := pool.getNonRunningSessions()
 	// get 5 more in case some pods assigment failed
@@ -306,7 +305,7 @@ func (am *ApplicationManager) bindSessionToPod(pool *ApplicationPool, pod *v1.Po
 // cleanupSessionOnDeletedPod handle pod is terminated unexpectedly, e.g. node crash
 // in normal cases,session should be closed before pod is terminated and deleted.
 // It update open session to closed and pending session to timedout,
-// and does not try to call node to close session, as session does not exist at all on node when pod deleted
+// and does not try to call node to close session, as session does not exist at all on node when pod terminated on node
 func (am *ApplicationManager) cleanupSessionOnDeletedPod(pool *ApplicationPool, podName string) {
 	podSessions := pool.getPodSessions(podName)
 	for _, sess := range podSessions {
@@ -315,9 +314,9 @@ func (am *ApplicationManager) cleanupSessionOnDeletedPod(pool *ApplicationPool, 
 	}
 }
 
-// cleanupSessionOfApplication if a application is being deleted,
-// close all sessions which are still alive and delete sessions from application sessions pool if they are still pending
-// when alive session reported as closed by Node Agent, then session can be eventually deleted
+// cleanupSessionOfApplication if a application is being deleted, it
+// call node to close all sessions which are still open, when session reported as closed from node, then session can be eventually deleted
+// if session is still pending assigned to pod, delete sessions from application sessions pool directly
 func (am *ApplicationManager) cleanupSessionOfApplication(pool *ApplicationPool) error {
 	deleteErrors := []error{}
 

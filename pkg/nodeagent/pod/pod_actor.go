@@ -309,7 +309,7 @@ func (a *PodActor) podHouseKeeping() (err error) {
 	}
 
 	switch {
-	case pod.FornaxPodState == types.PodStateTerminating:
+	case pod.FornaxPodState == types.PodStateTerminating || pod.FornaxPodState == types.PodStateFailed:
 		err = a.terminate(true)
 	case pod.RuntimePod == nil:
 		// pod create failed to create a sandbox

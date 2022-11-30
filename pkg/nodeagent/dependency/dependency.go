@@ -80,7 +80,7 @@ func InitBasicDependencies(ctx context.Context, nodeConfig config.NodeConfigurat
 	dependencies.NetworkProvider = InitNetworkProvider(nodeConfig.Hostname)
 
 	// Runtime
-	dependencies.RuntimeService, err = InitRuntimeService(nodeConfig.ContainerRuntimeEndpoint)
+	dependencies.RuntimeService, err = InitRuntimeService(nodeConfig.ContainerRuntimeEndpoint, nodeConfig.PodConcurrency)
 	if err != nil {
 		klog.ErrorS(err, "failed to init container runtime client")
 		return nil, err
@@ -104,8 +104,8 @@ func InitBasicDependencies(ctx context.Context, nodeConfig config.NodeConfigurat
 	return &dependencies, nil
 }
 
-func InitRuntimeService(endpoint string) (runtime.RuntimeService, error) {
-	return runtime.NewRemoteRuntimeService(endpoint, runtime.DefaultTimeout)
+func InitRuntimeService(endpoint string, concurrency int) (runtime.RuntimeService, error) {
+	return runtime.NewRemoteRuntimeService(endpoint, runtime.DefaultTimeout, concurrency)
 }
 
 func InitImageService(endpoint string) (images.ImageManager, error) {
@@ -169,7 +169,7 @@ func (n *Dependencies) Complete(node *v1.Node, nodeConfig config.NodeConfigurati
 
 	// CRIRuntime
 	if n.RuntimeService == nil {
-		n.RuntimeService, err = InitRuntimeService(nodeConfig.ContainerRuntimeEndpoint)
+		n.RuntimeService, err = InitRuntimeService(nodeConfig.ContainerRuntimeEndpoint, nodeConfig.PodConcurrency)
 		if err != nil {
 			klog.ErrorS(err, "Failed to init runtime service")
 			return err

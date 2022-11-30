@@ -152,6 +152,7 @@ func (n *FornaxNodeActor) incrementNodeRevision() int64 {
 
 	revision := atomic.AddInt64(&n.node.Revision, 1)
 	n.node.V1Node.ResourceVersion = fmt.Sprint(n.node.Revision)
+	n.node.V1Node.Labels[fornaxv1.LabelFornaxCoreNodeRevision] = fmt.Sprint(n.node.Revision)
 	go n.node.Dependencies.NodeStore.PutNode(
 		&types.FornaxNodeWithRevision{
 			Identifier: util.Name(n.node.V1Node),
@@ -182,10 +183,11 @@ func (n *FornaxNodeActor) nodeHandler(msg message.ActorMessage) (interface{}, er
 		if err == nil {
 			revision = int64(rv)
 		}
-		// only bump node revision and report to fornaxcore when pod is in steady or failed state
+		// only bump node revision and set pod revision when pod is in steady state
 		if !types.PodInTransitState(fppod) {
 			revision = n.incrementNodeRevision()
 			fppod.Pod.ResourceVersion = fmt.Sprint(revision)
+			fppod.Pod.Labels[fornaxv1.LabelFornaxCoreNodeRevision] = fmt.Sprint(revision)
 			n.notify(n.fornoxCoreRef, podutil.BuildFornaxcoreGrpcPodState(revision, fppod))
 		}
 		// https://www.sqlite.org/faq.html#q19, sqlite transaction is slow, so, call PutPod in go routine.
@@ -201,6 +203,7 @@ func (n *FornaxNodeActor) nodeHandler(msg message.ActorMessage) (interface{}, er
 		fppod := msg.Body.(internal.SessionStatusChange).Pod
 		revision := n.incrementNodeRevision()
 		fpsession.Session.ResourceVersion = fmt.Sprint(revision)
+		fpsession.Session.Labels[fornaxv1.LabelFornaxCoreNodeRevision] = fmt.Sprint(revision)
 		n.notify(n.fornoxCoreRef, session.BuildFornaxcoreGrpcSessionState(revision, fpsession))
 		// fppod is nil if session can not find pod
 		if fppod != nil {

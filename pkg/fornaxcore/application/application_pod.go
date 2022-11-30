@@ -85,10 +85,8 @@ func (am *ApplicationManager) handlePodAddUpdateFromNode(pod *v1.Pod) {
 	podName := util.Name(pod)
 	applicationKey, err := am.getPodApplicationKey(pod)
 	if err != nil {
-		klog.ErrorS(err, "Can not find application for pod, try best to use label", "pod", podName)
-		if label, found := pod.GetLabels()[fornaxv1.LabelFornaxCoreApplication]; !found {
-			applicationKey = label
-		}
+		klog.ErrorS(err, "Failed to find application key for pod", "pod", podName)
+		return
 	}
 
 	if len(applicationKey) == 0 {
@@ -138,10 +136,8 @@ func (am *ApplicationManager) handlePodDeleteFromNode(pod *v1.Pod) {
 
 	applicationKey, err := am.getPodApplicationKey(pod)
 	if err != nil {
-		klog.ErrorS(err, "Can not find application for pod, try best to use label", "pod", podName)
-		if label, found := pod.GetLabels()[fornaxv1.LabelFornaxCoreApplication]; !found {
-			applicationKey = label
-		}
+		klog.ErrorS(err, "Failed to find application key for pod", "pod", podName)
+		return
 	}
 
 	if len(applicationKey) == 0 {

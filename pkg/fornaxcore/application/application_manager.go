@@ -366,30 +366,32 @@ func (am *ApplicationManager) syncApplication(ctx context.Context, applicationKe
 			// 2, find how many more pods required for remaining pending sessions
 			if syncErr == nil {
 				sessionSummary := pool.summarySession()
-				numOfOccupiedPod, numOfPendingPod, numOfIdlePod := pool.activePodNums()
-				numOfUnoccupiedPod := numOfPendingPod + numOfIdlePod
+				numOfAllocatedPod, numOfPendingPod, numOfIdlePod := pool.activePodNums()
+				numOfUnAllocatedPod := numOfPendingPod + numOfIdlePod
 				numOfPendingSession := sessionSummary.pendingCount
-				numOfDesiredUnoccupiedPod := am.calculateDesiredIdlePods(application, numOfOccupiedPod, numOfUnoccupiedPod, numOfPendingSession)
-				numOfDesiredPod = numOfOccupiedPod + numOfDesiredUnoccupiedPod
-				klog.InfoS("Syncing application pod", "application", applicationKey, "pending-sessions", numOfPendingSession, "active-pods", numOfOccupiedPod+numOfUnoccupiedPod, "pending-pods", numOfPendingPod, "idle-pods", numOfIdlePod, "desired-pending+idle-pods", numOfDesiredUnoccupiedPod)
-				if numOfDesiredUnoccupiedPod > numOfUnoccupiedPod {
+				numOfDesiredUnAllocatedPod := am.calculateDesiredIdlePods(application, numOfAllocatedPod, numOfUnAllocatedPod, numOfPendingSession)
+				numOfDesiredPod = numOfAllocatedPod + numOfDesiredUnAllocatedPod
+				klog.InfoS("Syncing application pod", "application", applicationKey, "pending-sessions", numOfPendingSession, "active-pods", numOfAllocatedPod+numOfUnAllocatedPod, "pending-pods", numOfPendingPod, "idle-pods", numOfIdlePod, "desired-pending+idle-pods", numOfDesiredUnAllocatedPod)
+				if numOfDesiredUnAllocatedPod > numOfUnAllocatedPod {
 					action = fornaxv1.DeploymentActionCreateInstance
-				} else if numOfDesiredUnoccupiedPod < numOfUnoccupiedPod {
+				} else if numOfDesiredUnAllocatedPod < numOfUnAllocatedPod {
 					action = fornaxv1.DeploymentActionDeleteInstance
 				}
 				// pending session will need pods immediately, the rest of pods can be created as a standby pod
-				desiredAddition := numOfDesiredUnoccupiedPod - numOfUnoccupiedPod
+				desiredAddition := numOfDesiredUnAllocatedPod - numOfUnAllocatedPod
 				syncErr = am.deployApplicationPods(pool, application, desiredAddition)
-
-				// take care of timeout and deleting pods
-				am.pruneDeadPods(pool)
 			}
 		} else {
 			numOfDesiredPod = 0
 			action = fornaxv1.DeploymentActionDeleteInstance
 			syncErr = am.cleanupDeletedApplication(pool)
+			// numOfAllocatedPod, numOfPendingPod, numOfIdlePod := pool.activePodNums()
+			// desiredAddition := 0 - (numOfIdlePod + numOfPendingPod + numOfAllocatedPod)
+			// syncErr = am.deployApplicationPods(pool, application, desiredAddition)
 		}
 
+		// take care of timeout and deleting pods
+		am.pruneDeadPods(pool)
 		newStatus := am.calculateStatus(pool, application, numOfDesiredPod, action, syncErr)
 		am.applicationStatusManager.UpdateApplicationStatus(application, newStatus)
 	}

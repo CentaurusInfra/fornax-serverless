@@ -28,6 +28,7 @@ import (
 	storefactory "centaurusinfra.io/fornax-serverless/pkg/store/factory"
 	"centaurusinfra.io/fornax-serverless/pkg/util"
 	apistorage "k8s.io/apiserver/pkg/storage"
+	"k8s.io/klog/v2"
 
 	v1 "k8s.io/api/core/v1"
 )
@@ -53,6 +54,7 @@ func NewSessionManager(ctx context.Context, nodeAgentProxy nodeagent.NodeAgentCl
 // use status from node to update storge status, session will be deleted if session is already closed
 // if a session from node does not exist in pool, add it
 func (sm *sessionManager) OnSessionStatusFromNode(nodeId string, pod *v1.Pod, session *fornaxv1.ApplicationSession) error {
+	klog.InfoS("GWJ, received session state from node", "session", util.Name(session), "status", session.Status)
 	storeCopy, err := storefactory.GetApplicationSessionCache(sm.sessionStore, util.Name(session))
 	if err != nil {
 		return err

@@ -220,32 +220,8 @@ func (pool *ApplicationPool) summarySession() ApplicationSessionSummary {
 	summary.deletingCount = len(pool.sessions[SessionStateDeleting])
 	summary.runningCount = len(pool.sessions[SessionStateRunning])
 	summary.startingCount = len(pool.sessions[SessionStateStarting])
+	summary.pendingCount = len(pool.sessions[SessionStatePending])
 
-	for _, s := range pool.sessions[SessionStatePending] {
-		timeoutDuration := DefaultSessionOpenTimeoutDuration
-		if s.session.Spec.OpenTimeoutSeconds > 0 {
-			timeoutDuration = time.Duration(s.session.Spec.OpenTimeoutSeconds) * time.Second
-		}
-		pendingTimeoutTimeStamp := time.Now().Add(-1 * timeoutDuration)
-		if s.session.CreationTimestamp.Time.Before(pendingTimeoutTimeStamp) {
-			summary.timeoutCount += 1
-		} else {
-			summary.pendingCount += 1
-		}
-	}
-
-	for _, s := range pool.sessions[SessionStateStarting] {
-		timeoutDuration := DefaultSessionOpenTimeoutDuration
-		if s.session.Spec.OpenTimeoutSeconds > 0 {
-			timeoutDuration = time.Duration(s.session.Spec.OpenTimeoutSeconds) * time.Second
-		}
-		pendingTimeoutTimeStamp := time.Now().Add(-1 * timeoutDuration)
-		if s.session.CreationTimestamp.Time.Before(pendingTimeoutTimeStamp) {
-			summary.timeoutCount += 1
-		} else {
-			summary.startingCount += 1
-		}
-	}
 	return summary
 }
 
@@ -269,18 +245,15 @@ func (pool *ApplicationPool) addSession(sessionId string, session *fornaxv1.Appl
 	pool.mu.Lock()
 	defer pool.mu.Unlock()
 	newState := SessionStatePending
-	if session.DeletionTimestamp != nil {
+	if session.DeletionTimestamp != nil || util.SessionIsClosing(session) {
 		newState = SessionStateDeleting
-	} else if util.SessionIsOpen(session) {
-		newState = SessionStateRunning
 	} else if util.SessionIsStarting(session) {
 		newState = SessionStateStarting
 	} else if util.SessionIsPending(session) {
 		newState = SessionStatePending
-	} else if util.SessionIsClosing(session) {
-		newState = SessionStateDeleting
+	} else if util.SessionIsOpen(session) {
+		newState = SessionStateRunning
 	} else {
-		// do not add a terminal state session, instead of deleting and return
 		pool._deleteSessionNoLock(session)
 		return
 	}

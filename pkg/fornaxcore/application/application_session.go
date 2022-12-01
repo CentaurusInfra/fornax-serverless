@@ -97,7 +97,7 @@ func (am *ApplicationManager) onApplicationSessionAddEvent(obj interface{}) {
 	pool := am.getOrCreateApplicationPool(applicationKey)
 
 	klog.InfoS("Application session created", "session", util.Name(session))
-	if v := pool.getSession(string(session.GetUID())); v != nil {
+	if v := pool.getSession(util.Name(session)); v != nil {
 		am.onApplicationSessionUpdateEvent(v.session, v)
 		return
 	} else {
@@ -117,8 +117,8 @@ func (am *ApplicationManager) onApplicationSessionUpdateEvent(old, cur interface
 
 	applicationKey := getSessionApplicationKey(newCopy)
 	pool := am.getOrCreateApplicationPool(applicationKey)
-	if v := pool.getSession(string(newCopy.GetUID())); v != nil {
-		if reflect.DeepEqual(newCopy.Status, v.session.Status) && reflect.DeepEqual(newCopy.Spec, v.session.Spec) {
+	if v := pool.getSession(util.Name(newCopy)); v != nil {
+		if newCopy.DeletionTimestamp == nil && reflect.DeepEqual(newCopy.Status, v.session.Status) && reflect.DeepEqual(newCopy.Spec, v.session.Spec) {
 			// no meaningful change, skip
 			return
 		}
@@ -147,7 +147,7 @@ func (am *ApplicationManager) onApplicationSessionDeleteEvent(obj interface{}) {
 	if pool == nil {
 		return
 	}
-	if oldCopy := pool.getSession(string(session.GetUID())); oldCopy != nil {
+	if oldCopy := pool.getSession(util.Name(session)); oldCopy != nil {
 		if oldCopy.session.DeletionTimestamp == nil {
 			oldCopy.session.DeletionTimestamp = util.NewCurrentMetaTime()
 		}
@@ -207,7 +207,7 @@ func (am *ApplicationManager) deployApplicationSessions(pool *ApplicationPool, a
 				sessionErrors = append(sessionErrors, err)
 				continue
 			} else {
-				pool.addOrUpdatePod(ap.podName, PodStateAllocated, []string{string(as.session.GetUID())})
+				pool.addOrUpdatePod(ap.podName, PodStateAllocated, []string{string(util.Name(as.session))})
 				si += 1
 			}
 		} else {
@@ -241,19 +241,20 @@ func (am *ApplicationManager) deployApplicationSessions(pool *ApplicationPool, a
 
 // if session is open, close it and wait for node report back
 // if session is still in pending, change status to timeout
-// if session is not open or pending, just delete since it's already in a terminal state
+// if session is not assigned or pending, just delete since it's already in a terminal state
 func (am *ApplicationManager) deleteApplicationSession(pool *ApplicationPool, s *ApplicationSession) error {
 	if s.session.DeletionTimestamp == nil {
 		s.session.DeletionTimestamp = util.NewCurrentMetaTime()
 	}
 
-	if s.state == SessionStateDeleting {
+	if util.SessionIsClosing(s.session) {
+		// has requested to deleted, check if close timeout
 		if s.session.DeletionTimestamp.Time.After(time.Now().Add(-1 * DefaultSessionCloseTimeoutDuration)) {
 			return nil
 		}
 	}
 
-	klog.InfoS("Cleanup a session", "session", util.Name(s.session), "state", s.state)
+	klog.InfoS("Cleanup a session", "session", util.Name(s.session), "state", s.session.Status.SessionStatus)
 	if s.state == SessionStatePending {
 		if err := am.changeSessionStatus(s.session, fornaxv1.SessionStatusTimeout); err != nil {
 			return err
@@ -277,6 +278,12 @@ func (am *ApplicationManager) deleteApplicationSession(pool *ApplicationPool, s 
 			// should not happen for session not in pending state
 			am.changeSessionStatus(s.session, fornaxv1.SessionStatusClosed)
 		}
+	} else {
+		if err := am.changeSessionStatus(s.session, fornaxv1.SessionStatusClosed); err != nil {
+			return err
+		}
+		pool.deleteSession(s.session)
+		return nil
 	}
 
 	return nil

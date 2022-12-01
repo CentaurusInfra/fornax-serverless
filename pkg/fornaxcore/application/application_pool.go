@@ -77,35 +77,45 @@ func (pool *ApplicationPool) _getPodNoLock(podName string) *ApplicationPod {
 	return nil
 }
 
+func (pool *ApplicationPool) podStateTransitionAllowed(oldState, newState ApplicationPodState) bool {
+	if oldState == newState {
+		return true
+	} else if oldState == PodStatePending {
+		return true
+	} else if oldState == PodStateIdle && newState != PodStatePending {
+		return true
+	} else if oldState == PodStateAllocated && newState != PodStatePending {
+		return true
+	} else if oldState == PodStateDeleting && newState == PodStateDeleting {
+		return true
+	}
+	return false
+}
+
 // find pod in a state map, move it to different state map and add session bundle on it
-func (pool *ApplicationPool) addOrUpdatePod(podName string, podState ApplicationPodState, sessionIds []string) *ApplicationPod {
+func (pool *ApplicationPool) addOrUpdatePod(podName string, podState ApplicationPodState, sessionNames []string) *ApplicationPod {
 	pool.mu.Lock()
 	defer pool.mu.Unlock()
 	if p := pool._getPodNoLock(podName); p != nil {
-		// pod state should not be reverted to avoid race condition
-		if p.state == PodStateDeleting && podState != PodStateDeleting {
-			// do not change a pod state already marked as deleting pods
-			return p
-		}
-		if p.state != PodStatePending && podState == PodStatePending {
-			// do not change a pod state to pending if pod is not pending anymore
+		if !pool.podStateTransitionAllowed(p.state, podState) {
 			return p
 		}
 	}
-	return pool._addOrUpdatePodNoLock(podName, podState, sessionIds)
+	return pool._addOrUpdatePodNoLock(podName, podState, sessionNames)
 }
 
-func (pool *ApplicationPool) _addOrUpdatePodNoLock(podName string, podState ApplicationPodState, sessionIds []string) *ApplicationPod {
+// move pod from a state bucket to new state bucket and update its session map
+func (pool *ApplicationPool) _addOrUpdatePodNoLock(podName string, podNewState ApplicationPodState, sessionNames []string) *ApplicationPod {
 	for _, pods := range pool.podsByState {
 		if p, f := pods[podName]; f {
-			for _, v := range sessionIds {
+			for _, v := range sessionNames {
 				p.sessions[v] = true
 			}
-			if p.state == podState {
+			if p.state == podNewState {
 				return p
 			} else {
-				p.state = podState
-				pool.podsByState[podState][podName] = p
+				p.state = podNewState
+				pool.podsByState[podNewState][podName] = p
 				delete(pods, podName)
 				return p
 			}
@@ -113,11 +123,11 @@ func (pool *ApplicationPool) _addOrUpdatePodNoLock(podName string, podState Appl
 	}
 
 	// not found, add it
-	p := NewApplicationPod(podName, podState)
-	for _, v := range sessionIds {
+	p := NewApplicationPod(podName, podNewState)
+	for _, v := range sessionNames {
 		p.sessions[v] = true
 	}
-	pool.podsByState[podState][podName] = p
+	pool.podsByState[podNewState][podName] = p
 	return p
 }
 
@@ -241,7 +251,7 @@ func (pool *ApplicationPool) _getSessionNoLock(key string) *ApplicationSession {
 	return nil
 }
 
-func (pool *ApplicationPool) addSession(sessionId string, session *fornaxv1.ApplicationSession) {
+func (pool *ApplicationPool) addSession(sessionName string, session *fornaxv1.ApplicationSession) {
 	pool.mu.Lock()
 	defer pool.mu.Unlock()
 	newState := SessionStatePending
@@ -258,22 +268,39 @@ func (pool *ApplicationPool) addSession(sessionId string, session *fornaxv1.Appl
 		return
 	}
 
-	s := pool._getSessionNoLock(sessionId)
+	s := pool._getSessionNoLock(sessionName)
 	if s != nil {
-		if newState != s.state {
-			delete(pool.sessions[s.state], sessionId)
+		if pool.sessionStateTransitionAllowed(s.state, newState) {
+			delete(pool.sessions[s.state], sessionName)
+		} else {
+			return
 		}
 	}
 
 	// update pool with new state
-	pool.sessions[newState][sessionId] = &ApplicationSession{
+	pool.sessions[newState][sessionName] = &ApplicationSession{
 		session: session,
 		state:   newState,
 	}
 	if session.Status.PodReference != nil {
 		podName := session.Status.PodReference.Name
-		pool._addOrUpdatePodNoLock(podName, PodStateAllocated, []string{string(session.GetUID())})
+		pool._addOrUpdatePodNoLock(podName, PodStateAllocated, []string{sessionName})
 	}
+}
+
+func (pool *ApplicationPool) sessionStateTransitionAllowed(oldState, newState ApplicationSessionState) bool {
+	if oldState == newState {
+		return true
+	} else if oldState == SessionStatePending {
+		return true
+	} else if oldState == SessionStateStarting && newState != SessionStatePending {
+		return true
+	} else if oldState == SessionStateRunning && newState != SessionStatePending && newState != SessionStateStarting {
+		return true
+	} else if oldState == SessionStateDeleting && newState != SessionStatePending && newState != SessionStateStarting && newState != SessionStateRunning {
+		return true
+	}
+	return false
 }
 
 func (pool *ApplicationPool) deleteSession(session *fornaxv1.ApplicationSession) {
@@ -282,15 +309,16 @@ func (pool *ApplicationPool) deleteSession(session *fornaxv1.ApplicationSession)
 	pool._deleteSessionNoLock(session)
 }
 
+// delete a session from application pool, and delete it from referenced pod's session map, and change pod state back to idle state,
+// only allow from allocated => idle when delete a session from this pod, pod is in pending/deleting state should keep its state
 func (pool *ApplicationPool) _deleteSessionNoLock(session *fornaxv1.ApplicationSession) {
-	sessionId := string(session.GetUID())
+	sessionName := util.Name(session)
 	if session.Status.PodReference != nil {
 		podName := session.Status.PodReference.Name
 		for _, podsOfState := range pool.podsByState {
 			if pod, found := podsOfState[podName]; found {
-				delete(pod.sessions, sessionId)
+				delete(pod.sessions, sessionName)
 				if len(pod.sessions) == 0 && pod.state == PodStateAllocated {
-					// only allow from allocated => idle when delete a session from this pod, pod is in pending/deleting state should keep its state
 					delete(podsOfState, podName)
 					pod.state = PodStateIdle
 					pool.podsByState[PodStateIdle][podName] = pod
@@ -300,7 +328,7 @@ func (pool *ApplicationPool) _deleteSessionNoLock(session *fornaxv1.ApplicationS
 		}
 	}
 	for _, v := range pool.sessions {
-		delete(v, sessionId)
+		delete(v, sessionName)
 	}
 }
 
@@ -348,13 +376,13 @@ func (pool *ApplicationPool) getNonRunningSessions() (pendingSessions, deletingS
 // add active session into application's session pool and delete terminal session from pool
 // add session/delete session will update pod state according pod's session usage
 func updateSessionPool(pool *ApplicationPool, session *fornaxv1.ApplicationSession) {
-	sessionId := string(session.GetUID())
+	sessionName := util.Name(session)
 	if util.SessionInTerminalState(session) {
 		pool.deleteSession(session)
 	} else {
 		// a trick to make sure pending session are sorted using micro second, api server truncate creation timestamp to second
 		session.CreationTimestamp = *util.NewCurrentMetaTime()
-		pool.addSession(sessionId, session)
+		pool.addSession(sessionName, session)
 	}
 }
 

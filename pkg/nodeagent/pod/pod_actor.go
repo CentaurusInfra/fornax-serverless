@@ -525,6 +525,12 @@ func (a *PodActor) handleSessionState(s internal.SessionState) error {
 		a.notify(a.supervisor, internal.SessionStatusChange{Session: session, Pod: a.pod})
 	}
 
+	if util.SessionIsOpen(session.Session) {
+		util.AddFinalizer(&session.Session.ObjectMeta, fornaxv1.FinalizerOpenSession)
+	} else {
+		util.RemoveFinalizer(&session.Session.ObjectMeta, fornaxv1.FinalizerOpenSession)
+	}
+
 	if util.SessionIsClosed(session.Session) {
 		delete(a.sessionActors, session.Identifier)
 		if session.Session.Spec.KillInstanceWhenSessionClosed {

@@ -127,7 +127,7 @@ var (
 					"cpu":    util.ResourceQuantity(0.5*1000, v1.ResourceCPU),
 				},
 				Requests: map[v1.ResourceName]resource.Quantity{
-					"memory": util.ResourceQuantity(100*1024*1024, v1.ResourceMemory),
+					"memory": util.ResourceQuantity(50*1024*1024, v1.ResourceMemory),
 					"cpu":    util.ResourceQuantity(0.01*1000, v1.ResourceCPU),
 				},
 			},

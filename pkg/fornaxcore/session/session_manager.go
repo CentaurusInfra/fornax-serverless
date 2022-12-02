@@ -59,10 +59,7 @@ func (sm *sessionManager) OnSessionStatusFromNode(nodeId string, pod *v1.Pod, se
 	}
 	if storeCopy == nil {
 		// it should not happen as session from node should be created in store already, unless store corruption
-		if util.SessionIsClosed(session) {
-			// if session already closed, no need to add it, instead of treat it as deleted session
-			// am.onApplicationSessionDeleteEvent(session, true)
-		} else {
+		if !util.SessionIsClosed(session) {
 			storefactory.CreateApplicationSession(sm.ctx, sm.sessionStore, session)
 		}
 	} else {

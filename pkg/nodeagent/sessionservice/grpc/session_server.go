@@ -158,10 +158,8 @@ func (g *GrpcSessionService) checkAndCleanSessionHeartbeat() {
 	}
 
 	if len(deadSession) > 0 {
-		g.mu.Lock()
-		defer g.mu.Unlock()
 		for _, v := range deadSession {
-			delete(g.sessionHeartbeats, v)
+			g.removeClosedSession(v)
 		}
 	}
 }

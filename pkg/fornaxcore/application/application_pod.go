@@ -81,6 +81,10 @@ func (am *ApplicationManager) onPodEventFromNode(podEvent *ie.PodEvent) {
 }
 
 // When a pod is created or updated, add this pod reference to app pods pool
+// set pod state from pending => idle if pod is running successfully on node
+// set pod state from idle => allocated if pod has a session on node
+// request node to terminate pod if application not found
+// retry deleting pod if pod already moved to deleting queue, in this case, node did not received termination request somehow
 func (am *ApplicationManager) handlePodAddUpdateFromNode(pod *v1.Pod) {
 	podName := util.Name(pod)
 	applicationKey, err := am.getPodApplicationKey(pod)
@@ -90,20 +94,17 @@ func (am *ApplicationManager) handlePodAddUpdateFromNode(pod *v1.Pod) {
 	}
 
 	if len(applicationKey) == 0 {
-		klog.InfoS("Pod does not belong to any application, terminated it", "pod", podName, "labels", pod.GetLabels())
+		klog.InfoS("Pod does not belong to any application, terminate it", "pod", podName, "labels", pod.GetLabels())
 		am.podManager.TerminatePod(podName)
 		return
 	} else {
 		pool := am.getOrCreateApplicationPool(applicationKey)
 		ap := pool.getPod(podName)
 		if ap != nil && ap.state == PodStateDeleting {
-			// this pod was requested to terminate, and node did not receive termination or failed to do it, try it again
 			am.deleteApplicationPod(pool, ap.podName)
 			return
 		}
 		if ap != nil && ap.state == PodStateAllocated {
-			// this pod is assigned to session by FornaxCore, but node have not report back yet, or message lost, skip
-			// after session setup timeout, this pod will be released
 			return
 		}
 		if util.PodIsPending(pod) {
@@ -125,7 +126,8 @@ func (am *ApplicationManager) handlePodAddUpdateFromNode(pod *v1.Pod) {
 	am.enqueueApplication(applicationKey)
 }
 
-// When a pod is deleted, find application that manages it and remove pod reference from its pod pool
+// When a pod is deleted on node, find application that manages it and remove pod reference from its pod pool
+// if pod has a session associated, cleanup sessions
 func (am *ApplicationManager) handlePodDeleteFromNode(pod *v1.Pod) {
 	podName := util.Name(pod)
 	if pod.DeletionTimestamp == nil {
@@ -151,27 +153,28 @@ func (am *ApplicationManager) handlePodDeleteFromNode(pod *v1.Pod) {
 		am.cleanupSessionOnDeletedPod(pool, podName)
 		pool.deletePod(podName)
 	}
-	// enqueue application to evaluate application status
 	am.enqueueApplication(applicationKey)
 }
 
+// move pod to deleting state and request node to terminate pod
 func (am *ApplicationManager) deleteApplicationPod(pool *ApplicationPool, podName string) error {
 	podState := pool.getPod(podName)
 	if podState == nil {
 		return nil
 	}
 
+	// reset pod deletiontimestamp and retry if deletion timeout
 	if podState.state == PodStateDeleting {
 		pod := am.podManager.FindPod(podName)
 		if pod != nil && pod.DeletionTimestamp != nil && pod.DeletionTimestamp.Time.Before(time.Now().Add(-1*DefaultPodDeletingTimeoutDuration)) {
-			// reset pod deletiontimestamp and retry if deletion timeout
 			pod.DeletionTimestamp = nil
 		} else {
 			return nil
 		}
+	} else {
+		pool.addOrUpdatePod(podName, PodStateDeleting, []string{})
 	}
 
-	pool.addOrUpdatePod(podName, PodStateDeleting, []string{})
 	err := am.podManager.TerminatePod(podName)
 	if err != nil {
 		if err == fornaxpod.PodNotFoundError {

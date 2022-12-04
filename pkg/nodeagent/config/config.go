@@ -73,6 +73,7 @@ const (
 	KubeletPluginsDirSELinuxLabel     = "system_u:object_r:container_file_t:s0"
 	DefaultPodCgroupName              = "containers"
 	DefaultRuntimeHandler             = "runc"
+	DefaultPodConcurrency             = 5
 )
 
 type NodeConfiguration struct {
@@ -111,6 +112,7 @@ type NodeConfiguration struct {
 	SeccompDefault           bool
 	NodePortStartingNo       int32
 	SessionServicePort       int32
+	PodConcurrency           int
 }
 
 func DefaultNodeConfiguration() (*NodeConfiguration, error) {
@@ -142,6 +144,7 @@ func DefaultNodeConfiguration() (*NodeConfiguration, error) {
 		NodeAgentCgroupName:      DefaultNodeAgentCgroupName,
 		OOMScoreAdj:              -999,
 		QOSReserved:              map[v1.ResourceName]int64{},
+		PodConcurrency:           DefaultPodConcurrency,
 		PodLogRootPath:           DefaultPodLogsRootPath,
 		PodPidLimits:             DefaultPodPidLimits,
 		PodsPerCore:              DefaultPodsPerCore,

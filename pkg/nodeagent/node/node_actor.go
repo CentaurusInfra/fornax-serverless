@@ -165,6 +165,28 @@ func (n *FornaxNodeActor) incrementNodeRevision() int64 {
 	return revision
 }
 
+func (n *FornaxNodeActor) saveAndNotifyPodState(fppod *types.FornaxPod) {
+	var revision int64
+	rv, err := strconv.Atoi(fppod.Pod.ResourceVersion)
+	if err == nil {
+		revision = int64(rv)
+	}
+	// only bump node revision and report to fornaxcore when pod is in steady or failed state
+	if !types.PodInTransitState(fppod) {
+		revision = n.incrementNodeRevision()
+		fppod.Pod.ResourceVersion = fmt.Sprint(revision)
+		n.notify(n.fornoxCoreRef, podutil.BuildFornaxcoreGrpcPodState(revision, fppod))
+	}
+	// https://www.sqlite.org/faq.html#q19, sqlite transaction is slow, so, call PutPod in go routine.
+	// PutPod use provided revision to avoid newer revision is overwriten by older revision when there is race condition between go routines
+	go func() {
+		// pod has been removed from store in cleanup state, do not save it back
+		if fppod.FornaxPodState != types.PodStateCleanup {
+			n.node.Dependencies.PodStore.PutPod(fppod, revision)
+		}
+	}()
+}
+
 // nodeHandler is actor message handler
 func (n *FornaxNodeActor) nodeHandler(msg message.ActorMessage) (interface{}, error) {
 	switch msg.Body.(type) {
@@ -178,26 +200,7 @@ func (n *FornaxNodeActor) nodeHandler(msg message.ActorMessage) (interface{}, er
 				klog.ErrorS(err, "failed to cleanup pod store and actor")
 			}
 		}
-		var revision int64
-		rv, err := strconv.Atoi(fppod.Pod.ResourceVersion)
-		if err == nil {
-			revision = int64(rv)
-		}
-		// only bump node revision and set pod revision when pod is in steady state
-		if !types.PodInTransitState(fppod) {
-			revision = n.incrementNodeRevision()
-			fppod.Pod.ResourceVersion = fmt.Sprint(revision)
-			fppod.Pod.Labels[fornaxv1.LabelFornaxCoreNodeRevision] = fmt.Sprint(revision)
-			n.notify(n.fornoxCoreRef, podutil.BuildFornaxcoreGrpcPodState(revision, fppod))
-		}
-		// https://www.sqlite.org/faq.html#q19, sqlite transaction is slow, so, call PutPod in go routine.
-		// PutPod use provided revision to avoid newer revision is overwriten by older revision when there is race condition between go routines
-		go func() {
-			// pod has been removed from store in cleanup state, do not save it back
-			if fppod.FornaxPodState != types.PodStateCleanup {
-				n.node.Dependencies.PodStore.PutPod(fppod, revision)
-			}
-		}()
+		n.saveAndNotifyPodState(fppod)
 	case internal.SessionStatusChange:
 		fpsession := msg.Body.(internal.SessionStatusChange).Session
 		fppod := msg.Body.(internal.SessionStatusChange).Pod
@@ -205,7 +208,6 @@ func (n *FornaxNodeActor) nodeHandler(msg message.ActorMessage) (interface{}, er
 		fpsession.Session.ResourceVersion = fmt.Sprint(revision)
 		fpsession.Session.Labels[fornaxv1.LabelFornaxCoreNodeRevision] = fmt.Sprint(revision)
 		n.notify(n.fornoxCoreRef, session.BuildFornaxcoreGrpcSessionState(revision, fpsession))
-		// fppod is nil if session can not find pod
 		if fppod != nil {
 			go n.node.Dependencies.PodStore.PutPod(fppod, revision)
 		}
@@ -431,10 +433,10 @@ func (n *FornaxNodeActor) cleanupPodStoreAndActor(fppod *types.FornaxPod) error 
 // find pod actor and send a message to it, if pod actor does not exist, create one
 func (n *FornaxNodeActor) onPodCreateCommand(msg *fornaxgrpc.PodCreate) error {
 	if n.state != NodeStateReady {
-		n.notify(n.fornoxCoreRef, internal.PodStatusChange{
-			Pod: &types.FornaxPod{
+		n.saveAndNotifyPodState(
+			&types.FornaxPod{
 				Identifier:              util.Name(msg.Pod),
-				FornaxPodState:          types.PodStateFailed,
+				FornaxPodState:          types.PodStateCleanup,
 				Daemon:                  false,
 				Pod:                     msg.Pod.DeepCopy(),
 				RuntimePod:              nil,
@@ -442,17 +444,17 @@ func (n *FornaxNodeActor) onPodCreateCommand(msg *fornaxgrpc.PodCreate) error {
 				Sessions:                map[string]*types.FornaxSession{},
 				LastStateTransitionTime: time.Now(),
 			},
-		})
+		)
 		return fmt.Errorf("Node is not in ready state to create a new pod")
 	}
 	v := n.node.Pods.Get(msg.GetPodIdentifier())
 	if v == nil {
 		fpod, actor, err := n.createPodAndActor(types.PodStateCreating, msg.GetPod().DeepCopy(), msg.GetConfigMap().DeepCopy(), false)
 		if err != nil {
-			n.notify(n.fornoxCoreRef, internal.PodStatusChange{
-				Pod: &types.FornaxPod{
+			n.saveAndNotifyPodState(
+				&types.FornaxPod{
 					Identifier:              util.Name(msg.Pod),
-					FornaxPodState:          types.PodStateFailed,
+					FornaxPodState:          types.PodStateCleanup,
 					Daemon:                  false,
 					Pod:                     msg.Pod.DeepCopy(),
 					RuntimePod:              nil,
@@ -460,9 +462,8 @@ func (n *FornaxNodeActor) onPodCreateCommand(msg *fornaxgrpc.PodCreate) error {
 					Sessions:                map[string]*types.FornaxSession{},
 					LastStateTransitionTime: time.Now(),
 				},
-			})
+			)
 			return err
-
 		}
 		n.notify(actor.Reference(), internal.PodCreate{Pod: fpod})
 	} else {
@@ -519,15 +520,6 @@ func (n *FornaxNodeActor) onSessionOpenCommand(msg *fornaxgrpc.SessionOpen) erro
 	}
 	podActor := n.podActors.Get(msg.GetPodIdentifier())
 	if podActor == nil || n.state != NodeStateReady {
-		n.notify(n.fornoxCoreRef, internal.SessionStatusChange{
-			Pod: nil,
-			Session: &types.FornaxSession{
-				Identifier:     util.Name(s),
-				PodIdentifier:  "",
-				Session:        s,
-				ClientSessions: map[string]*types.ClientSession{},
-			},
-		})
 		return fmt.Errorf("Pod: %s does not exist, can not open session, or node not ready", msg.GetPodIdentifier())
 	} else {
 		n.notify(podActor.Reference(), internal.SessionOpen{SessionId: msg.GetSessionIdentifier(), Session: s})

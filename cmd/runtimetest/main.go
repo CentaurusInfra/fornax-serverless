@@ -25,7 +25,7 @@ import (
 )
 
 func main() {
-	runtimeService, err := dependency.InitRuntimeService(config.DefaultContainerRuntimeEndpoint)
+	runtimeService, err := dependency.InitRuntimeService(config.DefaultContainerRuntimeEndpoint, 1)
 	if err != nil {
 		klog.ErrorS(err, "Failed to init runtime service")
 		os.Exit(-1)

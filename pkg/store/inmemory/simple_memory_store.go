@@ -131,14 +131,14 @@ func (ms *MemoryStore) CompleteWithFunctions(
 func (ms *MemoryStore) houseKeeping() {
 	ms.revmu.Lock()
 	defer ms.revmu.Unlock()
-	klog.InfoS("Shrink revSortedObjList before", "size", ms.revSortedObjList.Len(), "last index", ms.revSortedObjList.lastObjIndex)
+	klog.V(5).InfoS("Shrink revSortedObjList before", "size", ms.revSortedObjList.Len(), "last index", ms.revSortedObjList.lastObjIndex)
 	st := time.Now().UnixMicro()
 	c, _ := ms.kvs.count([]string{})
 	if ms.revSortedObjList.lastObjIndex > uint64(c+NilSlotShrinkHighThrehold) {
 		ms.revSortedObjList.shrink(uint64(c + NilSlotShrinkLowThrehold))
 	}
 	et := time.Now().UnixMicro()
-	klog.InfoS("shrink revSortedObjList after", "size", ms.revSortedObjList.Len(), "last index", ms.revSortedObjList.lastObjIndex, "took-micro", et-st)
+	klog.V(5).InfoS("shrink revSortedObjList after", "size", ms.revSortedObjList.Len(), "last index", ms.revSortedObjList.lastObjIndex, "took-micro", et-st)
 }
 
 func (ms *MemoryStore) getKey(obj runtime.Object) (string, error) {
@@ -167,7 +167,7 @@ func (ms *MemoryStore) Create(ctx context.Context, key string, obj runtime.Objec
 	st := time.Now().UnixMicro()
 	defer func() {
 		et := time.Now().UnixMicro()
-		klog.InfoS("Memory store create object", "key", key, "took-micro", et-st)
+		klog.V(5).InfoS("Memory store create object", "key", key, "took-micro", et-st)
 	}()
 	outVal, err := conversion.EnforcePtr(out)
 	if err != nil {
@@ -222,7 +222,7 @@ func (ms *MemoryStore) Delete(ctx context.Context, key string, out runtime.Objec
 	st := time.Now().UnixMicro()
 	defer func() {
 		et := time.Now().UnixMicro()
-		klog.InfoS("Memory store delete object", "key", key, "took-micro", et-st)
+		klog.V(5).InfoS("Memory store delete object", "key", key, "took-micro", et-st)
 	}()
 	outVal, err := conversion.EnforcePtr(out)
 	if err != nil {
@@ -486,7 +486,7 @@ func (ms *MemoryStore) GuaranteedUpdate(ctx context.Context, key string, out run
 	st := time.Now().UnixMicro()
 	defer func() {
 		et := time.Now().UnixMicro()
-		klog.InfoS("Memory store update object", "key", key, "took-micro", et-st)
+		klog.V(5).InfoS("Memory store update object", "key", key, "took-micro", et-st)
 	}()
 	outVal, err := conversion.EnforcePtr(out)
 	if err != nil {

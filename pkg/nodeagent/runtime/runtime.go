@@ -23,6 +23,7 @@ import (
 	"time"
 
 	grpc_util "centaurusinfra.io/fornax-serverless/pkg/util"
+	"golang.org/x/sync/semaphore"
 
 	"github.com/containerd/containerd"
 	"github.com/containerd/containerd/api/services/tasks/v1"
@@ -42,6 +43,7 @@ var _ RuntimeService = &remoteRuntimeManager{}
 type remoteRuntimeManager struct {
 	runtimeService    criapi.RuntimeService
 	containerdService *containerd.Client
+	podConcurrency    *semaphore.Weighted
 }
 
 // GetPodSandbox implements RuntimeService
@@ -77,12 +79,14 @@ func (r *remoteRuntimeManager) GetRuntimeStatus() (*criv1.RuntimeStatus, error) 
 	return resp.GetStatus(), nil
 }
 
-func (m *remoteRuntimeManager) CreateContainer(podSandboxID string, containerConfig *criv1.ContainerConfig, podSandboxConfig *criv1.PodSandboxConfig) (*Container, error) {
+func (r *remoteRuntimeManager) CreateContainer(podSandboxID string, containerConfig *criv1.ContainerConfig, podSandboxConfig *criv1.PodSandboxConfig) (*Container, error) {
+	r.podConcurrency.Acquire(context.Background(), 1)
+	defer r.podConcurrency.Release(1)
 	klog.InfoS("Create container", "PodSandboxID", podSandboxID, "ContainerConfig", containerConfig)
 
 	var containerId string
 	var err error
-	containerId, err = m.runtimeService.CreateContainer(podSandboxID, containerConfig, podSandboxConfig)
+	containerId, err = r.runtimeService.CreateContainer(podSandboxID, containerConfig, podSandboxConfig)
 	if err != nil {
 		return nil, err
 	}
@@ -93,7 +97,7 @@ func (m *remoteRuntimeManager) CreateContainer(podSandboxID string, containerCon
 	}
 
 	var containers []*criv1.Container
-	containers, err = m.runtimeService.ListContainers(&criv1.ContainerFilter{
+	containers, err = r.runtimeService.ListContainers(&criv1.ContainerFilter{
 		Id:           containerId,
 		PodSandboxId: podSandboxID,
 	})
@@ -113,6 +117,8 @@ func (m *remoteRuntimeManager) CreateContainer(podSandboxID string, containerCon
 // CreateSandbox implements cri.RuntimeService
 // if RunPodSandbox succeeded but failed in following steps, return it still, it will be cleaned by node
 func (r *remoteRuntimeManager) CreateSandbox(sandboxConfig *criv1.PodSandboxConfig, runtimeClassName string) (*Pod, error) {
+	r.podConcurrency.Acquire(context.Background(), 1)
+	defer r.podConcurrency.Release(1)
 	klog.InfoS("Run pod sandbox", "SandboxConfig", sandboxConfig)
 	podSandBoxID, err := r.runtimeService.RunPodSandbox(sandboxConfig, runtimeClassName)
 	if err != nil {
@@ -268,6 +274,8 @@ func (r *remoteRuntimeManager) GetPods(includeContainers bool) ([]*Pod, error) {
 
 // StopContainer implements RuntimeService
 func (r *remoteRuntimeManager) StopContainer(containerID string, timeout time.Duration) error {
+	r.podConcurrency.Acquire(context.Background(), 1)
+	defer r.podConcurrency.Release(1)
 	klog.InfoS("Stop container", "ContainerID", containerID)
 
 	err := r.runtimeService.StopContainer(containerID, int64(timeout.Seconds()))
@@ -280,6 +288,8 @@ func (r *remoteRuntimeManager) StopContainer(containerID string, timeout time.Du
 
 // StartContainer implements cri.RuntimeService
 func (r *remoteRuntimeManager) StartContainer(containerID string) error {
+	r.podConcurrency.Acquire(context.Background(), 1)
+	defer r.podConcurrency.Release(1)
 	klog.InfoS("Start container", "ContainerID", containerID)
 
 	err := r.runtimeService.StartContainer(containerID)
@@ -291,6 +301,8 @@ func (r *remoteRuntimeManager) StartContainer(containerID string) error {
 
 // TerminateContainer implements cri.RuntimeService
 func (r *remoteRuntimeManager) TerminateContainer(containerID string) error {
+	r.podConcurrency.Acquire(context.Background(), 1)
+	defer r.podConcurrency.Release(1)
 	klog.InfoS("Terminate container, stop immediately without gracePeriod", "ContainerID", containerID)
 
 	status, err := r.GetContainerStatus(containerID)
@@ -317,6 +329,8 @@ func (r *remoteRuntimeManager) TerminateContainer(containerID string) error {
 
 // TerminatePod implements cri.RuntimeService
 func (r *remoteRuntimeManager) TerminatePod(podSandboxID string, containerIDs []string) error {
+	r.podConcurrency.Acquire(context.Background(), 1)
+	defer r.podConcurrency.Release(1)
 	klog.InfoS("Terminate pod", "PodSandboxID", podSandboxID)
 	var err error
 	if len(containerIDs) == 0 {
@@ -327,7 +341,7 @@ func (r *remoteRuntimeManager) TerminatePod(podSandboxID string, containerIDs []
 		for _, v := range containers {
 			if v.State != criv1.ContainerState_CONTAINER_EXITED {
 				klog.InfoS("Terminate container in pod", "PodSandboxID", podSandboxID, "ContainerID", v)
-				err = r.TerminateContainer(v.GetId())
+				err = r.runtimeService.StopContainer(v.GetId(), 0)
 				if err != nil {
 					return err
 				}
@@ -430,7 +444,7 @@ func (r *remoteRuntimeManager) getPodContainers(podSandboxID string) ([]*criv1.C
 	return containers, nil
 }
 
-func NewRemoteRuntimeService(endpoint string, connectionTimeout time.Duration) (*remoteRuntimeManager, error) {
+func NewRemoteRuntimeService(endpoint string, connectionTimeout time.Duration, concurrency int) (*remoteRuntimeManager, error) {
 	klog.InfoS("Connecting to runtime service", "endpoint", endpoint)
 	remoteService, err := remote.NewRemoteRuntimeService(endpoint, connectionTimeout)
 	if err != nil {
@@ -446,6 +460,7 @@ func NewRemoteRuntimeService(endpoint string, connectionTimeout time.Duration) (
 	service := &remoteRuntimeManager{
 		runtimeService:    remoteService,
 		containerdService: containerdClient,
+		podConcurrency:    semaphore.NewWeighted(int64(concurrency)),
 	}
 
 	return service, nil

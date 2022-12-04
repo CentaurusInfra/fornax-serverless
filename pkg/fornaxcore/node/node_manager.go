@@ -61,7 +61,7 @@ func (nm *nodeManager) UpdateSessionState(nodeIdentifier string, session *fornax
 	if pod != nil {
 		nm.sessionManager.OnSessionStatusFromNode(nodeIdentifier, pod, session)
 	} else {
-		klog.InfoS("Pod does not exist in pod manager, can not update session info", "session", util.Name(session), "pod", podName)
+		klog.Warningf("Pod %s does not exist in pod manager, can not update session %s", podName, util.Name(session))
 	}
 	return nil
 }
@@ -111,14 +111,13 @@ func (nm *nodeManager) UpdatePodState(nodeId string, pod *v1.Pod, sessions []*fo
 		}
 	} else {
 		// not supposed to happend node state is send when node register
-		klog.InfoS("Node does not exist, ask node full sync", "node", nodeId)
+		klog.Warningf("Node %s does not exist, ask node to do full sync", nodeId)
 		return nodeagent.NodeRevisionOutOfOrderError
 	}
 	return nil
 }
 
 func (nm *nodeManager) SyncNodePodStates(nodeId string, podStates []*grpc.PodState) {
-	klog.InfoS("Sync pods state for node", "node", nodeId)
 	var err error
 	nodeWS := nm.nodes.get(nodeId)
 	if nodeWS == nil {

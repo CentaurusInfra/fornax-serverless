@@ -157,6 +157,8 @@ type DeploymentHistory struct {
 
 	// A human readable message indicating details about the transition.
 	Message string `json:"message,omitempty"`
+
+	DeploymentStatus DeploymentStatus `json:"deploymentStatus,omitempty"`
 }
 
 // ApplicationStatus defines the observed state of Application
@@ -186,10 +188,9 @@ type ApplicationStatus struct {
 
 	// DeploymentStatus of Last History
 	// +optional
-	DeploymentStatus DeploymentStatus `json:"deploymentStatus,omitempty"`
 
-	// The first time this app was deployed.
-	DeploymentTime metav1.Time `json:"deploymentTime,omitempty"`
+	// The latest deploy history of this app.
+	LatestHistory DeploymentHistory `json:"latestHistory,omitempty"`
 
 	// Represents the latest available observations of a deployment's current state.
 	// +optional

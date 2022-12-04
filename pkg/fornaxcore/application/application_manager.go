@@ -31,6 +31,7 @@ import (
 	"centaurusinfra.io/fornax-serverless/pkg/util"
 
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/apimachinery/pkg/util/wait"
@@ -502,36 +503,34 @@ func (am *ApplicationManager) calculateStatus(pool *ApplicationPool, application
 	newStatus.IdleInstances = poolSummary.idleCount
 	newStatus.AllocatedInstances = poolSummary.occupiedCount
 
-	// this will make status huge, and finally fail a etcd request, need to find another way to save these history
-	// if action == fornaxv1.DeploymentActionCreateInstance || action == fornaxv1.DeploymentActionDeleteInstance {
-	//  if deploymentErr != nil {
-	//    newStatus.DeploymentStatus = fornaxv1.DeploymentStatusFailure
-	//  } else {
-	//    newStatus.DeploymentStatus = fornaxv1.DeploymentStatusSuccess
-	//  }
-	//
-	//  message := fmt.Sprintf("deploy application instance, total: %d, desired: %d, pending: %d, deleting: %d, ready: %d, idle: %d",
-	//    newStatus.TotalInstances,
-	//    newStatus.DesiredInstances,
-	//    newStatus.PendingInstances,
-	//    newStatus.DeletingInstances,
-	//    newStatus.ReadyInstances,
-	//    newStatus.IdleInstances)
-	//
-	//  if deploymentErr != nil {
-	//    message = fmt.Sprintf("%s, error: %s", message, deploymentErr.Error())
-	//  }
-	//
-	//  deploymentHistory := fornaxv1.DeploymentHistory{
-	//    Action: action,
-	//    UpdateTime: metav1.Time{
-	//      Time: time.Now(),
-	//    },
-	//    Reason:  "sync application",
-	//    Message: message,
-	//  }
-	//  newStatus.History = append(newStatus.History, deploymentHistory)
-	// }
+	if action == fornaxv1.DeploymentActionCreateInstance || action == fornaxv1.DeploymentActionDeleteInstance {
+		message := fmt.Sprintf("deploy application instance, total: %d, desired: %d, pending: %d, deleting: %d, allocated: %d, idle: %d",
+			newStatus.TotalInstances,
+			newStatus.DesiredInstances,
+			newStatus.PendingInstances,
+			newStatus.DeletingInstances,
+			newStatus.AllocatedInstances,
+			newStatus.IdleInstances)
+
+		deploymentHistory := fornaxv1.DeploymentHistory{
+			Action: action,
+			UpdateTime: metav1.Time{
+				Time: time.Now(),
+			},
+			Reason:  "sync application",
+			Message: message,
+		}
+		if deploymentErr != nil {
+			deploymentHistory.DeploymentStatus = fornaxv1.DeploymentStatusFailure
+		} else {
+			deploymentHistory.DeploymentStatus = fornaxv1.DeploymentStatusSuccess
+		}
+
+		if deploymentErr != nil {
+			message = fmt.Sprintf("%s, error: %s", message, deploymentErr.Error())
+		}
+		newStatus.LatestHistory = deploymentHistory
+	}
 
 	return newStatus
 }

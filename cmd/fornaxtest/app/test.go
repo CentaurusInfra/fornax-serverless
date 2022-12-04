@@ -428,6 +428,7 @@ func createSessionTest(cycleName, namespace, appName string, testConfig config.T
 		return []*TestSession{}
 	}
 	if application == nil {
+		klog.InfoS("Create application", "name", appName)
 		application = createAndWaitForApplicationSetup(namespace, appName, testConfig)
 	}
 

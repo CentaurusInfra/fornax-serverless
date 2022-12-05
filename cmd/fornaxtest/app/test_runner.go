@@ -149,6 +149,8 @@ func Run(ctx context.Context, testConfig config.TestConfiguration) {
 				runSessionFullCycleTest(cycleName, namespace, appName, testConfig)
 			case config.SessionCreateTest:
 				createSessionTest(cycleName, namespace, appName, testConfig)
+			default:
+				klog.Infof("not recognized test case", testConfig.TestCase)
 			}
 		}
 		klog.Infof("--------App %s Test end----------\n\n", appName)

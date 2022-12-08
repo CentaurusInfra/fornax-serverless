@@ -167,7 +167,7 @@ func (ms *MemoryStore) Create(ctx context.Context, key string, obj runtime.Objec
 	st := time.Now().UnixMicro()
 	defer func() {
 		et := time.Now().UnixMicro()
-		klog.InfoS("Memory store create object", "key", key, "took-micro", et-st)
+		klog.V(5).InfoS("Memory store create object", "key", key, "took-micro", et-st)
 	}()
 	outVal, err := conversion.EnforcePtr(out)
 	if err != nil {
@@ -222,7 +222,7 @@ func (ms *MemoryStore) Delete(ctx context.Context, key string, out runtime.Objec
 	st := time.Now().UnixMicro()
 	defer func() {
 		et := time.Now().UnixMicro()
-		klog.InfoS("Memory store delete object", "key", key, "took-micro", et-st)
+		klog.V(5).InfoS("Memory store delete object", "key", key, "took-micro", et-st)
 	}()
 	outVal, err := conversion.EnforcePtr(out)
 	if err != nil {
@@ -294,6 +294,11 @@ func (ms *MemoryStore) Delete(ctx context.Context, key string, out runtime.Objec
 
 // Get implements storage.Interface
 func (ms *MemoryStore) Get(ctx context.Context, key string, opts apistorage.GetOptions, out runtime.Object) error {
+	st := time.Now().UnixMicro()
+	defer func() {
+		et := time.Now().UnixMicro()
+		klog.V(5).InfoS("Memory store get object", "key", key, "took-micro", et-st)
+	}()
 	outVal, err := conversion.EnforcePtr(out)
 	if err != nil {
 		return fmt.Errorf("unable to convert output object to pointer: %v", err)
@@ -327,6 +332,11 @@ func (ms *MemoryStore) Get(ctx context.Context, key string, opts apistorage.GetO
 // if no Continue key provided, use provided ResourceVersion to do a binary search to find find starting positon in revisonedObjList
 // and iterate revisonedObjList from starting position to return a list of object, ignore obj which is marked as deleted.
 func (ms *MemoryStore) GetList(ctx context.Context, key string, opts apistorage.ListOptions, listObj runtime.Object) error {
+	st := time.Now().UnixMicro()
+	defer func() {
+		et := time.Now().UnixMicro()
+		klog.V(5).InfoS("Memory store get a list of object", "key", key, "opts", opts, "took-micro", et-st, "get", listObj)
+	}()
 	listPtr, err := meta.GetItemsPtr(listObj)
 	if err != nil {
 		return err
@@ -486,7 +496,7 @@ func (ms *MemoryStore) GuaranteedUpdate(ctx context.Context, key string, out run
 	st := time.Now().UnixMicro()
 	defer func() {
 		et := time.Now().UnixMicro()
-		klog.InfoS("Memory store update object", "key", key, "took-micro", et-st)
+		klog.V(5).InfoS("Memory store update object", "key", key, "took-micro", et-st)
 	}()
 	outVal, err := conversion.EnforcePtr(out)
 	if err != nil {

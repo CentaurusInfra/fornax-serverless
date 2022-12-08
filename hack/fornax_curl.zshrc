@@ -41,6 +41,13 @@ get_sessions() {
  kubectl get applicationsession --kubeconfig kubeconfig -o yaml --namespace $*
 }
 
+get_pods() {
+ kubectl get pod --kubeconfig kubeconfig -o yaml --namespace $*
+}
+
+get_nodes() {
+ kubectl get node --kubeconfig kubeconfig -o yaml --namespace node.centaurusinfra.io $*
+}
 
 alias kubeproxy='kubectl --kubeconfig kubeconfig proxy --address localhost'
 alias kubectl='kubectl --kubeconfig kubeconfig'

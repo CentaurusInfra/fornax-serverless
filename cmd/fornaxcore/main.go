@@ -37,6 +37,7 @@ import (
 	"centaurusinfra.io/fornax-serverless/pkg/fornaxcore/pod"
 	"centaurusinfra.io/fornax-serverless/pkg/fornaxcore/podscheduler"
 	"centaurusinfra.io/fornax-serverless/pkg/fornaxcore/session"
+	"centaurusinfra.io/fornax-serverless/pkg/store"
 	"centaurusinfra.io/fornax-serverless/pkg/store/factory"
 )
 
@@ -113,8 +114,8 @@ func main() {
 		}).
 		WithResource(&fornaxv1.Application{}).
 		WithResource(&fornaxv1.ApplicationSession{}).
-		WithResource(&fornaxk8sv1.FornaxPod{}).
-		WithResource(&fornaxk8sv1.FornaxNode{})
+		WithResourceAndHandler(&fornaxk8sv1.FornaxPod{}, store.FornaxReadonlyResourceHandler(&fornaxk8sv1.FornaxPod{})).
+		WithResourceAndHandler(&fornaxk8sv1.FornaxNode{}, store.FornaxReadonlyResourceHandler(&fornaxk8sv1.FornaxNode{}))
 	err = apiserver.Execute()
 	if err != nil {
 		klog.Fatal(err)

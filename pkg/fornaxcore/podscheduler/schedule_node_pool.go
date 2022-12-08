@@ -28,7 +28,7 @@ import (
 
 type SchedulableNode struct {
 	mu                         sync.Mutex
-	NodeId                     string
+	NodeName                   string
 	Node                       *v1.Node
 	LastSeen                   time.Time
 	LastUsed                   time.Time
@@ -186,7 +186,7 @@ func (pool *SchedulableNodePool) printSummary() {
 	nodes := pool.nodes
 	for _, v := range nodes {
 		allocatableList := v.GetAllocatableResources()
-		klog.InfoS("Scheduleable node reource", "node", v.NodeId, "capacity", v.ResourceList, "allocatable", allocatableList)
+		klog.InfoS("Scheduleable node reource", "node", v.NodeName, "capacity", v.ResourceList, "allocatable", allocatableList)
 	}
 }
 

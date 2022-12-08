@@ -18,6 +18,7 @@ package v1
 
 import (
 	"context"
+	"fmt"
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -224,6 +225,9 @@ var ApplicationGrv = schema.GroupVersionResource{
 	Version:  "v1",
 	Resource: "applications",
 }
+
+var ApplicationKind = SchemeGroupVersion.WithKind("Application")
+var ApplicationGrvKey = fmt.Sprintf("/%s/%s", ApplicationGrv.Group, ApplicationGrv.Resource)
 
 func (in *Application) GetGroupVersionResource() schema.GroupVersionResource {
 	return ApplicationGrv

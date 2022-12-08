@@ -29,8 +29,8 @@ import (
 )
 
 type PodManagerInterface interface {
-	AddOrUpdatePod(nodeId string, pod *v1.Pod) (*v1.Pod, error)
-	DeletePod(nodeId string, pod *v1.Pod) (*v1.Pod, error)
+	AddOrUpdatePod(pod *v1.Pod) (*v1.Pod, error)
+	DeletePod(pod *v1.Pod) (*v1.Pod, error)
 	TerminatePod(podName string) error
 	HibernatePod(podName string) error
 	FindPod(podName string) *v1.Pod
@@ -47,6 +47,7 @@ const (
 
 type FornaxNodeWithState struct {
 	NodeId     string
+	Revision   string
 	Node       *v1.Node
 	State      NodeWorkingState
 	Pods       *collection.ConcurrentStringSet
@@ -56,14 +57,11 @@ type FornaxNodeWithState struct {
 
 type NodeManagerInterface interface {
 	NodeInfoProviderInterface
+	UpdateNodeState(nodeId string, node *v1.Node) (*FornaxNodeWithState, error)
 	UpdateSessionState(nodeId string, session *fornaxv1.ApplicationSession) error
 	UpdatePodState(nodeId string, pod *v1.Pod, sessions []*fornaxv1.ApplicationSession) error
-	SyncNodePodStates(nodeId string, podStates []*grpc.PodState)
+	SyncPodStates(nodeId string, podStates []*grpc.PodState)
 	DisconnectNode(nodeId string) error
-	FindNode(name string) *FornaxNodeWithState
-	CreateNode(nodeId string, node *v1.Node) (*FornaxNodeWithState, error)
-	UpdateNode(nodeId string, node *v1.Node) (*FornaxNodeWithState, error)
-	SetupNode(nodeId string, node *v1.Node) (*FornaxNodeWithState, error)
 }
 
 // SessionManagerInterface work as a bridge between node agent and fornax core, it call nodeagent to open/close a session

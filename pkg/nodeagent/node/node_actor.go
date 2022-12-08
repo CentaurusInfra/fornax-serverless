@@ -206,7 +206,11 @@ func (n *FornaxNodeActor) nodeHandler(msg message.ActorMessage) (interface{}, er
 		fppod := msg.Body.(internal.SessionStatusChange).Pod
 		revision := n.incrementNodeRevision()
 		fpsession.Session.ResourceVersion = fmt.Sprint(revision)
-		fpsession.Session.Labels[fornaxv1.LabelFornaxCoreNodeRevision] = fmt.Sprint(revision)
+		if fpsession.Session.Labels == nil {
+			fpsession.Session.Labels = map[string]string{fornaxv1.LabelFornaxCoreNodeRevision: fmt.Sprint(revision)}
+		} else {
+			fpsession.Session.Labels[fornaxv1.LabelFornaxCoreNodeRevision] = fmt.Sprint(revision)
+		}
 		n.notify(n.fornoxCoreRef, session.BuildFornaxcoreGrpcSessionState(revision, fpsession))
 		if fppod != nil {
 			go n.node.Dependencies.PodStore.PutPod(fppod, revision)

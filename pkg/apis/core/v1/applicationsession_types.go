@@ -18,6 +18,7 @@ package v1
 
 import (
 	"context"
+	"fmt"
 
 	corev1 "k8s.io/api/core/v1"
 	v1 "k8s.io/api/core/v1"
@@ -164,6 +165,9 @@ var ApplicationSessionGrv = schema.GroupVersionResource{
 	Version:  "v1",
 	Resource: "applicationsessions",
 }
+
+var ApplicationSessionKind = SchemeGroupVersion.WithKind("ApplicationSession")
+var ApplicationSessionGrvKey = fmt.Sprintf("/%s/%s", ApplicationSessionGrv.Group, ApplicationSessionGrv.Resource)
 
 func (in *ApplicationSession) GetGroupVersionResource() schema.GroupVersionResource {
 	return ApplicationSessionGrv

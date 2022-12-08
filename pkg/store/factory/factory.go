@@ -22,6 +22,7 @@ import (
 	"fmt"
 	"sync"
 
+	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apiserver/pkg/registry/generic"
@@ -31,6 +32,7 @@ import (
 	"k8s.io/client-go/tools/cache"
 
 	fornaxv1 "centaurusinfra.io/fornax-serverless/pkg/apis/core/v1"
+	fornaxk8sv1 "centaurusinfra.io/fornax-serverless/pkg/apis/k8s/core/v1"
 	fornaxstore "centaurusinfra.io/fornax-serverless/pkg/store"
 	"centaurusinfra.io/fornax-serverless/pkg/store/composite"
 	"centaurusinfra.io/fornax-serverless/pkg/store/inmemory"
@@ -53,10 +55,9 @@ func (f *FornaxRestOptionsFactory) GetRESTOptions(resource schema.GroupResource)
 	options, err := f.OptionsGetter.GetRESTOptions(resource)
 	if resource == fornaxv1.ApplicationGrv.GroupResource() {
 		options.Decorator = CompositedFornaxApplicationStorageFunc
-	} else if resource == fornaxv1.ApplicationSessionGrv.GroupResource() {
-		options.Decorator = FornaxApplicationSessionStorageFunc
 	} else {
-		return options, fmt.Errorf("unknown resource %v", resource)
+		options.Decorator = FornaxInMemoryResourceStorageFunc
+		// return options, fmt.Errorf("unknown resource %v", resource)
 	}
 	if err != nil {
 		return options, err
@@ -88,6 +89,14 @@ func JsonFromApplication(obj interface{}) ([]byte, error) {
 		return nil, err
 	}
 	return bytes, nil
+}
+
+func NewFornaxNodeStorage(ctx context.Context) *inmemory.MemoryStore {
+	return newFornaxStorage(ctx, fornaxk8sv1.FornaxNodeGrv.GroupResource(), fornaxk8sv1.FornaxNodeGrvKey, nil, nil)
+}
+
+func NewFornaxPodStorage(ctx context.Context) *inmemory.MemoryStore {
+	return newFornaxStorage(ctx, fornaxk8sv1.FornaxPodGrv.GroupResource(), fornaxk8sv1.FornaxPodGrvKey, nil, nil)
 }
 
 func NewFornaxApplicationStatusStorage(ctx context.Context) *inmemory.MemoryStore {
@@ -176,7 +185,7 @@ func applicationStatusAndRevisionMerge(from runtime.Object, to runtime.Object) e
 }
 
 // this function is provided to k8s api server to get resource storage.Interface
-func FornaxApplicationSessionStorageFunc(
+func FornaxInMemoryResourceStorageFunc(
 	storageConfig *storagebackend.ConfigForResource,
 	resourcePrefix string,
 	keyFunc func(obj runtime.Object) (string, error),
@@ -204,36 +213,14 @@ func FornaxApplicationSessionStorageFunc(
 	return storage, destroyFunc, nil
 }
 
-func GetApplicationSessionCache(store fornaxstore.ApiStorageInterface, sessionLabel string) (*fornaxv1.ApplicationSession, error) {
-	out := &fornaxv1.ApplicationSession{}
-	key := fmt.Sprintf("%s/%s", fornaxv1.ApplicationSessionGrvKey, sessionLabel)
-	err := store.Get(context.Background(), key, apistorage.GetOptions{IgnoreNotFound: false}, out)
-	if err != nil {
-		if fornaxstore.IsObjectNotFoundErr(err) {
-			return nil, nil
-		}
-	}
-	return out, nil
-}
-
-func GetApplicationCache(store fornaxstore.ApiStorageInterface, applicationLabel string) (*fornaxv1.Application, error) {
+func GetApplicationCache(store fornaxstore.ApiStorageInterface, applicationName string) (*fornaxv1.Application, error) {
 	out := &fornaxv1.Application{}
-	key := fmt.Sprintf("%s/%s", fornaxv1.ApplicationGrvKey, applicationLabel)
+	key := fmt.Sprintf("%s/%s", fornaxv1.ApplicationGrvKey, applicationName)
 	err := store.Get(context.Background(), key, apistorage.GetOptions{IgnoreNotFound: false}, out)
 	if err != nil {
 		if fornaxstore.IsObjectNotFoundErr(err) {
 			return nil, nil
 		}
-		return nil, err
-	}
-	return out, nil
-}
-
-func CreateApplicationSession(ctx context.Context, store fornaxstore.ApiStorageInterface, session *fornaxv1.ApplicationSession) (*fornaxv1.ApplicationSession, error) {
-	out := &fornaxv1.ApplicationSession{}
-	key := fmt.Sprintf("%s/%s", fornaxv1.ApplicationSessionGrvKey, util.Name(session))
-	err := store.Create(ctx, key, session, out, uint64(0))
-	if err != nil {
 		return nil, err
 	}
 	return out, nil
@@ -249,6 +236,28 @@ func CreateApplication(ctx context.Context, store fornaxstore.ApiStorageInterfac
 	return out, nil
 }
 
+func GetApplicationSessionCache(store fornaxstore.ApiStorageInterface, sessionName string) (*fornaxv1.ApplicationSession, error) {
+	out := &fornaxv1.ApplicationSession{}
+	key := fmt.Sprintf("%s/%s", fornaxv1.ApplicationSessionGrvKey, sessionName)
+	err := store.Get(context.Background(), key, apistorage.GetOptions{IgnoreNotFound: false}, out)
+	if err != nil {
+		if fornaxstore.IsObjectNotFoundErr(err) {
+			return nil, nil
+		}
+	}
+	return out, nil
+}
+
+func CreateApplicationSession(ctx context.Context, store fornaxstore.ApiStorageInterface, session *fornaxv1.ApplicationSession) (*fornaxv1.ApplicationSession, error) {
+	out := &fornaxv1.ApplicationSession{}
+	key := fmt.Sprintf("%s/%s", fornaxv1.ApplicationSessionGrvKey, util.Name(session))
+	err := store.Create(ctx, key, session, out, uint64(0))
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func UpdateApplicationSession(ctx context.Context, store fornaxstore.ApiStorageInterface, session *fornaxv1.ApplicationSession) (*fornaxv1.ApplicationSession, error) {
 	out := &fornaxv1.ApplicationSession{}
 	key := fmt.Sprintf("%s/%s", fornaxv1.ApplicationSessionGrvKey, util.Name(session))
@@ -256,6 +265,84 @@ func UpdateApplicationSession(ctx context.Context, store fornaxstore.ApiStorageI
 	if err != nil {
 		return nil, err
 	}
+	return out, nil
+}
 
+func GetFornaxPodCache(store fornaxstore.ApiStorageInterface, podName string) (*corev1.Pod, error) {
+	out := &corev1.Pod{}
+	key := fmt.Sprintf("%s/%s", fornaxk8sv1.FornaxPodGrvKey, podName)
+	err := store.Get(context.Background(), key, apistorage.GetOptions{IgnoreNotFound: false}, out)
+	if err != nil {
+		if fornaxstore.IsObjectNotFoundErr(err) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return out, nil
+}
+
+func CreateFornaxPod(ctx context.Context, store fornaxstore.ApiStorageInterface, pod *corev1.Pod) (*corev1.Pod, error) {
+	out := &corev1.Pod{}
+	key := fmt.Sprintf("%s/%s", fornaxk8sv1.FornaxPodGrvKey, util.Name(pod))
+	err := store.Create(ctx, key, pod, out, uint64(0))
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func UpdateFornaxPod(ctx context.Context, store fornaxstore.ApiStorageInterface, pod *corev1.Pod) (*corev1.Pod, error) {
+	out := &corev1.Pod{}
+	key := fmt.Sprintf("%s/%s", fornaxk8sv1.FornaxPodGrvKey, util.Name(pod))
+	err := store.EnsureUpdateAndDelete(ctx, key, true, nil, pod, out)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func DeleteFornaxPod(ctx context.Context, store fornaxstore.ApiStorageInterface, podName string) (*corev1.Pod, error) {
+	out := &corev1.Pod{}
+	key := fmt.Sprintf("%s/%s", fornaxk8sv1.FornaxPodGrvKey, podName)
+	err := store.Delete(ctx, key, out, nil, nil, nil)
+	if err != nil {
+		if fornaxstore.IsObjectNotFoundErr(err) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return out, nil
+}
+
+func GetFornaxNodeCache(store fornaxstore.ApiStorageInterface, nodeName string) (*corev1.Node, error) {
+	out := &corev1.Node{}
+	key := fmt.Sprintf("%s/%s", fornaxk8sv1.FornaxNodeGrvKey, nodeName)
+	err := store.Get(context.Background(), key, apistorage.GetOptions{IgnoreNotFound: false}, out)
+	if err != nil {
+		if fornaxstore.IsObjectNotFoundErr(err) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return out, nil
+}
+
+func CreateFornaxNode(ctx context.Context, store fornaxstore.ApiStorageInterface, node *corev1.Node) (*corev1.Node, error) {
+	out := &corev1.Node{}
+	key := fmt.Sprintf("%s/%s", fornaxk8sv1.FornaxNodeGrvKey, util.Name(node))
+	err := store.Create(ctx, key, node, out, uint64(0))
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func UpdateFornaxNode(ctx context.Context, store fornaxstore.ApiStorageInterface, node *corev1.Node) (*corev1.Node, error) {
+	out := &corev1.Node{}
+	key := fmt.Sprintf("%s/%s", fornaxk8sv1.FornaxNodeGrvKey, util.Name(node))
+	err := store.EnsureUpdateAndDelete(ctx, key, true, nil, node, out)
+	if err != nil {
+		return nil, err
+	}
 	return out, nil
 }

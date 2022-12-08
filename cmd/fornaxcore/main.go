@@ -29,6 +29,7 @@ import (
 	// +kubebuilder:scaffold:resource-imports
 
 	fornaxv1 "centaurusinfra.io/fornax-serverless/pkg/apis/core/v1"
+	fornaxk8sv1 "centaurusinfra.io/fornax-serverless/pkg/apis/k8s/core/v1"
 	"centaurusinfra.io/fornax-serverless/pkg/fornaxcore/application"
 	grpc_server "centaurusinfra.io/fornax-serverless/pkg/fornaxcore/grpc/server"
 	"centaurusinfra.io/fornax-serverless/pkg/fornaxcore/node"
@@ -50,6 +51,8 @@ func init() {
 func main() {
 	// initialize fornax resource memory store
 	ctx := context.Background()
+	nodeStore := factory.NewFornaxNodeStorage(ctx)
+	podStore := factory.NewFornaxPodStorage(ctx)
 	appStatusStore := factory.NewFornaxApplicationStatusStorage(ctx)
 	appSessionStore := factory.NewFornaxApplicationSessionStorage(ctx)
 
@@ -57,9 +60,9 @@ func main() {
 	grpcServer := grpc_server.NewGrpcServer()
 
 	// start internal managers and pod scheduler
-	podManager := pod.NewPodManager(ctx, grpcServer)
+	podManager := pod.NewPodManager(ctx, podStore, grpcServer)
 	sessionManager := session.NewSessionManager(ctx, grpcServer, appSessionStore)
-	nodeManager := node.NewNodeManager(ctx, grpcServer, podManager, sessionManager)
+	nodeManager := node.NewNodeManager(ctx, nodeStore, grpcServer, podManager, sessionManager)
 	podScheduler := podscheduler.NewPodScheduler(ctx, grpcServer, nodeManager, podManager,
 		&podscheduler.SchedulePolicy{
 			NumOfEvaluatedNodes: 100,
@@ -109,7 +112,9 @@ func main() {
 			return server
 		}).
 		WithResource(&fornaxv1.Application{}).
-		WithResource(&fornaxv1.ApplicationSession{})
+		WithResource(&fornaxv1.ApplicationSession{}).
+		WithResource(&fornaxk8sv1.FornaxPod{}).
+		WithResource(&fornaxk8sv1.FornaxNode{})
 	err = apiserver.Execute()
 	if err != nil {
 		klog.Fatal(err)

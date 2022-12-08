@@ -25,6 +25,7 @@ import (
 	"sync"
 	"time"
 
+	fornaxv1 "centaurusinfra.io/fornax-serverless/pkg/apis/core/v1"
 	"centaurusinfra.io/fornax-serverless/pkg/collection"
 	"centaurusinfra.io/fornax-serverless/pkg/fornaxcore/grpc/nodeagent"
 	ie "centaurusinfra.io/fornax-serverless/pkg/fornaxcore/internal"
@@ -75,7 +76,7 @@ func NodeLeastLastUseSortFunc(pi, pj interface{}) bool {
 }
 
 func NodeNameKeyFunc(pj interface{}) string {
-	return pj.(*SchedulableNode).NodeId
+	return pj.(*SchedulableNode).NodeName
 }
 
 func BuildNodeSortingFunc(sortingMethod NodeSortingMethod) collection.LessFunc {
@@ -151,19 +152,19 @@ func (ps *podScheduler) selectNode(pod *v1.Pod, nodes []*SchedulableNode) *Sched
 // add pod into node resource list, and send pod to node via grpc channel, if it channel failed, reschedule
 func (ps *podScheduler) bindNode(snode *SchedulableNode, pod *v1.Pod) error {
 	podName := util.Name(pod)
-	nodeId := snode.NodeId
+	nodeId := snode.NodeName
 	klog.InfoS("Bind pod to node", "pod", podName, "node", nodeId, "available resource", snode.GetAllocatableResources())
 
 	resourceList := util.GetPodResourceList(pod)
 	snode.AdmitPodOccupiedResourceList(resourceList)
 	snode.LastUsed = time.Now()
-
 	// set pod status
 	pod.Status.StartTime = util.NewCurrentMetaTime()
 	// when pod is scheduled but not returned from node, use it's host ip to help release resource
-	pod.Status.HostIP = snode.NodeId
+	pod.Status.HostIP = snode.NodeName
 	pod.Status.Message = "Scheduled"
 	pod.Status.Reason = "Scheduled"
+	pod.Labels[fornaxv1.LabelFornaxCoreNode] = util.Name(snode.Node)
 
 	// call nodeagent to start pod
 	err := ps.nodeAgentClient.CreatePod(nodeId, pod)
@@ -245,7 +246,7 @@ func (ps *podScheduler) schedulePod(pod *v1.Pod, candidateNodes []*SchedulableNo
 	return nil
 }
 
-func (ps *podScheduler) updateNodePool(nodeId string, v1node *v1.Node, updateType ie.NodeEventType) *SchedulableNode {
+func (ps *podScheduler) updateNodePool(v1node *v1.Node, updateType ie.NodeEventType) *SchedulableNode {
 	nodeName := util.Name(v1node)
 	if updateType == ie.NodeEventTypeDelete {
 		ps.nodePool.DeleteNode(nodeName)
@@ -262,7 +263,7 @@ func (ps *podScheduler) updateNodePool(nodeId string, v1node *v1.Node, updateTyp
 			if util.IsNodeRunning(v1node) {
 				snode := &SchedulableNode{
 					mu:                         sync.Mutex{},
-					NodeId:                     nodeId,
+					NodeName:                   nodeName,
 					Node:                       v1node.DeepCopy(),
 					LastSeen:                   time.Now(),
 					LastUsed:                   time.Now(),
@@ -413,7 +414,7 @@ func (ps *podScheduler) Run() {
 		// get initial nodes
 		nodes := ps.nodeInfoP.List()
 		for _, n := range nodes {
-			ps.updateNodePool(n.NodeId, n.Node, ie.NodeEventTypeCreate)
+			ps.updateNodePool(n.Node, ie.NodeEventTypeCreate)
 		}
 
 		// listen pod and node updates
@@ -423,7 +424,7 @@ func (ps *podScheduler) Run() {
 				ps.stop = true
 				return
 			case update := <-ps.podUpdateCh:
-				nodeId := update.NodeId
+				nodeId := util.GetPodFornaxNodeIdLabel(update.Pod)
 				if len(nodeId) == 0 {
 					nodeId = update.Pod.Status.HostIP
 				}
@@ -436,7 +437,7 @@ func (ps *podScheduler) Run() {
 				}
 			case update := <-ps.nodeUpdateCh:
 				oldSize := ps.nodePool.size()
-				ps.updateNodePool(update.NodeId, update.Node.DeepCopy(), update.Type)
+				ps.updateNodePool(update.Node.DeepCopy(), update.Type)
 				newSize := ps.nodePool.size()
 				if oldSize != newSize {
 					// reinitialization is expensive, but it's ok for now since it only happen when node pool size changed

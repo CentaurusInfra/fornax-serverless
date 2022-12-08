@@ -1,6 +1,8 @@
 package v1
 
 import (
+	"fmt"
+
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -12,7 +14,7 @@ type FornaxNode struct {
 }
 
 func (in *FornaxNode) NamespaceScoped() bool {
-	return false
+	return true
 }
 
 func (in *FornaxNode) New() runtime.Object {
@@ -24,11 +26,7 @@ func (in *FornaxNode) NewList() runtime.Object {
 }
 
 func (in *FornaxNode) GetGroupVersionResource() schema.GroupVersionResource {
-	return schema.GroupVersionResource{
-		Group:    "k8s.io",
-		Version:  "v1",
-		Resource: "nodes",
-	}
+	return FornaxNodeGrv
 }
 
 func (in *FornaxNode) IsStorageVersion() bool {
@@ -38,3 +36,12 @@ func (in *FornaxNode) IsStorageVersion() bool {
 func (in *FornaxNode) GetObjectMeta() *metav1.ObjectMeta {
 	return &(in.ObjectMeta)
 }
+
+var FornaxNodeGrv = schema.GroupVersionResource{
+	Group:    "k8s.io",
+	Version:  "v1",
+	Resource: "nodes",
+}
+
+var FornaxNodeKind = K8sSchemeGroupVersion.WithKind("Node")
+var FornaxNodeGrvKey = fmt.Sprintf("/%s/%s", FornaxNodeGrv.Group, FornaxNodeGrv.Resource)

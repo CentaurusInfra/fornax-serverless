@@ -30,9 +30,8 @@ const (
 )
 
 type NodeEvent struct {
-	NodeId string
-	Node   *v1.Node
-	Type   NodeEventType
+	Node *v1.Node
+	Type NodeEventType
 }
 
 type PodEventType string
@@ -45,9 +44,8 @@ const (
 )
 
 type PodEvent struct {
-	NodeId string
-	Pod    *v1.Pod
-	Type   PodEventType
+	Pod  *v1.Pod
+	Type PodEventType
 }
 
 type SessionEventType string

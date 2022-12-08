@@ -343,6 +343,7 @@ func (n *SimulationNodeActor) onPodCreateCommand(msg *fornaxgrpc.PodCreate) erro
 			defer n.nodeMutex.Unlock()
 			revision := n.incrementNodeRevision()
 			fpod.Pod.ResourceVersion = fmt.Sprint(revision)
+			fpod.Pod.Labels[fornaxv1.LabelFornaxCoreNodeRevision] = fmt.Sprint(revision)
 			klog.InfoS("Pod have been created", "pod", fpod.Identifier, "node", n.node.V1Node.Name)
 			n.notify(n.fornoxCoreRef, pod.BuildFornaxcoreGrpcPodState(revision, fpod))
 		}()
@@ -367,6 +368,7 @@ func (n *SimulationNodeActor) onPodTerminateCommand(msg *fornaxgrpc.PodTerminate
 			defer n.nodeMutex.Unlock()
 			revision := n.incrementNodeRevision()
 			fpod.Pod.ResourceVersion = fmt.Sprint(revision)
+			fpod.Pod.Labels[fornaxv1.LabelFornaxCoreNodeRevision] = fmt.Sprint(revision)
 			n.notify(n.fornoxCoreRef, pod.BuildFornaxcoreGrpcPodState(revision, fpod))
 		}()
 		n.node.Pods.Del(msg.GetPodIdentifier())
@@ -407,6 +409,11 @@ func (n *SimulationNodeActor) onSessionOpenCommand(msg *fornaxgrpc.SessionOpen) 
 			defer n.nodeMutex.Unlock()
 			revision := n.incrementNodeRevision()
 			sess.ResourceVersion = fmt.Sprint(revision)
+			if sess.Labels == nil {
+				sess.Labels = map[string]string{fornaxv1.LabelFornaxCoreNodeRevision: fmt.Sprint(revision)}
+			} else {
+				sess.Labels[fornaxv1.LabelFornaxCoreNodeRevision] = fmt.Sprint(revision)
+			}
 			fpod.Sessions[sessId] = fsess
 			fsess.Session.Status.SessionStatus = fornaxv1.SessionStatusAvailable
 			n.notify(n.fornoxCoreRef, session.BuildFornaxcoreGrpcSessionState(revision, fsess))
@@ -432,6 +439,7 @@ func (n *SimulationNodeActor) onSessionCloseCommand(msg *fornaxgrpc.SessionClose
 				defer n.nodeMutex.Unlock()
 				revision := n.incrementNodeRevision()
 				fsess.Session.ResourceVersion = fmt.Sprint(revision)
+				fsess.Session.Labels[fornaxv1.LabelFornaxCoreNodeRevision] = fmt.Sprint(revision)
 				fsess.Session.Status.SessionStatus = fornaxv1.SessionStatusClosed
 				n.notify(n.fornoxCoreRef, session.BuildFornaxcoreGrpcSessionState(revision, fsess))
 				klog.InfoS("Closed session", "session", msg.SessionIdentifier, "pod", msg.PodIdentifier, "node", n.node.V1Node.Name)

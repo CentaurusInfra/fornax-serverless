@@ -21,7 +21,6 @@ import (
 
 	ie "centaurusinfra.io/fornax-serverless/pkg/fornaxcore/internal"
 	"centaurusinfra.io/fornax-serverless/pkg/fornaxcore/store"
-	fornaxutil "centaurusinfra.io/fornax-serverless/pkg/util"
 )
 
 type NodeUpdateBucket struct {
@@ -59,13 +58,6 @@ type StaleNodeBucket struct {
 	sync.RWMutex
 	bucketStale   map[string]*ie.FornaxNodeWithState
 	bucketRefresh map[string]*ie.FornaxNodeWithState
-}
-
-func (snb *StaleNodeBucket) refreshNode(node *ie.FornaxNodeWithState) {
-	snb.Lock()
-	defer snb.Unlock()
-	snb.bucketRefresh[fornaxutil.Name(node.Node)] = node
-	delete(snb.bucketStale, fornaxutil.Name(node.Node))
 }
 
 func (snb *StaleNodeBucket) getStaleNodes() []*ie.FornaxNodeWithState {

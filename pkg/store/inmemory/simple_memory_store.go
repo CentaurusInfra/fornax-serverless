@@ -167,7 +167,7 @@ func (ms *MemoryStore) Create(ctx context.Context, key string, obj runtime.Objec
 	st := time.Now().UnixMicro()
 	defer func() {
 		et := time.Now().UnixMicro()
-		klog.V(5).InfoS("Memory store create object", "key", key, "took-micro", et-st)
+		klog.InfoS("Memory store create object", "key", key, "took-micro", et-st)
 	}()
 	outVal, err := conversion.EnforcePtr(out)
 	if err != nil {
@@ -222,7 +222,7 @@ func (ms *MemoryStore) Delete(ctx context.Context, key string, out runtime.Objec
 	st := time.Now().UnixMicro()
 	defer func() {
 		et := time.Now().UnixMicro()
-		klog.V(5).InfoS("Memory store delete object", "key", key, "took-micro", et-st)
+		klog.InfoS("Memory store delete object", "key", key, "took-micro", et-st)
 	}()
 	outVal, err := conversion.EnforcePtr(out)
 	if err != nil {
@@ -486,7 +486,7 @@ func (ms *MemoryStore) GuaranteedUpdate(ctx context.Context, key string, out run
 	st := time.Now().UnixMicro()
 	defer func() {
 		et := time.Now().UnixMicro()
-		klog.V(5).InfoS("Memory store update object", "key", key, "took-micro", et-st)
+		klog.InfoS("Memory store update object", "key", key, "took-micro", et-st)
 	}()
 	outVal, err := conversion.EnforcePtr(out)
 	if err != nil {

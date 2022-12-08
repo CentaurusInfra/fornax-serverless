@@ -16,8 +16,6 @@ limitations under the License.
 
 package v1
 
-import "fmt"
-
 const (
 	LabelFornaxCoreNode                   = "node.fornax-serverless.centaurusinfra.io"
 	LabelFornaxCorePod                    = "pod.fornax-serverless.centaurusinfra.io"
@@ -29,11 +27,4 @@ const (
 	LabelFornaxCoreNodeRevision           = "noderevision.core.fornax-serverless.centaurusinfra.io"
 	AnnotationFornaxCoreHibernatePod      = "hibernatepod.core.fornax-serverless.centaurusinfra.io"
 	AnnotationFornaxCoreSessionServicePod = "sessionservicepod.core.fornax-serverless.centaurusinfra.io"
-)
-
-var (
-	ApplicationKind          = SchemeGroupVersion.WithKind("Application")
-	ApplicationSessionKind   = SchemeGroupVersion.WithKind("ApplicationSession")
-	ApplicationGrvKey        = fmt.Sprintf("/%s/%s", ApplicationGrv.Group, ApplicationGrv.Resource)
-	ApplicationSessionGrvKey = fmt.Sprintf("/%s/%s", ApplicationSessionGrv.Group, ApplicationSessionGrv.Resource)
 )

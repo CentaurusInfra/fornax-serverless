@@ -33,7 +33,7 @@ import (
 
 type FornaxCoreActor struct {
 	nodeIP        string
-	identifier    string
+	nodeName      string
 	stop          bool
 	innerActor    message.Actor
 	fornaxcores   map[string]FornaxCoreClient
@@ -51,7 +51,7 @@ func (n *FornaxCoreActor) Start(nodeActor message.ActorRef) error {
 
 	// listen to fornax grpc message
 	for _, v := range n.fornaxcores {
-		if err := v.GetMessage(fmt.Sprintf("FornaxCoreActor@%s", n.identifier), n.fornaxChannel); err != nil {
+		if err := v.GetMessage(fmt.Sprintf("FornaxCoreActor@%s", n.nodeName), n.fornaxChannel); err != nil {
 			return err
 		}
 	}
@@ -67,7 +67,7 @@ func (n *FornaxCoreActor) Start(nodeActor message.ActorRef) error {
 			select {
 			case msg, ok := <-n.fornaxChannel:
 				if ok {
-					if msg.GetNodeIdentifier().GetIdentifier() != n.identifier {
+					if msg.GetNodeIdentifier().GetIdentifier() != n.nodeName {
 						klog.Warningf("Received a message meant to send to different node %s, skip it", msg.GetMessageIdentifier)
 					}
 
@@ -113,7 +113,7 @@ func (n *FornaxCoreActor) actorMessageProcess(msg message.ActorMessage) (interfa
 		msgBody.MessageIdentifier = messageSeq
 		msgBody.NodeIdentifier = &fornax.NodeIdentifier{
 			Ip:         n.nodeIP,
-			Identifier: n.identifier,
+			Identifier: n.nodeName,
 		}
 		if err := v.PutMessage(msgBody); err != nil {
 			klog.ErrorS(err, "failed to send message to fornax core")
@@ -155,7 +155,7 @@ func (n *FornaxCoreActor) onFornaxCoreConfigurationCommand(msg *fornax.FornaxCor
 		}
 	}
 
-	newfornaxcores := InitFornaxCoreClients(n.nodeIP, n.identifier, newips)
+	newfornaxcores := InitFornaxCoreClients(n.nodeIP, n.nodeName, newips)
 	for k, v := range newfornaxcores {
 		v.Start()
 		n.fornaxcores[k] = v
@@ -194,7 +194,7 @@ func NewFornaxCoreActor(nodeIP, nodeName string, fornaxCoreIps []string) *Fornax
 	fornaxcores := InitFornaxCoreClients(nodeIP, nodeName, fornaxCoreIps)
 	actor := &FornaxCoreActor{
 		nodeIP:        nodeIP,
-		identifier:    nodeName,
+		nodeName:      nodeName,
 		stop:          false,
 		fornaxcores:   fornaxcores,
 		fornaxChannel: make(chan *fornax.FornaxCoreMessage, 30),

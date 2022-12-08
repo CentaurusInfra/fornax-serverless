@@ -44,7 +44,7 @@ func AddConfigFlags(flagSet *pflag.FlagSet, simuConfig *TestConfiguration) {
 	flagSet.IntVar(&simuConfig.NumOfInitPodsPerApp, "num-of-init-pod-per-app", simuConfig.NumOfInitPodsPerApp, "how many applications pods are precreated for a app")
 	flagSet.IntVar(&simuConfig.NumOfBurstPodsPerApp, "num-of-burst-pod-per-app", simuConfig.NumOfBurstPodsPerApp, "how many applications pods are allow to create at same time for a app")
 	flagSet.IntVar(&simuConfig.NumOfSessionPerApp, "num-of-session-per-app", simuConfig.NumOfSessionPerApp, "how many application sessions are created for a app")
-	flagSet.IntVar(&simuConfig.NumOfTestCycle, "num-of-test-cycle", simuConfig.NumOfSessionPerApp, "how many test run before exit")
+	flagSet.IntVar(&simuConfig.NumOfTestCycle, "num-of-test-cycle", simuConfig.NumOfTestCycle, "how many test run before exit")
 	flagSet.StringVar(&simuConfig.AppNamePrefix, "app-name-prefix", simuConfig.AppNamePrefix, "app name prefix")
 	flagSet.BoolVar(&simuConfig.NoNodeSessionService, "no-session-service", simuConfig.NoNodeSessionService, "do not use node session service to open session if has this flag")
 }
@@ -54,8 +54,8 @@ func DefaultConfiguration() *TestConfiguration {
 		TestCase:             AppFullCycleTest,
 		NumOfApps:            1,
 		NumOfInitPodsPerApp:  0,
-		NumOfBurstPodsPerApp: 1,
-		NumOfSessionPerApp:   1,
+		NumOfBurstPodsPerApp: 5,
+		NumOfSessionPerApp:   0,
 		NumOfTestCycle:       1,
 		AppNamePrefix:        "echo",
 		NoNodeSessionService: false,

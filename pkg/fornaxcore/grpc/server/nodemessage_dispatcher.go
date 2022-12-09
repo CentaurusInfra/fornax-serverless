@@ -23,11 +23,11 @@ import (
 	"centaurusinfra.io/fornax-serverless/pkg/fornaxcore/grpc"
 )
 
-func (g *grpcServer) getNodeChan(node string) (chan<- *grpc.FornaxCoreMessage, error) {
+func (g *grpcServer) getNodeChan(nodeIdentifer string) (chan<- *grpc.FornaxCoreMessage, error) {
 	g.RLock()
 	defer g.RUnlock()
 
-	ch, ok := g.nodeOutgoingChans[node]
+	ch, ok := g.nodeOutgoingChans[nodeIdentifer]
 	if !ok {
 		return nil, fmt.Errorf("unknown destination")
 	}

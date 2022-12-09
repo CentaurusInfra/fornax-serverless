@@ -17,6 +17,7 @@ package config
 
 import (
 	"fmt"
+	"os"
 
 	nconfig "centaurusinfra.io/fornax-serverless/pkg/nodeagent/config"
 	"centaurusinfra.io/fornax-serverless/pkg/nodeagent/network"
@@ -29,16 +30,19 @@ type SimulationNodeConfiguration struct {
 	FornaxCoreUrls []string
 	NumOfNode      int
 	PodConcurrency int
+	NodeNamePrefix string
 }
 
 func AddConfigFlags(flagSet *pflag.FlagSet, nodeConfig *SimulationNodeConfiguration) {
 	flagSet.StringVar(&nodeConfig.NodeIP, "node-ip", nodeConfig.NodeIP, "IPv4 addresses of the node. If unset, use the node's default IPv4 address")
 
+	flagSet.StringVar(&nodeConfig.NodeIP, "node-name-prefix", nodeConfig.NodeNamePrefix, "Simulation node's name prefix")
+
 	flagSet.StringArrayVar(&nodeConfig.FornaxCoreUrls, "fornaxcore-ip", nodeConfig.FornaxCoreUrls, "IPv4 addresses of the fornaxcores. must provided")
 
-	flagSet.IntVar(&nodeConfig.NumOfNode, "num-of-node", nodeConfig.NumOfNode, "how many nodes are simulated")
+	flagSet.IntVar(&nodeConfig.NumOfNode, "num-of-node", nodeConfig.NumOfNode, "How many nodes are simulated")
 
-	flagSet.IntVar(&nodeConfig.PodConcurrency, "concurrency-of-pod-operation", nodeConfig.PodConcurrency, "how many pods are allowed to create or terminated in parallel")
+	flagSet.IntVar(&nodeConfig.PodConcurrency, "concurrency-of-pod-operation", nodeConfig.PodConcurrency, "How many pods are allowed to create or terminated in parallel")
 }
 
 func DefaultNodeConfiguration() (*SimulationNodeConfiguration, error) {
@@ -48,6 +52,7 @@ func DefaultNodeConfiguration() (*SimulationNodeConfiguration, error) {
 	}
 	nodeIp := ips[0].To4().String()
 	nodeConfig, _ := nconfig.DefaultNodeConfiguration()
+	namePrefix, _ := os.Hostname()
 
 	return &SimulationNodeConfiguration{
 		NodeConfig:     *nodeConfig,
@@ -55,6 +60,7 @@ func DefaultNodeConfiguration() (*SimulationNodeConfiguration, error) {
 		FornaxCoreUrls: []string{fmt.Sprintf("%s:18001", nodeIp)},
 		NumOfNode:      1,
 		PodConcurrency: 5,
+		NodeNamePrefix: namePrefix,
 	}, nil
 }
 

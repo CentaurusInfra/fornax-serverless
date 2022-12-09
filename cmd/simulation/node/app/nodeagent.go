@@ -106,10 +106,7 @@ func Run(ctx context.Context, nodeConfig config.SimulationNodeConfiguration) err
 
 	logs.InitLogs()
 
-	osHostName, err := os.Hostname()
-	if err != nil {
-		return err
-	}
+	osHostName := nodeConfig.NodeNamePrefix
 	for i := 0; i < nodeConfig.NumOfNode; i++ {
 		hostName := fmt.Sprintf("%s-%d", osHostName, i)
 		go RunNodeAndNodeActor(ctx, nodeConfig.NodeIP, hostName, &nodeConfig)

@@ -18,6 +18,7 @@ package nodemonitor
 
 import (
 	"encoding/json"
+	"fmt"
 	"sync"
 	"time"
 
@@ -133,14 +134,14 @@ func (nm *nodeMonitor) OnRegistry(message *grpc.FornaxCoreMessage) (*grpc.Fornax
 		nodeWRev.Revision = revision
 	}
 
-	fornaxnode, err := nm.nodeManager.SetupNode(nodeId, v1node)
+	fornaxNode, err := nm.nodeManager.UpdateNodeState(nodeId, v1node)
 	if err != nil {
 		klog.ErrorS(err, "Failed to setup node", "node", v1node)
 		return nil, err
 	}
 
 	daemons := []*v1.Pod{}
-	for _, v := range fornaxnode.DaemonPods {
+	for _, v := range fornaxNode.DaemonPods {
 		daemons = append(daemons, v.DeepCopy())
 	}
 	// update node, send node configuration
@@ -148,7 +149,7 @@ func (nm *nodeMonitor) OnRegistry(message *grpc.FornaxCoreMessage) (*grpc.Fornax
 	nodeConig := grpc.FornaxCoreMessage_NodeConfiguration{
 		NodeConfiguration: &grpc.NodeConfiguration{
 			ClusterDomain: domain,
-			Node:          fornaxnode.Node.DeepCopy(),
+			Node:          fornaxNode.Node.DeepCopy(),
 			DaemonPods:    daemons,
 		},
 	}
@@ -223,7 +224,11 @@ func (nm *nodeMonitor) OnPodStateUpdate(message *grpc.FornaxCoreMessage) (*grpc.
 	podState := message.GetPodState()
 	revision := podState.GetNodeRevision()
 	nodeId := message.GetNodeIdentifier()
-	klog.V(5).InfoS("Received a pod state", "nodeId", nodeId, "pod", util.Name(podState.GetPod()), "pod phase", podState.GetPod().Status.Phase, "condition", k8spodutil.IsPodReady(podState.GetPod()), "node revision", revision)
+	klog.V(5).InfoS("Received a pod state", "nodeId", nodeId,
+		"pod", util.Name(podState.GetPod()),
+		"pod phase", podState.GetPod().Status.Phase,
+		"condition", k8spodutil.IsPodReady(podState.GetPod()),
+		"node revision", revision)
 	st := time.Now().UnixMicro()
 	defer func() {
 		et := time.Now().UnixMicro()
@@ -238,7 +243,7 @@ func (nm *nodeMonitor) OnPodStateUpdate(message *grpc.FornaxCoreMessage) (*grpc.
 		return nil, err
 	}
 	if revision == nodeWRev.Revision {
-		klog.InfoS("Received a pod with same revision as current node revision, continue to handle single pod state", "pod", podState.Pod.Name)
+		klog.InfoS("Received a pod state with same node revision as current node revision", "pod", podState.Pod.Name)
 	}
 
 	nodeWRev.Revision = revision
@@ -248,6 +253,12 @@ func (nm *nodeMonitor) OnPodStateUpdate(message *grpc.FornaxCoreMessage) (*grpc.
 		if err := json.Unmarshal(v.SessionData, session); err == nil {
 			sessions = append(sessions, session)
 		}
+	}
+	nodeLabel := util.GetPodFornaxNodeIdLabel(podState.GetPod())
+	if nodeId.GetIdentifier() != nodeLabel || len(nodeLabel) == 0 {
+		err := fmt.Errorf("Pod %s from does not have %s label, or value != received nodeId %s", util.Name(podState.Pod), fornaxv1.LabelFornaxCoreNode, nodeId.GetIdentifier())
+		klog.ErrorS(err, "pod", podState)
+		return nil, err
 	}
 	err := nm.nodeManager.UpdatePodState(nodeId.GetIdentifier(), podState.GetPod().DeepCopy(), sessions)
 	if err != nil {
@@ -274,36 +285,23 @@ func (nm *nodeMonitor) validateNodeRevision(nodeWRev *NodeWithRevision, revision
 
 func (nm *nodeMonitor) updateOrCreateNode(nodeId string, v1node *v1.Node, revision int64, podStates []*grpc.PodState) error {
 	if nodeWRev := nm.nodes.get(nodeId); nodeWRev == nil {
-		nm.nodes.add(nodeId, &NodeWithRevision{
-			NodeId:   nodeId,
-			Revision: revision,
-		})
-		_, err := nm.nodeManager.CreateNode(nodeId, v1node)
-		if err != nil {
-			klog.ErrorS(err, "Failed to create a node", "node", v1node)
-			return err
-		}
-		nm.nodeManager.SyncNodePodStates(nodeId, podStates)
+		nm.nodes.add(nodeId, &NodeWithRevision{NodeId: nodeId, Revision: revision})
 	} else {
 		// 1 is initial revision of new node
 		if nodeWRev.Revision > revision && revision != 1 {
-			klog.Warning("received a revision which is older than current revision", "node", v1node, "currRevision", nodeWRev.Revision, "revision", revision)
+			klog.Warning("node revision is older than current revision", "node", v1node, "currRevision", nodeWRev.Revision, "revision", revision)
 			return nil
 		}
 		nodeWRev.Revision = revision
-		_, err := nm.nodeManager.UpdateNode(nodeId, v1node)
-		if err != nil {
-			klog.ErrorS(err, "Failed to update a node", "node", v1node)
-			return err
-		}
-		nm.nodeManager.SyncNodePodStates(nodeId, podStates)
 	}
+	_, err := nm.nodeManager.UpdateNodeState(nodeId, v1node)
+	if err != nil {
+		klog.ErrorS(err, "Failed to update a node", "node", v1node)
+		return err
+	}
+	nm.nodeManager.SyncPodStates(nodeId, podStates)
 
 	return nil
-}
-
-func (nm *nodeMonitor) CheckStaleNode() {
-	//TODO
 }
 
 func NewNodeMonitor(nodeManager ie.NodeManagerInterface) *nodeMonitor {

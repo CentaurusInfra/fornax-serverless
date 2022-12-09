@@ -66,6 +66,7 @@ func NewApplicationPod(podName string, state ApplicationPodState) *ApplicationPo
 
 func (am *ApplicationManager) onPodEventFromNode(podEvent *ie.PodEvent) {
 	klog.InfoS("Received a pod event", "pod", util.Name(podEvent.Pod), "type", podEvent.Type, "phase", podEvent.Pod.Status.Phase, "condition", k8spodutil.IsPodReady(podEvent.Pod))
+	// if pod is a daemon on node, do not handle it, node will handle daemons pod itself
 	if _, found := podEvent.Pod.Labels[fornaxv1.LabelFornaxCoreNodeDaemon]; !found {
 		switch podEvent.Type {
 		case ie.PodEventTypeCreate:
@@ -89,10 +90,8 @@ func (am *ApplicationManager) handlePodAddUpdateFromNode(pod *v1.Pod) {
 	podName := util.Name(pod)
 	applicationKey, err := am.getPodApplicationKey(pod)
 	if err != nil {
-		klog.ErrorS(err, "Can not find application for pod, try best to use label", "pod", podName)
-		if label, found := pod.GetLabels()[fornaxv1.LabelFornaxCoreApplication]; !found {
-			applicationKey = label
-		}
+		klog.ErrorS(err, "Failed to find application key for pod", "pod", podName)
+		return
 	}
 
 	if len(applicationKey) == 0 {
@@ -140,10 +139,8 @@ func (am *ApplicationManager) handlePodDeleteFromNode(pod *v1.Pod) {
 
 	applicationKey, err := am.getPodApplicationKey(pod)
 	if err != nil {
-		klog.ErrorS(err, "Can not find application for pod, try best to use label", "pod", podName)
-		if label, found := pod.GetLabels()[fornaxv1.LabelFornaxCoreApplication]; !found {
-			applicationKey = label
-		}
+		klog.ErrorS(err, "Failed to find application key for pod", "pod", podName)
+		return
 	}
 
 	if len(applicationKey) == 0 {
@@ -198,7 +195,7 @@ func (am *ApplicationManager) createApplicationPod(application *fornaxv1.Applica
 	uid := uuid.New()
 	name := fmt.Sprintf("%s-%s-%d", application.Name, rand.String(16), uid.ClockSequence())
 	podTemplate := am.getPodApplicationPodTemplate(uid, name, application, standby)
-	pod, err := am.podManager.AddOrUpdatePod("", podTemplate)
+	pod, err := am.podManager.AddOrUpdatePod(podTemplate)
 	if err != nil {
 		return nil, err
 	}

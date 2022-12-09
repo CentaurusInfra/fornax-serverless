@@ -18,6 +18,7 @@ package v1
 
 import (
 	"context"
+	"fmt"
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -157,6 +158,8 @@ type DeploymentHistory struct {
 
 	// A human readable message indicating details about the transition.
 	Message string `json:"message,omitempty"`
+
+	DeploymentStatus DeploymentStatus `json:"deploymentStatus,omitempty"`
 }
 
 // ApplicationStatus defines the observed state of Application
@@ -186,10 +189,9 @@ type ApplicationStatus struct {
 
 	// DeploymentStatus of Last History
 	// +optional
-	DeploymentStatus DeploymentStatus `json:"deploymentStatus,omitempty"`
 
-	// The first time this app was deployed.
-	DeploymentTime metav1.Time `json:"deploymentTime,omitempty"`
+	// The latest deploy history of this app.
+	LatestHistory DeploymentHistory `json:"latestHistory,omitempty"`
 
 	// Represents the latest available observations of a deployment's current state.
 	// +optional
@@ -223,6 +225,9 @@ var ApplicationGrv = schema.GroupVersionResource{
 	Version:  "v1",
 	Resource: "applications",
 }
+
+var ApplicationKind = SchemeGroupVersion.WithKind("Application")
+var ApplicationGrvKey = fmt.Sprintf("/%s/%s", ApplicationGrv.Group, ApplicationGrv.Resource)
 
 func (in *Application) GetGroupVersionResource() schema.GroupVersionResource {
 	return ApplicationGrv

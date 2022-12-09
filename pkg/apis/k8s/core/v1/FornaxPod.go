@@ -1,6 +1,8 @@
 package v1
 
 import (
+	"fmt"
+
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -24,11 +26,7 @@ func (in *FornaxPod) NewList() runtime.Object {
 }
 
 func (in *FornaxPod) GetGroupVersionResource() schema.GroupVersionResource {
-	return schema.GroupVersionResource{
-		Group:    "k8s.io",
-		Version:  "v1",
-		Resource: "pods",
-	}
+	return FornaxPodGrv
 }
 
 func (in *FornaxPod) IsStorageVersion() bool {
@@ -38,3 +36,12 @@ func (in *FornaxPod) IsStorageVersion() bool {
 func (in *FornaxPod) GetObjectMeta() *metav1.ObjectMeta {
 	return &(in.ObjectMeta)
 }
+
+var FornaxPodGrv = schema.GroupVersionResource{
+	Group:    "k8s.io",
+	Version:  "v1",
+	Resource: "pods",
+}
+
+var FornaxPodKind = K8sSchemeGroupVersion.WithKind("Pod")
+var FornaxPodGrvKey = fmt.Sprintf("/%s/%s", FornaxPodGrv.Group, FornaxPodGrv.Resource)

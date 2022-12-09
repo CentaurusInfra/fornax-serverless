@@ -20,6 +20,7 @@ import (
 	"strconv"
 	"time"
 
+	v1 "centaurusinfra.io/fornax-serverless/pkg/apis/core/v1"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -72,8 +73,6 @@ func Name(obj interface{}) string {
 }
 
 func MergeObjectMeta(fromMeta, toMeta *metav1.ObjectMeta) {
-	toMeta.ResourceVersion = fromMeta.ResourceVersion
-
 	toMeta.Labels = fromMeta.GetLabels()
 
 	toMeta.Annotations = fromMeta.GetAnnotations()
@@ -99,5 +98,20 @@ func ResourceVersionLargerThan(newObj, oldObj runtime.Object) (bool, error) {
 		return false, err
 	}
 	bRv, _ := strconv.Atoi(bObjAccessor.GetResourceVersion())
+	return aRv > bRv, nil
+}
+
+func NodeRevisionLargerThan(newObj, oldObj runtime.Object) (bool, error) {
+	aObjAccessor, err := meta.Accessor(newObj)
+	if err != nil {
+		return false, err
+	}
+	aRv, _ := strconv.Atoi(aObjAccessor.GetLabels()[v1.LabelFornaxCoreNodeRevision])
+
+	bObjAccessor, err := meta.Accessor(oldObj)
+	if err != nil {
+		return false, err
+	}
+	bRv, _ := strconv.Atoi(bObjAccessor.GetLabels()[v1.LabelFornaxCoreNodeRevision])
 	return aRv > bRv, nil
 }

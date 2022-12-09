@@ -243,3 +243,10 @@ func GetPodSessionNames(pod *v1.Pod) []string {
 	}
 	return []string{}
 }
+
+func GetPodFornaxNodeIdLabel(pod *v1.Pod) string {
+	if label, found := pod.GetLabels()[fornaxv1.LabelFornaxCoreNode]; found {
+		return label
+	}
+	return ""
+}

@@ -49,7 +49,7 @@ type NodeSortingMethod string
 const (
 	DefaultBackoffRetryDuration                    = 5 * time.Second
 	NodeSortingMethodMoreMemory  NodeSortingMethod = "more_memory"   // chose node with more memory
-	NodeSortingMethodLessLastUse NodeSortingMethod = "less_last_use" // choose oldest node
+	NodeSortingMethodLessLastUse NodeSortingMethod = "less_last_use" // choose node least used before
 	NodeSortingMethodLessUse     NodeSortingMethod = "less_use"      // choose node with less pods
 )
 
@@ -150,6 +150,7 @@ func (ps *podScheduler) selectNode(pod *v1.Pod, nodes []*SchedulableNode) *Sched
 }
 
 // add pod into node resource list, and send pod to node via grpc channel, if it channel failed, reschedule
+// it admit resource earlier to avoid duplicate use, if any error, unbindNode should release it
 func (ps *podScheduler) bindNode(snode *SchedulableNode, pod *v1.Pod) error {
 	podName := util.Name(pod)
 	nodeId := snode.NodeName
@@ -157,7 +158,6 @@ func (ps *podScheduler) bindNode(snode *SchedulableNode, pod *v1.Pod) error {
 
 	resourceList := util.GetPodResourceList(pod)
 	snode.AdmitPodOccupiedResourceList(resourceList)
-	snode.LastUsed = time.Now()
 	// set pod status
 	pod.Status.StartTime = util.NewCurrentMetaTime()
 	// when pod is scheduled but not returned from node, use it's host ip to help release resource
@@ -172,6 +172,7 @@ func (ps *podScheduler) bindNode(snode *SchedulableNode, pod *v1.Pod) error {
 		klog.ErrorS(err, "Failed to bind pod, reschedule", "node", nodeId, "pod", podName)
 		return err
 	}
+	snode.LastUsed = time.Now()
 
 	return nil
 }
@@ -225,7 +226,7 @@ func (ps *podScheduler) schedulePod(pod *v1.Pod, candidateNodes []*SchedulableNo
 		// sort candidates to use first one,
 		sortedNodes := &SortedNodes{
 			nodes:    availableNodes,
-			lessFunc: BuildNodeSortingFunc(ps.policy.NodeSortingMethod),
+			lessFunc: BuildNodeSortingFunc(NodeSortingMethodLessLastUse),
 		}
 		sort.Sort(sortedNodes)
 
@@ -379,7 +380,7 @@ func (ps *podScheduler) Run() {
 				wg := sync.WaitGroup{}
 				for i := 0; i < len(pods); i++ {
 					wg.Add(1)
-					// every pod start a routing to schedule, every pod start to loop chunck scheduler from a different position, if a it's scheduled, then break loop
+					// every pod use a routine to schedule, it loop chunk schedulers from a specified position, if it's scheduled, then return, otherwise use next chunk scheduler
 					go func(index int) {
 						pod := pods[index]
 						var schedErr error

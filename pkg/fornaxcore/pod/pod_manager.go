@@ -215,7 +215,7 @@ func (pm *podManager) createPodAndSendEvent(pod *v1.Pod) (*v1.Pod, error) {
 	}
 	newPod := p.DeepCopy()
 	pm.podUpdates <- &ie.PodEvent{
-		Pod:  newPod,
+		Pod:  newPod.DeepCopy(),
 		Type: eType,
 	}
 	return newPod, nil

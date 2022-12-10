@@ -263,13 +263,12 @@ See [get_start.md](https://github.com/CentaurusInfra/fornax-serverless/edit/main
 ### 3.4 Run First Fornax Core serverless application
 See [get_start.md](https://github.com/CentaurusInfra/fornax-serverless/blob/main/doc/get_start.md#3-play-fornax-serverless)
 
-## 4. Use Quark as runtime
-fornax node agent use runc as default runtime, if you want to expriment Quark runtime and 
-If you use Quark container, follow [Quark installation](https://github.com/CentaurusInfra/fornax-serverless/blob/main/doc/containerd/quark_install.md)
-and restart Node Agent using 
+## 4. Use Quark as container runtime
+Fornax node agent use runc as default container runtime, if you use Quark container, follow [Quark installation](https://github.com/CentaurusInfra/fornax-serverless/blob/main/doc/containerd/quark_install.md) to install and setup Quark
+
+restart Node Agent using 
 ```script
 sudo ./bin/nodeagent --fornaxcore-url 127.0.0.1:18001 --disable-swap=false --runtime-handler=quark
-```
 
 ## 5. Integ test
 Fornax serverless repository ship a test tool for function and performance test, here are some examples

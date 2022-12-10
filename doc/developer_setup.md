@@ -91,8 +91,9 @@ make all
 Now, you can back to [get_start.md](https://github.com/CentaurusInfra/fornax-serverless/edit/main/doc/get_start.md) and continue next step.
 
 
-
 ## 2. Install and Setup Fornax Node Agent
+Node Agent use Containerd and CNI to start containers, containerd ship with runc as default runtime, you can install Quark, see section "Use Quark as container runtime" in later of this doc. 
+
 ### 2.1 Install containerd/cni/runc
 #### 2.1.1 Install containerd
 Run following command
@@ -168,6 +169,44 @@ sudo systemctl status containerd
 
 ### 2.5 Verification
 #### 2.5.1 Install crictl and update endpoints
+Crictl tool is not Node agent dependency, you can install it on NodeAgent host just for verification purpose
+follow <https://github.com/kubernetes-sigs/cri-tools/blob/master/docs/crictl.md>
+
+### 2.5.2 Check containerd state
+
+```
+crictl info
+```
+
+it's expected runtime and network is ready in output, like
+
+```json
+"status": {
+  "conditions": [
+  {
+    "type": "RuntimeReady",
+      "status": true,
+      "reason": "",
+      "message": ""
+
+  },
+  {
+    "type": "NetworkReady",
+    "status": true,
+    "reason": "",
+    "message": ""
+
+  }
+  ]
+},
+```
+
+If there is any error, check containerd log,
+
+```sh
+journalctl -u containerd -f
+```
+
 1. By using wget install
 ```script
 VERSION="v1.24.1"

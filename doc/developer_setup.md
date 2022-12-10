@@ -1,4 +1,4 @@
-# Fornax Core and Nodeagent Setting Up Detail
+# Fornax Core and Nodeagent developer setup Detail
 
 ## Overview
 This doc is the detail steps which setting up, configuration and install component for Fornax Serverless Machine.

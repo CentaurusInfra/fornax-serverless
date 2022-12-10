@@ -34,7 +34,7 @@ make
 Install latest version from <https://github.com/CentaurusInfra/fornax-serverless/releases>, start it as
 
 # 2. Install Node Agent
-Node Agent is installed on every host which run containers, install below dependencies and configure hosts accordingly
+Node Agent is installed on every host which run containers, it need Containerd and CNI as depenency, install and configure hosts accordingly
 
 ## 2.1 Install containerd/cni/runc
 
@@ -90,47 +90,6 @@ EOF
 
 ```sh
 sudo systemctl restart containerd
-```
-
-## 2.5 Verification
-
-### 2.5.1 Install crictl
-
-follow <https://github.com/kubernetes-sigs/cri-tools/blob/master/docs/crictl.md>
-
-### 2.5.2 Check containerd state
-
-```
-crictl info
-```
-
-it's expected runtime and network is ready in output, like
-
-```json
-"status": {
-  "conditions": [
-  {
-    "type": "RuntimeReady",
-      "status": true,
-      "reason": "",
-      "message": ""
-
-  },
-  {
-    "type": "NetworkReady",
-    "status": true,
-    "reason": "",
-    "message": ""
-
-  }
-  ]
-},
-```
-
-If there is any error, check containerd log,
-
-```sh
-journalctl -u containerd -f
 ```
 
 ## 2.6 Install Fornax Node Agent

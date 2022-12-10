@@ -269,6 +269,7 @@ Fornax node agent use runc as default container runtime, if you use Quark contai
 restart Node Agent using 
 ```script
 sudo ./bin/nodeagent --fornaxcore-url 127.0.0.1:18001 --disable-swap=false --runtime-handler=quark
+```
 
 ## 5. Integ test
 Fornax serverless repository ship a test tool for function and performance test, here are some examples

@@ -305,7 +305,7 @@ so on, create new session if we need more application instances
   game2       nginx-mysql   2022-08-08T19:10:41Z
   ````
 
-## 5. Use Quark as runtime
+## 5. Use Quark as container runtime
 Fornax node agent use runc as default container runtime, if you use Quark container, follow [Quark installation](https://github.com/CentaurusInfra/fornax-serverless/blob/main/doc/containerd/quark_install.md) to install and setup Quark
 
 restart Node Agent using 

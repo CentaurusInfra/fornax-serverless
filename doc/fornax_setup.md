@@ -261,71 +261,18 @@ sudo ./bin/nodeagent --fornaxcore-url 127.0.0.1:18001 --disable-swap=false
 ### 3.3 Operate Fornax serverless resources
 See [get_start.md](https://github.com/CentaurusInfra/fornax-serverless/edit/main/doc/get_start.md)
 ### 3.4 Run First Fornax Core serverless application
-See [get_start.md](https://github.com/CentaurusInfra/fornax-serverless/edit/main/doc/get_start.md)
+See [get_start.md](https://github.com/CentaurusInfra/fornax-serverless/blob/main/doc/get_start.md#3-play-fornax-serverless)
 
-1. See [get_start.md](https://github.com/CentaurusInfra/fornax-serverless/edit/main/doc/get_start.md)
-
-2. Create First Application.
-```sh
-kubectl --kubeconfig kubeconfig proxy
-```
-First time use zsh, install zsh
-```sh
-sudo apt install zsh
-```
-```sh
-zsh
-source ./hack/fornax_curl.zshrc
-```
-```sh
-post_app  game1  ./hack/test-data/sessionwrapper-echoserver-app-create.yaml
-kubectl --kubeconfig kubeconfig get applications --all-namespaces
+## 4. Use Quark as runtime
+fornax node agent use runc as default runtime, if you want to expriment Quark runtime and 
+If you use Quark container, follow [Quark installation](https://github.com/CentaurusInfra/fornax-serverless/blob/main/doc/containerd/quark_install.md)
+and restart Node Agent using 
+```script
+sudo ./bin/nodeagent --fornaxcore-url 127.0.0.1:18001 --disable-swap=false --runtime-handler=quark
 ```
 
-3. Create First ApplicationSession
-```sh
-post_session game1  ./hack/test-data/sessionwrapper-echoserver-session-create.yaml
-kubectl --kubeconfig kubeconfig get applicationsession --all-namespaces
-kubectl get applicationsessions --kubeconfig kubeconfig --namespace game1 -o yaml
-```
-If you want delete Application Session, you can use following command
-```sh
-kubectl delete applicationsession --kubeconfig kubeconfig --namespace game1 nginx-session2
-kubectl --kubeconfig kubeconfig delete applicationsession --namespace game1 nginx-session2
-```
-```sh
-kubectl delete application --kubeconfig kubeconfig --namespace fornaxtest echoserver0
-```
-
-4. Verify session is accessable using access point
-```sh
-sudo nc -zv 10.218.233.95 1024
-```
-## 4. Reference and Help
-1. If you want run git pull or some other git command, but you only see this error message:
-   - error: cannot open .git/FETCH_HEAD: Permission denied
-   - you can run following command to solve this issues:
-   ```sh
-   sudo chown -R $USER: .
-   ```
-2. If you run "make" and have a issues, you can change go/pkg folder permission to a+x or 777
-```sh
-sudo chmod a+x go/pkg
-```
-3. If you use Quark container, you also need add content to /etc/containerd/config.toml file
-```
-version = 2
-[plugins."io.containerd.runtime.v1.linux"]
-  shim_debug = true
-[plugins."io.containerd.grpc.v1.cri".containerd.runtimes.runc]
-  runtime_type = "io.containerd.runc.v2"
-[plugins."io.containerd.grpc.v1.cri".containerd.runtimes.runsc]
-  runtime_type = "io.containerd.runsc.v1"
-[plugins."io.containerd.grpc.v1.cri".containerd.runtimes.quark]
-  runtime_type = "io.containerd.quark.v1"
-```
-
-4. Test command
+## 5. Integ test
+Fornax serverless repository ship a test tool for function and performance test, here are some examples
 ```sh
 ./bin/fornaxtest --test-case app_full_cycle --num-of-session-per-app 1 --num-of-init-pod-per-app 1 --num-of-app 1 --num-of-test-cycle 1
 ```
@@ -333,9 +280,4 @@ version = 2
 ```sh
 ./bin/fornaxtest --test-case app_full_cycle --num-of-session-per-app 10 --num-of-init-pod-per-app 10 --num-of-app 1 --num-of-test-cycle 5
 ./bin/fornaxtest --test-case app_full_cycle --num-of-session-per-app 50 --num-of-init-pod-per-app 50 --num-of-app 1 --num-of-test-cycle 5
-```
-
-5. Tmux
-```sh
-sudo apt  install tmux
 ```

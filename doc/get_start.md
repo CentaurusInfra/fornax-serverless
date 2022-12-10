@@ -180,70 +180,64 @@ From you install directory or project path
 1. Create application
 
  ```yaml
-cat << EOF | sudo tee ./hack/test-data/sessionwrapper-echoserver-app-create.yaml
+cat << EOF | sudo tee ./nodejs-hw-app-create.yaml
 apiVersion: core.fornax-serverless.centaurusinfra.io/v1
 kind: Application
 metadata:
-  name: echoserver
+  name: nodejs-hw
   labels:
-    name: sessionwrapper-echoserver
+    name: nodejs-hw
 spec:
+  usingNodeSessionService: false
   scalingPolicy:
     minimumInstance: 1
-    maximumInstance: 10
+    maximumInstance: 30
     burst: 1
     scalingPolicyType: idle_session_number
     idleSessionNumThreshold:
       highWaterMark: 3
-      lowWaterMark: 1
+      lowWaterMark: 0
   containers:
-    - image: 512811/sessionwrapper:latest
-      name: echoserver
-      env:
-        - name: SESSION_WRAPPER_OPEN_SESSION_CMD
-          value: "/opt/bin/sessionwrapper-echoserver"
+    - image: centaurusinfra.io/fornax-serverless/nodejs-hw:v0.1.0
+      name: nodejs-hw
       resources:
         requests:
-          memory: "50M"
+          memory: "500M"
           cpu: "0.5"
         limits:
-          memory: "50M"
+          memory: "500M"
           cpu: "0.5"
       ports:
-        - containerPort: 80
-          name: echoserver
-  configData:
-    configKey1: configValue1
+        - containerPort: 8080
+          name: nodejs
 EOF
 ```
 
-create application use created yaml file
 ```sh
-kubectl apply --kubeconfig kubeconfig --namespace game1 application nginx -f ./hack/test-data/sessionwrapper-echoserver-app-create..yaml
-```
-
-2. Create application session
- ```yaml
-cat << EOF | sudo tee ./hack/test-data/sessionwrapper-echoserver-session-create..yaml
-apiVersion: core.fornax-serverless.centaurusinfra.io/v1
-kind: ApplicationSession
-metadata:
-  name: echo-session-3
-  labels:
-    application: echoserver
-spec:
-  applicationName: game1/echoserver
-  sessionData: my-session-data
-  openTimeoutSeconds: 30
-  closeGracePeriodSeconds: 30
-  killInstanceWhenSessionClosed: false
-EOF
+kubectl apply --kubeconfig kubeconfig --validate=false  -f ./nodejs-hw-app-create.yaml --namespace game1
 ```
 
 create application session using created yaml file
 
+ ```yaml
+cat << EOF | sudo tee ./nodejs-hw-session-create.yaml
+apiVersion: core.fornax-serverless.centaurusinfra.io/v1
+kind: ApplicationSession
+metadata:
+  name: nodejs-hw-session-2
+  labels:
+    application: nodejs-hw
+spec:
+  applicationName: nodejs-hw
+  sessionData: my-nginx1-session-data
+  openTimeoutSeconds: 30
+  closeGracePeriodSeconds: 30
+  killInstanceWhenSessionClosed: true
+EOF
+```
+
 ```sh
-kubectl apply --kubeconfig kubeconfig --namespace game1 application nginx -f ./hack/test-data/sessionwrapper-echoserver-session-create.yaml
+kubectl apply --kubeconfig kubeconfig --validate=false  -f ./nodejs-hw-session-create.yaml --namespace game1
 ```
 3. Describe session and find session ingress endpoint
 ```sh
@@ -251,34 +245,39 @@ kubectl get applicationsessions --kubeconfig kubeconfig --namespace game1 -o yam
 ```
 you should get below output
 ```yaml
-apiVersion: v1
-items:
-- apiVersion: core.fornax-serverless.centaurusinfra.io/v1
-  kind: ApplicationSession
-  metadata:
-    creationTimestamp: "2022-08-21T04:52:01Z"
-    finalizers:
-    - opensession.core.fornax-serverless.centaurusinfra.io
-    labels:
-      application: nginx
-    name: echo-session-3
-    namespace: game1
-    resourceVersion: "1261"
-    uid: 0e8b5463-90e6-4e9e-9720-cbfd74480e50
-  spec:
-    applicationName: game1/echoserver
-    sessionData: my-session-data
-  status:
-    accessEndPoints:
-    - ipAddress: 192.168.0.45
-      port: 1024
-    podReference:
-      name: game1/echoserver-9q8plr7mtlld49gr-12883
-    sessionStatus: Available
+apiVersion: core.fornax-serverless.centaurusinfra.io/v1
+kind: ApplicationSession
+metadata:
+  annotations:
+    kubectl.kubernetes.io/last-applied-configuration: |
+      {"apiVersion":"core.fornax-serverless.centaurusinfra.io/v1","kind":"ApplicationSession","metadata":{"annotations":{},"labels":{"application":"nodejs-hw"},"name":"nodejs-hw-session-2","namespace":"game1"},"spec":{"applicationName":"nodejs-hw","closeGracePeriodSeconds":30,"killInstanceWhenSessionClosed":false,"openTimeoutSeconds":30,"sessionData":"my-nginx1-session-data"}}
+  creationTimestamp: "2022-12-10T00:44:51Z"
+  finalizers:
+  - opensession.core.fornax-serverless.centaurusinfra.io
+  labels:
+    application: nodejs-hw
+  name: nodejs-hw-session-2
+  namespace: game1
+  resourceVersion: "6282319024943921651"
+  uid: 13e26131-22fd-454e-909d-dad17e4c17a7
+spec:
+  applicationName: nodejs-hw
+  closeGracePeriodSeconds: 30
+  openTimeoutSeconds: 30
+  sessionData: my-nginx1-session-data
+status:
+  accessEndPoints:
+  - ipAddress: 192.168.0.71
+    port: 1024
+  availableTime: "2022-12-10T00:44:51Z"
+  availableTimeMicro: 1670633091906489
+  podReference:
+    name: game1/nodejs-hw-f2zjd4lrb228j7ps-6930
+  sessionStatus: Available
 ```
 4. Verify session is accessable using access point
 ```sh
-sudo nc -zv 192.168.0.45 1024
+curl http://192.168.0.71:1024
 ```
 so on, create new session if we need more application instances
 
@@ -293,12 +292,14 @@ so on, create new session if we need more application instances
   NAME                  SHORTNAMES   APIVERSION                                    NAMESPACED   KIND
   applications                       core.fornax-serverless.centaurusinfra.io/v1   true         Application
   applicationsessions                core.fornax-serverless.centaurusinfra.io/v1   true         ApplicationSession
+  nodes                              k8s.io/v1                                     true         Node
+  pods                               k8s.io/v1                                     true         Pod
   ```
 
   2. Get applications
 
   ````
-  [main] # kubectl --kubeconfig kubeconfig get applications --all-namespaces
+  [main] # kubectl --kubeconfig kubeconfig get applications -A
   NAMESPACE   NAME          CREATED AT
   game1       nginx         2022-08-08T18:59:35Z
   game2       nginx-mysql   2022-08-08T19:10:41Z

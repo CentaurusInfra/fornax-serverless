@@ -2,6 +2,10 @@
 
 set -e
 
+FORNAX_ROOT=$(dirname "${BASH_SOURCE}")/../../..
+source "${FORNAX_ROOT}/hack/test/gce/config_default.sh"
+
+
 #Golang version
 GO_VERSION=${GO_VERSION:-"1.18.7"}
 
@@ -83,7 +87,7 @@ fornaxcore_build(){
     make all
 	echo '## RUN FORNAXCORE'
     # run fornaxcore on the background
-	nohup ./bin/fornaxcore --etcd-servers=http://127.0.0.1:2379 --secure-port=9443 --standalone-debug-mode --bind-address=127.0.0.1 >> fornaxcore.logs 2>&1 &
+	nohup ./bin/fornaxcore --etcd-servers=${CORE_ETCD_SERVERS} --secure-port=${CORE_SECURE_PORT} --standalone-debug-mode --bind-address=${CORE_BIND_ADDRESS} >> ${CORE_LOG_FILE} 2>&1 &
     echo -e "## DONE\n"
 }
 

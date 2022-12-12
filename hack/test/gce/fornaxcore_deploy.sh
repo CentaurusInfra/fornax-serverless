@@ -2,6 +2,14 @@
 
 set -e
 
+##get all input arguments and parameters
+CORE_AUTO_START=${1:-true}
+CORE_ETCD_SERVERS=${2:-http://127.0.0.1:2379}
+CORE_SECURE_PORT=${3:-9443}
+CORE_BIND_ADDRESS=${4:-127.0.0.1}
+CORE_LOG_FILE=${5:-fornaxcore-$(date '+%s').log}
+
+
 pushd $HOME
 
 echo -e "## DISABLING FIREWALL\n"
@@ -45,8 +53,10 @@ fornaxcore_deploy(){
     echo -e "## DEPLOY FORNAXCORE"
     cd ~/go/src/centaurusinfra.io/fornax-serverless
 	echo '## RUN FORNAXCORE'
-    # run fornaxcore on the background
-	nohup ./bin/fornaxcore --etcd-servers=http://127.0.0.1:2379 --secure-port=9443 --standalone-debug-mode --bind-address=127.0.0.1 >> fornaxcore.logs 2>&1 &
+    if [[ "${CORE_AUTO_START}" == "true" ]]; then
+        # run fornaxcore on the background
+        nohup ./bin/fornaxcore --etcd-servers=${CORE_ETCD_SERVERS} --secure-port=${CORE_SECURE_PORT} --standalone-debug-mode --bind-address=${CORE_BIND_ADDRESS} >> ${CORE_LOG_FILE} 2>&1 &
+    fi
     echo -e "## DONE\n"
 }
 

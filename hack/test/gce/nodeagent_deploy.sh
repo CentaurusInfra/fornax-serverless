@@ -2,6 +2,17 @@
 
 set -e
 
+##get all input arguments and parameters
+CORE_IP=${1:-127.0.0.1}
+NODEAGENT_AUTO_START=${2:-true}
+SIM_AUTO_START=${3:-false}
+CORE_DEFAULT_PORT=${4:-18001}
+NODE_DISABLE_SWAP=${5:-false}
+NODE_LOG_FILE=${6:-nodeagent-$(date '+%s').log}
+SIM_NUM_OF_NODE=${7:-100}
+SIM_LOG_FILE=${8:-simulatenode-$(date '+%s').log}
+
+
 pushd $HOME
 
 echo -e "## DISABLING FIREWALL\n"
@@ -208,11 +219,16 @@ nodeagent_deploy(){
     # docker pull 512811/sessionwrapper:latest
     # sleep 1
 	  echo '## RUN NODEAGENT To Connect to FORNAXCORE'
-    echo '# Get Fornaxcore IP'
-    fornaxcoreip=`gcloud compute instances list --format='table(INTERNAL_IP)' --filter="name=fornaxcore" | awk '{if(NR==2) print $1}'`
-    echo "Fornaxcore IP is: $fornaxcoreip"
+    echo "debugging: nohup sudo ./bin/nodeagent --fornaxcore-url=${CORE_IP}:${CORE_DEFAULT_PORT} --disable-swap=${NODE_DISABLE_SWAP} >> ${NODE_LOG_FILE}"
+    echo "debugging: nohup sudo ./bin/simulatenode --num-of-node=${SIM_NUM_OF_NODE} --fornaxcore-ip ${CORE_IP}:${CORE_DEFAULT_PORT} > ${SIM_LOG_FILE}"
+
 	  # following line command, put nodeagent run at background
-	  nohup sudo ./bin/nodeagent --fornaxcore-url $fornaxcoreip:18001 --disable-swap=false >> nodeagent.logs 2>&1 &
+    if [[ "${NODEAGENT_AUTO_START}" == "true" ]]; then
+	    nohup sudo ./bin/nodeagent --fornaxcore-url=${CORE_IP}:${CORE_DEFAULT_PORT} --disable-swap=${NODE_DISABLE_SWAP} >> ${NODE_LOG_FILE} 2>&1 &
+    fi
+    if [[ "${SIM_AUTO_START}" == "true" ]]; then
+      nohup sudo ./bin/simulatenode --num-of-node=${SIM_NUM_OF_NODE} --fornaxcore-ip ${CORE_IP}:${CORE_DEFAULT_PORT} > ${SIM_LOG_FILE} 2>&1 &
+    fi
     echo -e "## DONE\n"
 }
 

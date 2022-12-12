@@ -8,7 +8,7 @@ This doc represent how to setup gce serverless test envrironment and detail step
 1. If you are new to this project, you can follow instruction "1. Install and Setup Fornax Core" in the fornax_setup.md doc, you can reference [fornax_setup.md](https://github.com/CentaurusInfra/fornax-serverless/blob/main/doc/fornax_setup.md).
 ```sh
 ```
-2. After you build project, you can follow step and deploy the execute file, all bash script code is in /hack/test-gce folder
+2. After you build project, you can follow step and deploy the execute file, all bash script code is in /hack/test/gce folder
 ```sh
 ```
 
@@ -17,20 +17,20 @@ This doc represent how to setup gce serverless test envrironment and detail step
 step 1. run gce_create_deploy.sh file and wait untill finished(first step: create instance, second step: copy file to each instance, third step: execute script to install third party software)
 
 ```script
-bash ./hack/test-gce/gce_create_deploy.sh
+bash ./hack/test/gce/gce_create_deploy.sh
 ```
 
 After above done, please run following script to start fornaxcore and nodeagent service.
 
 ```script
-bash ./hack/test-gce/serverless_start.sh
+bash ./hack/test/gce/serverless_start.sh
 ```
 
 ## 2. Verify fornaxcore and nodeagent service running.
 1. login fornaxcore machine and verify fornaxcore service is started. After login, run the following script and see fornaxcore service if it is started.
 
 ```script
-bash ./hack/test-gce/serverless_status.sh
+bash ./hack/test/gce/serverless_status.sh
 ```
 
 ## 3. Login fornaxcor machine and run the test script.
@@ -51,20 +51,20 @@ Notes: the following bash script, you can run at your host or dev machine.
 
 1. Stop fornaxcore and nodeagent, you can run:
 ```script
-bash ./hack/test-gce/serverless_stop.sh
+bash ./hack/test/gce/serverless_stop.sh
 ```
 
 2. After your test done, please delete all instance. avoid the charge. Run the following command
 ```script
-bash ./hack/test-gce/gce_delete.sh
+bash ./hack/test/gce/gce_delete.sh
 ```
 
 2. Stop all instance, you can run:
 ```script
-bash ./hack/test-gce/gce_stop.sh
+bash ./hack/test/gce/gce_stop.sh
 ```
 
 2. Start all instance, you can run:
 ```script
-bash ./hack/test-gce/gce_start.sh
+bash ./hack/test/gce/gce_start.sh
 ```

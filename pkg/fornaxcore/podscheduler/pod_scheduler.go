@@ -447,10 +447,9 @@ func (ps *podScheduler) Run() {
 			case <-ticker.C:
 				ps.printScheduleSummary()
 				// sorting nodes using same node selection logic, move more likely nodes ahead,
-				// we may use different sorting interval
-				for _, v := range ps.schedulers {
-					v.sortNodes()
-				}
+				// for _, v := range ps.schedulers {
+				// 	v.sortNodes()
+				// }
 
 				// move item from backoff queue to active queue if item exceed cool down time
 				if ps.scheduleQueue.backoffRetryQueue.queue.Len() > 0 {

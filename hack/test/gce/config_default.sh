@@ -68,3 +68,6 @@ TEST_NUM_OF_TEST_CYCLE=${TEST_NUM_OF_TEST_CYCLE:-1}
 TEST_LOG_FILE=${TEST_LOG_FILE:-fornaxtest-$(date '+%s').log}
 TEST_AUTO_START=${TEST_AUTO_START:-false}
 
+###log collection ENV
+LOG_AUTO_COLLECT=${LOG_AUTO_COLLECT:-false}
+LOG_DIR_LOCAL=${LOG_DIR_LOCAL:-~/logs/fornax/fornaxtest}

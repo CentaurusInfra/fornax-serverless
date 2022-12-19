@@ -6,13 +6,12 @@ FORNAX_ROOT=$(dirname "${BASH_SOURCE}")/../../..
 source "${FORNAX_ROOT}/hack/test/gce/config_default.sh"
 
 delete_instance_by_filter() {
-  names=`gcloud compute instances list --project ${PROJECT} --format="table(name)" | awk '{print $1}'`
+  names=`gcloud compute instances list --project ${PROJECT} --format="table(name)" --filter="name~'${INSTANCE_PREFIX}'" | awk '{print $1}'`
   for name in $names
   do
-    if [ $name == "NAME" ]; then
-        continue
+    if [ "$name" == "NAME" ]; then
+            continue
     fi
-
     if [[ $name == *"${CORE_INSTANCE_PREFIX}"* ]] || [[ $name == *"${NODE_INSTANCE_PREFIX}"* ]]; then
         echo "delete instance name: $name"
         gcloud compute instances delete $name --project=${PROJECT} --zone=${ZONE} --quiet &

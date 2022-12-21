@@ -111,6 +111,8 @@ install_required_software(){
 
             echo "install third party software in fornaxcore instance: $name"
             gcloud compute ssh $name --command="bash ~/fornaxcore_deploy.sh ${CORE_AUTO_START} ${CORE_ETCD_SERVERS} ${CORE_SECURE_PORT} ${CORE_BIND_ADDRESS} $name-${CORE_LOG_FILE} >> ${name}_deploy.log" --project=${PROJECT} --zone=${ZONE} > /dev/null 2>&1 &
+            ## waiting 30s to get fornax core running
+            sleep 30
         fi
 
         if [[ $name == *"${NODE_INSTANCE_PREFIX}"* ]]; then
@@ -119,8 +121,8 @@ install_required_software(){
         fi
     done
 
-    echo -e "## Please waiting software to install.\n"
-    sleep 120
+    echo -e "## Please waiting $(get_noderegister_sleeptime)s software to install.\n"
+    sleep $(get_noderegister_sleeptime)
     echo -e "install and configue is done.\n"
 }
 
@@ -148,7 +150,7 @@ start_fornaxtest(){
         if [ $name == "NAME" ]; then
             continue
         fi
-        gcloud compute ssh $name --command="cd ~/go/src/centaurusinfra.io/fornax-serverless && nohup ./bin/fornaxtest --test-case session_create --num-of-session-per-app=${TEST_NUM_OF_SESSION_PER_APP} --num-of-app=${TEST_NUM_OF_APP} --num-of-init-pod-per-app=${TEST_NUM_OF_INIT_POD_PER_APP} --num-of-burst-pod-per-app=${TEST_NUM_OF_BURST_POD_PER_APP} --num-of-test-cycle=${TEST_NUM_OF_TEST_CYCLE} >  ${TEST_LOG_FILE} 2>&1 &" --project=${PROJECT} --zone=${ZONE} > /dev/null 2>&1 &
+        gcloud compute ssh $name --command="cd ~/go/src/centaurusinfra.io/fornax-serverless && nohup ./bin/fornaxtest --test-case session_create --num-of-session-per-app=${TEST_NUM_OF_SESSION_PER_APP} --num-of-app=${TEST_NUM_OF_APP} --num-of-init-pod-per-app=${TEST_NUM_OF_INIT_POD_PER_APP} --num-of-burst-pod-per-app=${TEST_NUM_OF_BURST_POD_PER_APP} --num-of-test-cycle=${TEST_NUM_OF_TEST_CYCLE} >  $name-${TEST_LOG_FILE} 2>&1 &" --project=${PROJECT} --zone=${ZONE} > /dev/null 2>&1 &
     done
 }
 
@@ -166,6 +168,21 @@ collect_logs(){
         fi
         gcloud compute scp --zone $ZONE --project $PROJECT  "$name":~/go/src/centaurusinfra.io/fornax-serverless/*.log* $log_dir
     done
+}
+
+get_noderegister_sleeptime(){
+    local suggested_sleep_time="120"
+    local total_nodes=0
+    if [[ "${NODEAGENT_AUTO_START}" == "true" ]]; then
+        total_nodes=$(($total_nodes + $NODE_NUM))
+    fi
+    if [[ "${SIM_AUTO_START}" == "true" ]]; then
+        total_nodes=$(($SIM_NUM_OF_NODE * $NODE_NUM + $total_nodes))
+    fi
+    if [[ "$total_nodes" -gt "5000" ]]; then
+        suggested_sleep_time="300"
+    fi
+    echo "${suggested_sleep_time}"
 }
 
 get_test_sleeptime(){

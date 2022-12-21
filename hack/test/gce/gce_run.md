@@ -14,26 +14,42 @@ This doc represent how to setup gce serverless test envrironment and detail step
 
 ## 1. Run the following file and deploy
 
-step 1. run gce_create_deploy.sh file and wait untill finished(first step: create instance, second step: copy file to each instance, third step: execute script to install third party software)
+step 1. run gce_create_deploy.sh file and wait untill finished(first step: create instance, second step: copy file to each instance, third step: execute script to install third party software, fourth step - optional: running fornaxtest, fifth step - optional: collecting logs)
 
 ```script
 bash ./hack/test/gce/gce_create_deploy.sh
 ```
 
-After above done, please run following script to start fornaxcore and nodeagent service.
-
-```script
-bash ./hack/test/gce/serverless_start.sh
+By default, before run script above, all ENV set as the description in ./hack/test/gce/config_default.sh. you can change all ENV based on test request as below:
+```
+export FORNAX_GCE_PROJECT=workload-controller-manager FORNAX_GCE_ZONE=us-central1-a FORNAX_INSTANCE_PREFIX=sonya-fornax CORE_AUTO_START=true NODEAGENT_AUTO_START=true SIM_AUTO_START=false TEST_AUTO_START=false LOG_AUTO_COLLECT=false
+export CORE_MACHINE_TYPE=n1-standard-16 CORE_DISK_TYPE=pd-ssd CORE_DISK_SIZE=40 CORE_IMAGE_PROJECT=ubuntu-os-cloud CORE_IMAGE=ubuntu-2004-focal-v20221018  NODE_MACHINE_TYPE=n1-standard-32 NODE_DISK_TYPE=pd-ssd NODE_DISK_SIZE=30 NODE_IMAGE_PROJECT=ubuntu-os-cloud NODE_IMAGE=ubuntu-2004-focal-v20221018 NODE_NUM=2
+export  CORE_ETCD_SERVERS=http://127.0.0.1:2379 CORE_SECURE_PORT=9443 CORE_BIND_ADDRESS=127.0.0.1 CORE_LOG_FILE=fornaxcore-$(date '+%s').log CORE_STANDALONE_DEBUG_MODE=true CORE_DEFAULT_PORT=18001 NODE_DISABLE_SWAP=false NODE_LOG_FILE=nodeagent-$(date '+%s').log
 ```
 
-## 2. Verify fornaxcore and nodeagent service running.
+if you set SIM_AUTO_START=true, add the following ENV
+```
+export SIM_NUM_OF_NODE=100 SIM_LOG_FILE=simulatenode-$(date '+%s').log
+```
+
+if you set TEST_AUTO_START=true, add the following ENV
+```
+export TEST_NUM_OF_SESSION_PER_APP=10 TEST_NUM_OF_APP=2 TEST_NUM_OF_INIT_POD_PER_APP=0 TEST_NUM_OF_BURST_POD_PER_APP=10 TEST_NUM_OF_TEST_CYCLE=10 TEST_LOG_FILE=fornaxtest-$(date '+%s').log
+```
+if you set LOG_AUTO_COLLECT=true, add the following ENV
+```
+export LOG_DIR_LOCAL=~/logs/fornax/fornaxtest
+```
+
+
+## 2. Manually verify fornaxcore and nodeagent service running.
 1. login fornaxcore machine and verify fornaxcore service is started. After login, run the following script and see fornaxcore service if it is started.
 
 ```script
 bash ./hack/test/gce/serverless_status.sh
 ```
 
-## 3. Login fornaxcor machine and run the test script.
+## 3. Manually login fornaxcor machine and run the test script.
 
 1. cold start
 run the following script to perform test. (note: cycle based on node number, 2 nodes should run at 5 cycle, 20 nodes run at 50 cycle)

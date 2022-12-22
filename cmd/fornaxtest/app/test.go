@@ -59,7 +59,7 @@ var (
 				},
 				Requests: map[v1.ResourceName]resource.Quantity{
 					"memory": util.ResourceQuantity(50*1024*1024, v1.ResourceMemory),
-					"cpu":    util.ResourceQuantity(0.05*1000, v1.ResourceCPU),
+					"cpu":    util.ResourceQuantity(0.1*1000, v1.ResourceCPU),
 				},
 			},
 		}},
@@ -98,7 +98,7 @@ var (
 				},
 				Requests: map[v1.ResourceName]resource.Quantity{
 					"memory": util.ResourceQuantity(50*1024*1024, v1.ResourceMemory),
-					"cpu":    util.ResourceQuantity(0.05*1000, v1.ResourceCPU),
+					"cpu":    util.ResourceQuantity(0.1*1000, v1.ResourceCPU),
 				},
 			},
 		}},
@@ -128,7 +128,7 @@ var (
 				},
 				Requests: map[v1.ResourceName]resource.Quantity{
 					"memory": util.ResourceQuantity(50*1024*1024, v1.ResourceMemory),
-					"cpu":    util.ResourceQuantity(0.05*1000, v1.ResourceCPU),
+					"cpu":    util.ResourceQuantity(0.1*1000, v1.ResourceCPU),
 				},
 			},
 		}},

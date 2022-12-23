@@ -122,7 +122,7 @@ func Run(ctx context.Context, testConfig config.TestConfiguration) {
 
 	ns := "fornaxtest"
 	initNodeInformer(ctx, ns)
-	initPodInformer(ctx, ns)
+	// initPodInformer(ctx, ns)
 	initApplicationInformer(ctx, ns)
 	initApplicationSessionInformer(ctx, ns)
 
@@ -137,7 +137,7 @@ func Run(ctx context.Context, testConfig config.TestConfiguration) {
 				st:            st,
 				et:            et,
 			})
-			klog.Infof("Num of pod created, %d, Num of session created, %d", len(podMap), len(allTestSessions))
+			klog.Infof("Num of session created, %d", len(allTestSessions))
 			if done {
 				break
 			}

@@ -107,7 +107,7 @@ type podScheduler struct {
 	nodePool                  *SchedulableNodePool
 	ScheduleConditionBuilders []ConditionBuildFunc
 	policy                    *SchedulePolicy
-	schedulers                []*nodeChunkScheduler
+	schedulers                []*nodeChunk
 }
 
 // RemovePod remove a pod from scheduling queue
@@ -213,10 +213,6 @@ func (ps *podScheduler) schedulePod(pod *v1.Pod, candidateNodes []*SchedulableNo
 		if goodNode {
 			availableNodes = append(availableNodes, node)
 		}
-
-		if len(availableNodes) >= ps.policy.NumOfEvaluatedNodes {
-			break
-		}
 	}
 
 	if len(availableNodes) == 0 {
@@ -298,7 +294,8 @@ func (ps *podScheduler) printScheduleSummary() {
 	// ps.nodePool.printSummary()
 }
 
-type nodeChunkScheduler struct {
+type nodeChunk struct {
+	name          string
 	mu            sync.Mutex
 	nodes         []*SchedulableNode
 	scheduler     *podScheduler
@@ -311,7 +308,7 @@ type nodeChunkScheduler struct {
 // when pods are assigned to nodes or terminated from nodes, pool.sortedNodes are not sorted again,
 // this list need to resort, but do not want to resort every time since cow is expensive,
 // scheduler control when a resort is needed
-func (cps *nodeChunkScheduler) sortNodes() {
+func (cps *nodeChunk) sortNodes() {
 	nodes := []*SchedulableNode{}
 	for _, v := range cps.nodes {
 		nodes = append(nodes, v)
@@ -324,21 +321,22 @@ func (cps *nodeChunkScheduler) sortNodes() {
 	cps.nodes = sortedNodes.nodes
 }
 
-func (cps *nodeChunkScheduler) schedulePod(pod *v1.Pod) error {
+func (cps *nodeChunk) schedulePod(pod *v1.Pod) error {
 	// lock to avoid overcommit, only one pod can can be scheduled at one time
 	cps.mu.Lock()
 	defer cps.mu.Unlock()
 	return cps.scheduler.schedulePod(pod, cps.nodes)
 }
 
-func (ps *podScheduler) initializeChunkSchedulers() {
+func (ps *podScheduler) initializeNodeChunks() {
 	numOfNodesPerScheduler := ps.policy.NumOfEvaluatedNodes
-	chunkSchedulers := []*nodeChunkScheduler{}
+	chunkSchedulers := []*nodeChunk{}
 	allNodes := ps.nodePool.GetNodes()
 	numOfSchedulers := int(math.Ceil(float64(len(allNodes)) / float64(numOfNodesPerScheduler)))
 	for i := 0; i < numOfSchedulers; i++ {
 		nodes := allNodes[i*numOfNodesPerScheduler : int(math.Min(float64((i+1)*numOfNodesPerScheduler), float64(len(allNodes))))]
-		cs := &nodeChunkScheduler{
+		cs := &nodeChunk{
+			name:          fmt.Sprintf("chunk_scheduler_%d", i),
 			mu:            sync.Mutex{},
 			nodes:         nodes,
 			scheduler:     ps,
@@ -358,7 +356,7 @@ func (ps *podScheduler) Run() {
 				break
 			} else {
 				if len(ps.schedulers) == 0 {
-					ps.initializeChunkSchedulers()
+					ps.initializeNodeChunks()
 				}
 
 				schedulers := ps.schedulers
@@ -378,11 +376,12 @@ func (ps *podScheduler) Run() {
 					}
 				}
 				wg := sync.WaitGroup{}
-				for i := 0; i < len(pods); i++ {
+				for _, pod := range pods {
+					rand.Seed(time.Now().UnixNano())
+					i := rand.Intn(len(schedulers))
 					wg.Add(1)
 					// every pod use a routine to schedule, it loop chunk schedulers from a specified position, if it's scheduled, then return, otherwise use next chunk scheduler
-					go func(index int) {
-						pod := pods[index]
+					go func(pod *v1.Pod, index int) {
 						var schedErr error
 						for i := 0; i < numOfScheduler; i++ {
 							scheduler := schedulers[(index+i)%numOfScheduler]
@@ -395,7 +394,7 @@ func (ps *podScheduler) Run() {
 							ps.scheduleQueue.BackoffPod(pod, ps.policy.BackoffDuration)
 						}
 						wg.Done()
-					}(i)
+					}(pod, i)
 				}
 				wg.Wait()
 			}
@@ -442,7 +441,7 @@ func (ps *podScheduler) Run() {
 				newSize := ps.nodePool.size()
 				if oldSize != newSize {
 					// reinitialization is expensive, but it's ok for now since it only happen when node pool size changed
-					ps.initializeChunkSchedulers()
+					ps.initializeNodeChunks()
 				}
 			case <-ticker.C:
 				ps.printScheduleSummary()
@@ -473,7 +472,7 @@ func NewPodScheduler(ctx context.Context, nodeAgent nodeagent.NodeAgentClient, n
 			NewPodMemoryCondition,
 		},
 		policy:     policy,
-		schedulers: []*nodeChunkScheduler{},
+		schedulers: []*nodeChunk{},
 	}
 	nodeInfoP.Watch(ps.nodeUpdateCh)
 	podInfoP.Watch(ps.podUpdateCh)

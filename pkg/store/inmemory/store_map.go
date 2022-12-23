@@ -19,6 +19,7 @@ package inmemory
 import (
 	"fmt"
 	"sync"
+	"sync/atomic"
 
 	"centaurusinfra.io/fornax-serverless/pkg/store"
 
@@ -96,8 +97,13 @@ type objMapOrObj struct {
 }
 
 type objStoreMap struct {
-	mu  sync.RWMutex
-	kvs map[string]objMapOrObj
+	mu       sync.RWMutex
+	kvs      map[string]objMapOrObj
+	objCount int64
+}
+
+func (mm *objStoreMap) estimateCount() int64 {
+	return atomic.LoadInt64(&mm.objCount)
 }
 
 func (mm *objStoreMap) count(keys []string) (int64, error) {
@@ -247,6 +253,8 @@ func (mm *objStoreMap) put(keys []string, obj *objWithIndex, expectedRV uint64) 
 			}
 		}
 	}
+
+	atomic.AddInt64(&mm.objCount, 1)
 	return nil
 }
 
@@ -268,6 +276,7 @@ func (mm *objStoreMap) del(keys []string) error {
 		} else {
 			if i == len(keys)-1 {
 				if o.obj != nil {
+					atomic.AddInt64(&mm.objCount, -1)
 					thismm._del(keys[i])
 				} else {
 					return fmt.Errorf("leaf node of keys %v is a map, it's supposed to be nil or obj", keys)

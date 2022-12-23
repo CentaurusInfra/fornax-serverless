@@ -20,6 +20,7 @@ import (
 	"os"
 
 	fornaxclient "centaurusinfra.io/fornax-serverless/pkg/client/clientset/versioned"
+	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
 	"k8s.io/klog/v2"
@@ -41,5 +42,10 @@ func GetFornaxCoreKubeConfig() *rest.Config {
 }
 func GetFornaxCoreApiClient(kubeconfig *rest.Config) *fornaxclient.Clientset {
 	apiServerClient := fornaxclient.NewForConfigOrDie(kubeconfig)
+	return apiServerClient
+}
+
+func GetFornaxCoreK8sClient(kubeconfig *rest.Config) *kubernetes.Clientset {
+	apiServerClient := kubernetes.NewForConfigOrDie(kubeconfig)
 	return apiServerClient
 }

@@ -17,6 +17,6 @@ limitations under the License.
 package config
 
 const (
-	DefaultFornaxCoreNodeNameSpace = "node.centaurusinfra.io"
-	DefaultDomainName              = "cluster.centaurusinfra.io"
+	DefaultFornaxCoreNodeNameSpace = "fornax.centaurusinfra.io"
+	DefaultDomainName              = "fornax.centaurusinfra.io"
 )

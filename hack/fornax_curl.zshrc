@@ -46,7 +46,7 @@ get_pods() {
 }
 
 get_nodes() {
- kubectl get node --kubeconfig kubeconfig -o yaml --namespace node.centaurusinfra.io $*
+ kubectl get node --kubeconfig kubeconfig -o yaml --namespace fornax.centaurusinfra.io $*
 }
 
 alias kubeproxy='kubectl --kubeconfig kubeconfig proxy --address localhost'

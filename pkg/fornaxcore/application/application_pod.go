@@ -304,8 +304,7 @@ func (am *ApplicationManager) getPodApplicationPodTemplate(uid uuid.UUID, name s
 			Name: fornaxv1.LabelFornaxCoreSessionService,
 			ValueFrom: &v1.EnvVarSource{
 				FieldRef: &v1.ObjectFieldSelector{
-					APIVersion: "v1",
-					FieldPath:  "status.hostIP",
+					FieldPath: "status.hostIP",
 				},
 			},
 		})

@@ -143,3 +143,4 @@ require (
 )
 
 replace k8s.io/kubernetes => ./kubernetes
+replace sigs.k8s.io/apiserver-runtime => ./apiserver-runtime

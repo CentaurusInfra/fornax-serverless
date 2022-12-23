@@ -7,15 +7,15 @@ metadata:
 spec:
   usingNodeSessionService: true
   scalingPolicy:
-    minimumInstance: 110
-    maximumInstance: 200
+    minimumInstance: 1
+    maximumInstance: 10
     burst: 5
     scalingPolicyType: idle_session_number
     idleSessionNumThreshold:
       highWaterMark: 3
       lowWaterMark: 1
   containers:
-    - image: centaurusinfra.io/fornax-serverless/session-wrapper:v0.1.0
+    - image: 512811/sessionwrapper:latest
       name: echoserver
       env:
         - name: SESSION_WRAPPER_OPEN_SESSION_CMD

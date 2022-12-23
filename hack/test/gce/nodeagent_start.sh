@@ -2,6 +2,9 @@
 
 set -e
 
+FORNAX_ROOT=$(dirname "${BASH_SOURCE}")/../../..
+source "${FORNAX_ROOT}/hack/test/gce/config_default.sh"
+
 #To kill running process of nodeagent
 nodeagent=`ps -aef | grep ./bin/nodeagent | grep -v sh| grep -v grep| awk '{print $2}'`
 
@@ -26,7 +29,7 @@ start_nodeagent(){
     echo "Fornaxcore IP is: $fornaxcoreip"
     sleep 1
 	# following line command, put nodeagent run at background
-	nohup sudo ./bin/nodeagent --fornaxcore-url $fornaxcoreip:18001 --disable-swap=false >> nodeagent.logs 2>&1 &
+	nohup sudo ./bin/nodeagent --fornaxcore-url $fornaxcoreip:${CORE_DEFAULT_PORT} --disable-swap=${NODE_DISABLE_SWAP} >> ${NODE_LOG_FILE}  2>&1 &
     echo -e "## DONE\n"
 }
 

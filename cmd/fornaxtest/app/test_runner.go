@@ -38,16 +38,22 @@ import (
 	"k8s.io/component-base/version/verflag"
 )
 
-var (
-	delevents = int32(0)
-	addevents = int32(0)
-	updevents = int32(0)
-)
+type WatchEventsNum struct {
+	delevents int32
+	addevents int32
+	updevents int32
+}
 
 var (
+	sessionEventsNum    = WatchEventsNum{}
+	appEventsNum        = WatchEventsNum{}
+	podEventsNum        = WatchEventsNum{}
+	nodeEventsNum       = WatchEventsNum{}
 	allTestApps         = TestApplicationArray{}
 	appMap              = TestAppMap{}
 	appMapLock          = sync.Mutex{}
+	podMap              = TestPodMap{}
+	podMapLock          = sync.Mutex{}
 	allTestSessions     = TestSessionArray{}
 	appSessionMap       = TestSessionMap{}
 	appSessionMapLock   = sync.Mutex{}
@@ -115,28 +121,28 @@ func Run(ctx context.Context, testConfig config.TestConfiguration) {
 	logs.InitLogs()
 
 	ns := "fornaxtest"
+	initNodeInformer(ctx, ns)
+	// initPodInformer(ctx, ns)
 	initApplicationInformer(ctx, ns)
 	initApplicationSessionInformer(ctx, ns)
 
 	done := false
 	st := time.Now().UnixMilli()
-	if testConfig.TestCase == config.SessionFullCycleTest || testConfig.TestCase == config.SessionCreateTest {
-		go func() {
-			for {
-				time.Sleep(1 * time.Second)
-				et := time.Now().UnixMilli()
-				testSessionCounters = append(testSessionCounters, &TestSessionCounter{
-					numOfSessions: len(allTestSessions),
-					st:            st,
-					et:            et,
-				})
-				klog.Infof("Num of session created, %d", len(allTestSessions))
-				if done {
-					break
-				}
+	go func() {
+		for {
+			time.Sleep(1 * time.Second)
+			et := time.Now().UnixMilli()
+			testSessionCounters = append(testSessionCounters, &TestSessionCounter{
+				numOfSessions: len(allTestSessions),
+				st:            st,
+				et:            et,
+			})
+			klog.Infof("Num of session created, %d", len(allTestSessions))
+			if done {
+				break
 			}
-		}()
-	}
+		}
+	}()
 
 	RunTest := func(namespace, appName, randSessionPrefix string) {
 		klog.Infof("--------App %s Test begin--------\n", appName)
@@ -173,9 +179,18 @@ func Run(ctx context.Context, testConfig config.TestConfiguration) {
 
 	et := time.Now().UnixMilli()
 	klog.Infof("--------Test summary ----------\n")
-	fmt.Printf("Received %d add watch events\n", addevents)
-	fmt.Printf("Received %d upd watch events\n", updevents)
-	fmt.Printf("Received %d del watch events\n", delevents)
+	fmt.Printf("Received %d app add watch events\n", appEventsNum.addevents)
+	fmt.Printf("Received %d app upd watch events\n", appEventsNum.updevents)
+	fmt.Printf("Received %d app del watch events\n", appEventsNum.delevents)
+	fmt.Printf("Received %d session add watch events\n", sessionEventsNum.addevents)
+	fmt.Printf("Received %d session upd watch events\n", sessionEventsNum.updevents)
+	fmt.Printf("Received %d session del watch events\n", sessionEventsNum.delevents)
+	fmt.Printf("Received %d pod add watch events\n", podEventsNum.addevents)
+	fmt.Printf("Received %d pod upd watch events\n", podEventsNum.updevents)
+	fmt.Printf("Received %d pod del watch events\n", podEventsNum.delevents)
+	fmt.Printf("Received %d node add watch events\n", nodeEventsNum.addevents)
+	fmt.Printf("Received %d node upd watch events\n", nodeEventsNum.updevents)
+	fmt.Printf("Received %d node del watch events\n", nodeEventsNum.delevents)
 	summaryAppTestResult(allTestApps, st, et)
 	summarySessionTestResult(allTestSessions, st, et)
 	os.Exit(0)

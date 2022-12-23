@@ -38,10 +38,10 @@ func (in *FornaxNode) GetObjectMeta() *metav1.ObjectMeta {
 }
 
 var FornaxNodeGrv = schema.GroupVersionResource{
-	Group:    "k8s.io",
+	Group:    "",
 	Version:  "v1",
 	Resource: "nodes",
 }
 
 var FornaxNodeKind = K8sSchemeGroupVersion.WithKind("Node")
-var FornaxNodeGrvKey = fmt.Sprintf("/%s/%s", FornaxNodeGrv.Group, FornaxNodeGrv.Resource)
+var FornaxNodeGrvKey = fmt.Sprintf("/%s", FornaxNodeGrv.Resource)

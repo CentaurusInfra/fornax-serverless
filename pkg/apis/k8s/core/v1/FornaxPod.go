@@ -38,10 +38,10 @@ func (in *FornaxPod) GetObjectMeta() *metav1.ObjectMeta {
 }
 
 var FornaxPodGrv = schema.GroupVersionResource{
-	Group:    "k8s.io",
+	Group:    "",
 	Version:  "v1",
 	Resource: "pods",
 }
 
 var FornaxPodKind = K8sSchemeGroupVersion.WithKind("Pod")
-var FornaxPodGrvKey = fmt.Sprintf("/%s/%s", FornaxPodGrv.Group, FornaxPodGrv.Resource)
+var FornaxPodGrvKey = fmt.Sprintf("/%s", FornaxPodGrv.Resource)

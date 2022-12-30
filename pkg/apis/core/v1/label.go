@@ -17,14 +17,14 @@ limitations under the License.
 package v1
 
 const (
-	LabelFornaxCoreNode                   = "node.fornax-serverless.centaurusinfra.io"
-	LabelFornaxCorePod                    = "pod.fornax-serverless.centaurusinfra.io"
-	LabelFornaxCoreNodeDaemon             = "daemon.fornax-serverless.centaurusinfra.io"
-	LabelFornaxCoreApplication            = "application.core.fornax-serverless.centaurusinfra.io"
-	LabelFornaxCoreCreationUnixMicro      = "create.unixmicro.core.fornax-serverless.centaurusinfra.io"
-	LabelFornaxCoreApplicationSession     = "applicationsession.core.fornax-serverless.centaurusinfra.io"
-	LabelFornaxCoreSessionService         = "sessionservice.core.fornax-serverless.centaurusinfra.io"
-	LabelFornaxCoreNodeRevision           = "noderevision.core.fornax-serverless.centaurusinfra.io"
-	AnnotationFornaxCoreHibernatePod      = "hibernatepod.core.fornax-serverless.centaurusinfra.io"
-	AnnotationFornaxCoreSessionServicePod = "sessionservicepod.core.fornax-serverless.centaurusinfra.io"
+	LabelFornaxCoreNodeDaemon              = "daemon.fornax-serverless.centaurusinfra.io"
+	LabelFornaxCoreApplication             = "application.core.fornax-serverless.centaurusinfra.io"
+	AnnotationFornaxCoreNode               = "node.fornax-serverless.centaurusinfra.io"
+	AnnotationFornaxCorePod                = "pod.fornax-serverless.centaurusinfra.io"
+	AnnotationFornaxCoreCreationUnixMicro  = "create.unixmicro.core.fornax-serverless.centaurusinfra.io"
+	AnnotationFornaxCoreSessionService     = "sessionservice.core.fornax-serverless.centaurusinfra.io"
+	AnnotationFornaxCoreApplicationSession = "applicationsession.core.fornax-serverless.centaurusinfra.io"
+	AnnotationFornaxCoreNodeRevision       = "noderevision.core.fornax-serverless.centaurusinfra.io"
+	AnnotationFornaxCoreHibernatePod       = "hibernatepod.core.fornax-serverless.centaurusinfra.io"
+	AnnotationFornaxCoreSessionServicePod  = "sessionservicepod.core.fornax-serverless.centaurusinfra.io"
 )

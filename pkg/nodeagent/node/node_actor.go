@@ -152,7 +152,7 @@ func (n *FornaxNodeActor) incrementNodeRevision() int64 {
 
 	revision := atomic.AddInt64(&n.node.Revision, 1)
 	n.node.V1Node.ResourceVersion = fmt.Sprint(n.node.Revision)
-	n.node.V1Node.Labels[fornaxv1.LabelFornaxCoreNodeRevision] = fmt.Sprint(n.node.Revision)
+	n.node.V1Node.Annotations[fornaxv1.AnnotationFornaxCoreNodeRevision] = fmt.Sprint(n.node.Revision)
 	go n.node.Dependencies.NodeStore.PutNode(
 		&types.FornaxNodeWithRevision{
 			Identifier: util.Name(n.node.V1Node),
@@ -175,7 +175,7 @@ func (n *FornaxNodeActor) saveAndNotifyPodState(fppod *types.FornaxPod) {
 	if !types.PodInTransitState(fppod) {
 		revision = n.incrementNodeRevision()
 		fppod.Pod.ResourceVersion = fmt.Sprint(revision)
-		fppod.Pod.Labels[fornaxv1.LabelFornaxCoreNodeRevision] = fmt.Sprint(revision)
+		fppod.Pod.Annotations[fornaxv1.AnnotationFornaxCoreNodeRevision] = fmt.Sprint(revision)
 		n.notify(n.fornoxCoreRef, podutil.BuildFornaxcoreGrpcPodState(revision, fppod))
 	}
 	// https://www.sqlite.org/faq.html#q19, sqlite transaction is slow, so, call PutPod in go routine.
@@ -206,10 +206,10 @@ func (n *FornaxNodeActor) nodeHandler(msg message.ActorMessage) (interface{}, er
 		revision := n.incrementNodeRevision()
 		fpsession := msg.Body.(internal.SessionStatusChange).Session
 		fpsession.Session.ResourceVersion = fmt.Sprint(revision)
-		if fpsession.Session.Labels == nil {
-			fpsession.Session.Labels = map[string]string{fornaxv1.LabelFornaxCoreNodeRevision: fmt.Sprint(revision)}
+		if fpsession.Session.Annotations == nil {
+			fpsession.Session.Annotations = map[string]string{fornaxv1.AnnotationFornaxCoreNodeRevision: fmt.Sprint(revision)}
 		} else {
-			fpsession.Session.Labels[fornaxv1.LabelFornaxCoreNodeRevision] = fmt.Sprint(revision)
+			fpsession.Session.Annotations[fornaxv1.AnnotationFornaxCoreNodeRevision] = fmt.Sprint(revision)
 		}
 		n.notify(n.fornoxCoreRef, session.BuildFornaxcoreGrpcSessionState(revision, fpsession))
 		fppod := msg.Body.(internal.SessionStatusChange).Pod
@@ -367,7 +367,7 @@ func (n *FornaxNodeActor) buildAFornaxPod(state types.PodState, v1pod *v1.Pod, c
 		LastStateTransitionTime: time.Now(),
 	}
 	podutil.SetPodStatus(fornaxPod, n.node.V1Node)
-	fornaxPod.Pod.Labels[fornaxv1.LabelFornaxCoreNode] = util.Name(n.node.V1Node)
+	fornaxPod.Pod.Annotations[fornaxv1.AnnotationFornaxCoreNode] = util.Name(n.node.V1Node)
 
 	if configMap != nil {
 		errs = podutil.ValidateConfigMapSpec(configMap)
@@ -397,7 +397,7 @@ func (n *FornaxNodeActor) buildAFornaxPod(state types.PodState, v1pod *v1.Pod, c
 func (n *FornaxNodeActor) startPodActor(fpod *types.FornaxPod) (*types.FornaxPod, *podutil.PodActor, error) {
 	fpod.Pod = fpod.Pod.DeepCopy()
 	fpod.Pod.Status.HostIP = n.node.V1Node.Status.Addresses[0].Address
-	fpod.Pod.Labels[fornaxv1.LabelFornaxCoreNode] = util.Name(n.node.V1Node)
+	fpod.Pod.Annotations[fornaxv1.AnnotationFornaxCoreNode] = util.Name(n.node.V1Node)
 
 	fpActor := podutil.NewPodActor(n.innerActor.Reference(), fpod, &n.node.NodeConfig, n.node.Dependencies, podutil.ErrRecoverPod)
 	n.node.Pods.Add(fpod.Identifier, fpod)

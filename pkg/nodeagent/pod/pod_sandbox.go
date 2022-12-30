@@ -23,12 +23,12 @@ import (
 	v1 "k8s.io/api/core/v1"
 	criv1 "k8s.io/cri-api/pkg/apis/runtime/v1"
 	"k8s.io/klog/v2"
+	netutils "k8s.io/utils/net"
 
 	"centaurusinfra.io/fornax-serverless/pkg/nodeagent/config"
 	"centaurusinfra.io/fornax-serverless/pkg/nodeagent/runtime"
 	"centaurusinfra.io/fornax-serverless/pkg/nodeagent/types"
-	"k8s.io/kubernetes/pkg/kubelet/util/format"
-	netutils "k8s.io/utils/net"
+	"centaurusinfra.io/fornax-serverless/pkg/util"
 )
 
 // createPodSandbox creates a pod sandbox and returns (podSandBoxID, message, error).
@@ -55,7 +55,7 @@ func (a *PodActor) createPodSandbox() (*runtime.Pod, error) {
 	klog.InfoS("Call runtime to create sandbox", "pod", types.UniquePodName(a.pod), "sandboxConfig", podSandboxConfig)
 	runtimepod, err := a.dependencies.RuntimeService.CreateSandbox(podSandboxConfig, runtimeHandler)
 	if err != nil {
-		message := fmt.Sprintf("Failed to create sandbox for pod %q: %v", format.Pod(pod), err)
+		message := fmt.Sprintf("Failed to create sandbox for pod %q: %v", util.Name(pod), err)
 		klog.ErrorS(err, message)
 		return nil, err
 	}
@@ -162,7 +162,7 @@ func (a *PodActor) generatePodSandboxLinuxConfig() (*criv1.LinuxPodSandboxConfig
 }
 
 // determinePodSandboxIP determines the IP addresses of the given pod sandbox.
-func (a *PodActor) determinePodSandboxIPs(podNamespace, podName string, podSandbox *criv1.PodSandboxStatus) []string {
+func determinePodSandboxIPs(podNamespace, podName string, podSandbox *criv1.PodSandboxStatus) []string {
 	podIPs := make([]string, 0)
 	if podSandbox.Network == nil {
 		klog.InfoS("Pod Sandbox status doesn't have network information, cannot report IPs", "pod", klog.KRef(podNamespace, podName))

@@ -128,7 +128,7 @@ func (am *ApplicationManager) onApplicationSessionUpdateEvent(old, cur interface
 			updateSessionPool(pool, newCopy)
 		}
 	}
-	klog.InfoS("Application session updated", "session", util.Name(newCopy), "old status", oldCopy.Status.SessionStatus, "new status", newCopy.Status.SessionStatus, "deleting", newCopy.DeletionTimestamp != nil)
+	klog.InfoS("Application session updated", "session", util.Name(newCopy), "old status", oldCopy.Status.SessionStatus, "new status", newCopy.Status.SessionStatus, "deleting", newCopy.DeletionTimestamp != nil, "pod", newCopy.Annotations[fornaxv1.AnnotationFornaxCorePod])
 	am.enqueueApplication(applicationKey)
 }
 
@@ -184,7 +184,7 @@ func (am *ApplicationManager) deployApplicationSessions(pool *ApplicationPool, a
 	pendingSessions, deletingSessions, timeoutSessions := pool.getNonRunningSessions()
 	// get 5 more in case some pods assigment failed
 	idlePods := pool.getSomeIdlePods(len(pendingSessions))
-	klog.InfoS("Syncing application pending session", "application", pool.appName, "#pending", len(pendingSessions), "#deleting", len(deletingSessions), "#timeout", len(timeoutSessions))
+	klog.V(5).InfoS("Syncing application pending session", "application", pool.appName, "#pending", len(pendingSessions), "#deleting", len(deletingSessions), "#timeout", len(timeoutSessions))
 
 	sort.Sort(PendingSessions(pendingSessions))
 	sessionErrors := []error{}
@@ -197,9 +197,8 @@ func (am *ApplicationManager) deployApplicationSessions(pool *ApplicationPool, a
 		}
 		pod := am.podManager.FindPod(ap.podName)
 		if pod != nil {
-			// update as status and set access point of as
 			as := pendingSessions[si]
-			klog.InfoS("Assign session to pod", "application", pool.appName, "pod", util.Name(pod), "session", util.Name(as.session))
+			klog.V(5).InfoS("Assign session to pod", "application", pool.appName, "pod", util.Name(pod), "session", util.Name(as.session))
 			err := am.assignSessionToPod(pool, pod, as.session)
 			if err != nil {
 				// move to next pod, it could fail to accept other session also
@@ -211,6 +210,7 @@ func (am *ApplicationManager) deployApplicationSessions(pool *ApplicationPool, a
 				si += 1
 			}
 		} else {
+			// TODO
 			klog.InfoS("A idle Pod does not exist in Pod manager at all, should be deleted", "application", pool.appName, "pod", util.Name(ap.podName))
 		}
 	}
@@ -254,7 +254,7 @@ func (am *ApplicationManager) deleteApplicationSession(pool *ApplicationPool, s 
 		}
 	}
 
-	klog.InfoS("Cleanup a session", "session", util.Name(s.session), "state", s.session.Status.SessionStatus)
+	klog.V(5).InfoS("Cleanup a session", "session", util.Name(s.session), "state", s.session.Status.SessionStatus)
 	if s.state == SessionStatePending {
 		if err := am.changeSessionStatus(s.session, fornaxv1.SessionStatusTimeout); err != nil {
 			return err
@@ -263,8 +263,7 @@ func (am *ApplicationManager) deleteApplicationSession(pool *ApplicationPool, s 
 		return nil
 	}
 
-	if s.session.Status.PodReference != nil {
-		podName := s.session.Status.PodReference.Name
+	if podName, found := s.session.Annotations[fornaxv1.AnnotationFornaxCorePod]; found {
 		pod := am.podManager.FindPod(podName)
 		if pod != nil {
 			if !util.SessionIsClosing(s.session) {
@@ -302,13 +301,15 @@ func (am *ApplicationManager) assignSessionToPod(pool *ApplicationPool, pod *v1.
 			})
 		}
 	}
-	newSession.Status.PodReference = &v1.LocalObjectReference{
-		Name: util.Name(pod),
+
+	if newSession.Annotations != nil {
+		newSession.Annotations[fornaxv1.AnnotationFornaxCorePod] = util.Name(pod)
+	} else {
+		newSession.Annotations = map[string]string{fornaxv1.AnnotationFornaxCorePod: util.Name(pod)}
 	}
 	if err := am.sessionManager.OpenSession(pod, newSession); err != nil {
 		return err
 	} else {
-		// change pool directly, no need to update storage for a transient state, and triger unnecessary sync
 		updateSessionPool(pool, newSession)
 		return nil
 	}

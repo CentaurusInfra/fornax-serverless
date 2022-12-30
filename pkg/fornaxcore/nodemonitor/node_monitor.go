@@ -254,9 +254,9 @@ func (nm *nodeMonitor) OnPodStateUpdate(message *grpc.FornaxCoreMessage) (*grpc.
 			sessions = append(sessions, session)
 		}
 	}
-	nodeLabel := util.GetPodFornaxNodeIdLabel(podState.GetPod())
+	nodeLabel := util.GetPodFornaxNodeIdAnnotation(podState.GetPod())
 	if nodeId.GetIdentifier() != nodeLabel || len(nodeLabel) == 0 {
-		err := fmt.Errorf("Pod %s from does not have %s label, or value != received nodeId %s", util.Name(podState.Pod), fornaxv1.LabelFornaxCoreNode, nodeId.GetIdentifier())
+		err := fmt.Errorf("Pod %s from does not have %s label, or value != received nodeId %s", util.Name(podState.Pod), fornaxv1.AnnotationFornaxCoreNode, nodeId.GetIdentifier())
 		klog.ErrorS(err, "pod", podState)
 		return nil, err
 	}

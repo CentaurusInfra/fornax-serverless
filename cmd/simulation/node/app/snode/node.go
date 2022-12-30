@@ -102,11 +102,10 @@ type ContainerWorldSummary struct {
 
 func NewFornaxNode(hostIp, hostName string, nodeConfig config.NodeConfiguration) (*node.FornaxNode, error) {
 	fornaxNode := node.FornaxNode{
-		NodeConfig:   nodeConfig,
-		V1Node:       nil,
-		Revision:     0,
-		Pods:         node.NewPodPool(),
-		Dependencies: nil,
+		NodeConfig: nodeConfig,
+		V1Node:     nil,
+		Revision:   0,
+		Pods:       node.NewPodPool(),
 	}
 	v1node, err := InitV1Node(hostIp, hostName)
 	if err != nil {

@@ -462,10 +462,9 @@ func NewNodeActor(hostIp, hostName string, nodeConfig *config.SimulationNodeConf
 		return nil, err
 	}
 	fpnode := &node.FornaxNode{
-		NodeConfig:   nodeConfig.NodeConfig,
-		V1Node:       v1node,
-		Pods:         node.NewPodPool(),
-		Dependencies: nil,
+		NodeConfig: nodeConfig.NodeConfig,
+		V1Node:     v1node,
+		Pods:       node.NewPodPool(),
 	}
 	SetNodeStatus(fpnode)
 

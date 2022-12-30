@@ -193,7 +193,6 @@ func LoadPodsFromContainerRuntime(runtimeService runtime.RuntimeService, db *sto
 		if fornaxpod.Containers == nil {
 			fornaxpod.Containers = map[string]*fornaxtypes.FornaxContainer{}
 		}
-
 		if fornaxpod.RuntimePod == nil {
 			world.terminatedPods = append(world.terminatedPods, fornaxpod)
 		} else {

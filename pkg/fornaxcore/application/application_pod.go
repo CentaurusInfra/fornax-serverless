@@ -65,7 +65,7 @@ func NewApplicationPod(podName string, state ApplicationPodState) *ApplicationPo
 }
 
 func (am *ApplicationManager) onPodEventFromNode(podEvent *ie.PodEvent) {
-	klog.V(5).InfoS("Received a pod event", "pod", util.Name(podEvent.Pod), "type", podEvent.Type, "phase", podEvent.Pod.Status.Phase, "condition", k8spodutil.IsPodReady(podEvent.Pod))
+	klog.InfoS("Received a pod event", "pod", util.Name(podEvent.Pod), "type", podEvent.Type, "phase", podEvent.Pod.Status.Phase, "condition", k8spodutil.IsPodReady(podEvent.Pod))
 	// if pod is a daemon on node, do not handle it, node will handle daemons pod itself
 	if _, found := podEvent.Pod.Labels[fornaxv1.LabelFornaxCoreNodeDaemon]; !found {
 		switch podEvent.Type {

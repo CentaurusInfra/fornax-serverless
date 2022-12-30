@@ -19,7 +19,6 @@ package node
 import (
 	"encoding/json"
 	"fmt"
-	"strconv"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -166,11 +165,7 @@ func (n *FornaxNodeActor) incrementNodeRevision() int64 {
 }
 
 func (n *FornaxNodeActor) saveAndNotifyPodState(fppod *types.FornaxPod) {
-	var revision int64
-	rv, err := strconv.Atoi(fppod.Pod.ResourceVersion)
-	if err == nil {
-		revision = int64(rv)
-	}
+	revision := atomic.LoadInt64(&n.node.Revision)
 	// only bump node revision and report to fornaxcore when pod is in steady or failed state
 	if !types.PodInTransitState(fppod) {
 		revision = n.incrementNodeRevision()
@@ -214,6 +209,7 @@ func (n *FornaxNodeActor) nodeHandler(msg message.ActorMessage) (interface{}, er
 		n.notify(n.fornoxCoreRef, session.BuildFornaxcoreGrpcSessionState(revision, fpsession))
 		fppod := msg.Body.(internal.SessionStatusChange).Pod
 		if fppod != nil {
+			fppod.Sessions[util.Name(fpsession.Session)] = fpsession
 			go n.node.Dependencies.PodStore.PutPod(fppod, revision)
 		}
 	case internal.NodeUpdate:
@@ -386,15 +382,12 @@ func (n *FornaxNodeActor) buildAFornaxPod(state types.PodState, v1pod *v1.Pod, c
 		return nil, err
 	}
 
-	// for _, v := range fornaxPod.Pod.Spec.Containers {
-	//  klog.Info("Pod Containers port mapping", v.Ports)
-	// }
 	return fornaxPod, nil
 }
 
 // startPodActor start a actor for a pod
 // set pod node related information in case node name and ip changed
-func (n *FornaxNodeActor) startPodActor(fpod *types.FornaxPod) (*types.FornaxPod, *podutil.PodActor, error) {
+func (n *FornaxNodeActor) startPodActor(fpod *types.FornaxPod) (*types.FornaxPod, *podutil.PodActor) {
 	fpod.Pod = fpod.Pod.DeepCopy()
 	fpod.Pod.Status.HostIP = n.node.V1Node.Status.Addresses[0].Address
 	fpod.Pod.Annotations[fornaxv1.AnnotationFornaxCoreNode] = util.Name(n.node.V1Node)
@@ -403,7 +396,7 @@ func (n *FornaxNodeActor) startPodActor(fpod *types.FornaxPod) (*types.FornaxPod
 	n.node.Pods.Add(fpod.Identifier, fpod)
 	n.podActors.Add(fpod.Identifier, fpActor)
 	fpActor.Start()
-	return fpod, fpActor, nil
+	return fpod, fpActor
 }
 
 func (n *FornaxNodeActor) createPodAndActor(state types.PodState, v1Pod *v1.Pod, v1Config *v1.ConfigMap, isDaemon bool) (*types.FornaxPod, *podutil.PodActor, error) {
@@ -420,7 +413,8 @@ func (n *FornaxNodeActor) createPodAndActor(state types.PodState, v1Pod *v1.Pod,
 	}
 
 	// new pod actor and start it
-	return n.startPodActor(fpod)
+	fpod, fpodactor := n.startPodActor(fpod)
+	return fpod, fpodactor, nil
 }
 
 func (n *FornaxNodeActor) cleanupPodStoreAndActor(fppod *types.FornaxPod) error {
@@ -493,10 +487,7 @@ func (n *FornaxNodeActor) onPodTerminateCommand(msg *fornaxgrpc.PodTerminate) (e
 		}
 		if podActor == nil {
 			klog.Warningf("Pod actor %s already exit, create a new one", msg.GetPodIdentifier())
-			_, podActor, err = n.startPodActor(fpod)
-			if err != nil {
-				return err
-			}
+			_, podActor = n.startPodActor(fpod)
 		}
 		n.notify(podActor.Reference(), internal.PodTerminate{})
 	}

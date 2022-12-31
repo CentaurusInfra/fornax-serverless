@@ -43,14 +43,15 @@ import (
 )
 
 type MemoryStore struct {
-	versioner        apistorage.Versioner
-	revmu            sync.RWMutex
-	stopChannel      chan interface{}
-	kvStore          *objStoreMap
-	revSortedObjList *objList
-	groupResource    schema.GroupResource
-	grvKeyPrefix     string
-	watchers         []*memoryStoreWatcher
+	versioner          apistorage.Versioner
+	revmu              sync.RWMutex
+	stopChannel        chan interface{}
+	kvStore            *objStoreMap
+	revSortedObjList   *objList
+	revSortedObjListMu sync.RWMutex
+	groupResource      schema.GroupResource
+	grvKeyPrefix       string
+	watchers           []*memoryStoreWatcher
 
 	keyFunc      func(obj runtime.Object) (string, error)
 	newFunc      func() runtime.Object
@@ -70,7 +71,7 @@ const (
 	DefaultObjRevListInitSize       = 20000
 	DefaultObjRevListGrowThreashold = 10000
 	NilSlotShrinkLowThrehold        = 10000
-	NilSlotShrinkHighThrehold       = 20000
+	NilSlotShrinkHighThrehold       = 100000
 	DefaultHouseKeepingInterval     = 60 * time.Second
 )
 
@@ -87,17 +88,30 @@ func NewMemoryStore(ctx context.Context, groupResource schema.GroupResource, grv
 			objs:         make([]*objWithIndex, DefaultObjRevListInitSize),
 			lastObjIndex: 0,
 		},
-		grvKeyPrefix:  grvKeyPrefix, // resource key prefix, every key should start with it
-		groupResource: groupResource,
-		watchers:      []*memoryStoreWatcher{},
+		revSortedObjListMu: sync.RWMutex{},
+		grvKeyPrefix:       grvKeyPrefix, // resource key prefix, every key should start with it
+		groupResource:      groupResource,
+		watchers:           []*memoryStoreWatcher{},
 	}
 	go func() {
+		pruneTicker := time.NewTicker(60 * time.Second)
 		for {
 			select {
 			case <-si.stopChannel:
 				return
 			case <-ctx.Done():
 				return
+			case <-pruneTicker.C:
+				c := si.kvStore.estimateCount()
+				if c > 0 {
+					if si.revSortedObjList.lastObjIndex > uint64(c+NilSlotShrinkHighThrehold) {
+						func() {
+							si.revSortedObjListMu.Lock()
+							defer si.revSortedObjListMu.Unlock()
+							si.revSortedObjList.shrink(uint64(c + NilSlotShrinkLowThrehold))
+						}()
+					}
+				}
 			}
 		}
 	}()
@@ -147,10 +161,12 @@ func (ms *MemoryStore) Count(key string) (int64, error) {
 func (ms *MemoryStore) Create(ctx context.Context, key string, obj runtime.Object, out runtime.Object, ttl uint64) error {
 	// st := time.Now().UnixMicro()
 	// defer func() {
-	// 	et := time.Now().UnixMicro()
-	// 	klog.V(5).InfoS("Memory store create object", "key", key, "took-micro", et-st)
+	//  et := time.Now().UnixMicro()
+	//  klog.V(5).InfoS("Memory store create object", "key", key, "took-micro", et-st)
 	//  TODO, add metric
 	// }()
+	ms.revSortedObjListMu.RLock()
+	defer ms.revSortedObjListMu.RUnlock()
 	outVal, err := conversion.EnforcePtr(out)
 	if err != nil {
 		return err
@@ -203,10 +219,12 @@ func (ms *MemoryStore) Create(ctx context.Context, key string, obj runtime.Objec
 func (ms *MemoryStore) Delete(ctx context.Context, key string, out runtime.Object, preconditions *apistorage.Preconditions, validateDeletion apistorage.ValidateObjectFunc, cachedExistingObject runtime.Object) error {
 	// st := time.Now().UnixMicro()
 	// defer func() {
-	// 	et := time.Now().UnixMicro()
-	// 	klog.V(5).InfoS("Memory store delete object", "key", key, "took-micro", et-st)
+	//  et := time.Now().UnixMicro()
+	//  klog.V(5).InfoS("Memory store delete object", "key", key, "took-micro", et-st)
 	//  TODO, add metric
 	// }()
+	ms.revSortedObjListMu.RLock()
+	defer ms.revSortedObjListMu.RUnlock()
 	outVal, err := conversion.EnforcePtr(out)
 	if err != nil {
 		return err
@@ -279,8 +297,8 @@ func (ms *MemoryStore) Delete(ctx context.Context, key string, out runtime.Objec
 func (ms *MemoryStore) Get(ctx context.Context, key string, opts apistorage.GetOptions, out runtime.Object) error {
 	// st := time.Now().UnixMicro()
 	// defer func() {
-	// 	et := time.Now().UnixMicro()
-	// 	klog.V(5).InfoS("Memory store get object", "key", key, "took-micro", et-st)
+	//  et := time.Now().UnixMicro()
+	//  klog.V(5).InfoS("Memory store get object", "key", key, "took-micro", et-st)
 	//  TODO, add metric
 	// }()
 	outVal, err := conversion.EnforcePtr(out)
@@ -318,10 +336,13 @@ func (ms *MemoryStore) Get(ctx context.Context, key string, opts apistorage.GetO
 func (ms *MemoryStore) GetList(ctx context.Context, key string, opts apistorage.ListOptions, listObj runtime.Object) error {
 	// st := time.Now().UnixMicro()
 	// defer func() {
-	// 	et := time.Now().UnixMicro()
-	// 	klog.V(5).InfoS("Memory store get a list of object", "key", key, "opts", opts, "took-micro", et-st, "get", listObj)
+	//  et := time.Now().UnixMicro()
+	//  klog.V(5).InfoS("Memory store get a list of object", "key", key, "opts", opts, "took-micro", et-st, "get", listObj)
 	//  TODO, add metric
 	// }()
+	ms.revSortedObjListMu.RLock()
+	defer ms.revSortedObjListMu.RUnlock()
+
 	listPtr, err := meta.GetItemsPtr(listObj)
 	if err != nil {
 		return err
@@ -480,10 +501,12 @@ func (ms *MemoryStore) GetList(ctx context.Context, key string, opts apistorage.
 func (ms *MemoryStore) GuaranteedUpdate(ctx context.Context, key string, out runtime.Object, ignoreNotFound bool, preconditions *apistorage.Preconditions, tryUpdate apistorage.UpdateFunc, cachedExistingObject runtime.Object) error {
 	// st := time.Now().UnixMicro()
 	// defer func() {
-	// 	et := time.Now().UnixMicro()
-	// 	klog.V(5).InfoS("Memory store update object", "key", key, "took-micro", et-st)
+	//  et := time.Now().UnixMicro()
+	//  klog.V(5).InfoS("Memory store update object", "key", key, "took-micro", et-st)
 	//  TODO, add metric
 	// }()
+	ms.revSortedObjListMu.RLock()
+	defer ms.revSortedObjListMu.RUnlock()
 	outVal, err := conversion.EnforcePtr(out)
 	if err != nil {
 		return fmt.Errorf("unable to convert output object to pointer: %v", err)
@@ -609,6 +632,8 @@ func (ms *MemoryStore) GetOrCreate(ctx context.Context, key string, objToCreate 
 // check if a object exist, if does not exit create a obj using passed objToCreate, and set a new revision for created obj, return it in out,
 // if exist, use passed objToCreate to replace existing one, increase revision of object
 func (ms *MemoryStore) CreateOrReplace(ctx context.Context, key string, objToCreate runtime.Object, out runtime.Object) error {
+	ms.revSortedObjListMu.RLock()
+	defer ms.revSortedObjListMu.RUnlock()
 	outVal, err := conversion.EnforcePtr(out)
 	if err != nil {
 		return fmt.Errorf("unable to convert output object to pointer: %v", err)
@@ -811,13 +836,6 @@ func (ms *MemoryStore) reserveRevAndSlot() (uint64, uint64, error) {
 	uindex := atomic.LoadUint64(&ms.revSortedObjList.lastObjIndex)
 	if uint64(ms.revSortedObjList.Len()) < uindex+DefaultObjRevListGrowThreashold {
 		ms.revSortedObjList.grow(DefaultObjRevListGrowThreashold)
-	} else {
-		c := ms.kvStore.estimateCount()
-		if c > 0 {
-			if ms.revSortedObjList.lastObjIndex > uint64(c+NilSlotShrinkHighThrehold) {
-				ms.revSortedObjList.shrink(uint64(c + NilSlotShrinkLowThrehold))
-			}
-		}
 	}
 	rev := atomic.AddUint64(&_MemoryRev, 1)
 	uindex = atomic.AddUint64(&ms.revSortedObjList.lastObjIndex, 1)

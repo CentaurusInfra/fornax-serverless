@@ -47,7 +47,7 @@ func BuildFornaxcoreGrpcPodStateForFailedPod(nodeRevision int64, pod *v1.Pod) *g
 }
 
 func BuildFornaxcoreGrpcPodState(nodeRevision int64, pod *fornaxtypes.FornaxPod) *grpc.FornaxCoreMessage {
-	sessionLables := []string{}
+	sessionNames := []string{}
 	sessionStates := []*grpc.SessionState{}
 	// pod only report sessions currently bundle on it, session termninated state is supposed by reported already
 	// fornax core use session states in pod state to delete sessions which is not found
@@ -55,18 +55,18 @@ func BuildFornaxcoreGrpcPodState(nodeRevision int64, pod *fornaxtypes.FornaxPod)
 		if !util.SessionInTerminalState(sess.Session) {
 			s := session.BuildFornaxcoreGrpcSessionState(nodeRevision, sess)
 			sessionStates = append(sessionStates, s.GetSessionState())
-			sessionLables = append(sessionLables, util.Name(sess.Session))
+			sessionNames = append(sessionNames, util.Name(sess.Session))
 		}
 	}
 
 	podWithSession := pod.Pod.DeepCopy()
-	labels := podWithSession.GetLabels()
-	if len(sessionLables) > 0 {
-		labels[fornaxv1.LabelFornaxCoreApplicationSession] = strings.Join(sessionLables, ",")
+	annotations := podWithSession.GetAnnotations()
+	if len(sessionNames) > 0 {
+		annotations[fornaxv1.AnnotationFornaxCoreApplicationSession] = strings.Join(sessionNames, ",")
 	} else {
-		delete(labels, fornaxv1.LabelFornaxCoreApplicationSession)
+		delete(annotations, fornaxv1.AnnotationFornaxCoreApplicationSession)
 	}
-	podWithSession.Labels = labels
+	podWithSession.Annotations = annotations
 
 	s := grpc.PodState{
 		NodeRevision:  nodeRevision,

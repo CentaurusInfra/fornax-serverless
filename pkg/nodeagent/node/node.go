@@ -85,14 +85,13 @@ func (pool *PodPool) List() []*fornaxtypes.FornaxPod {
 }
 
 type FornaxNode struct {
-	NodeConfig   config.NodeConfiguration
-	V1Node       *v1.Node
-	Revision     int64
-	Pods         *PodPool
-	Dependencies *dependency.Dependencies
+	NodeConfig config.NodeConfiguration
+	V1Node     *v1.Node
+	Revision   int64
+	Pods       *PodPool
 }
 
-func (n *FornaxNode) initV1Node() (*v1.Node, error) {
+func (n *FornaxNode) initV1Node(dependencies *dependency.Dependencies) (*v1.Node, error) {
 	hostname, err := os.Hostname()
 	if err != nil {
 		return nil, err
@@ -153,8 +152,8 @@ func (n *FornaxNode) initV1Node() (*v1.Node, error) {
 		LastTransitionTime: metav1.NewTime(time.Now()),
 	})
 
-	if n.Dependencies.NetworkProvider != nil {
-		node.Status.Addresses, err = n.Dependencies.NetworkProvider.GetNetAddress()
+	if dependencies.NetworkProvider != nil {
+		node.Status.Addresses, err = dependencies.NetworkProvider.GetNetAddress()
 		if err != nil {
 			return nil, err
 		}
@@ -193,7 +192,6 @@ func LoadPodsFromContainerRuntime(runtimeService runtime.RuntimeService, db *sto
 		if fornaxpod.Containers == nil {
 			fornaxpod.Containers = map[string]*fornaxtypes.FornaxContainer{}
 		}
-
 		if fornaxpod.RuntimePod == nil {
 			world.terminatedPods = append(world.terminatedPods, fornaxpod)
 		} else {
@@ -301,10 +299,6 @@ func ValidateNodeSpec(apiNode *v1.Node) []error {
 	return errors
 }
 
-func (n *FornaxNode) Init() error {
-	return n.Dependencies.Complete(n.V1Node, n.NodeConfig, n.activePods)
-}
-
 func (n *FornaxNode) activePods() []*v1.Pod {
 	v1Pods := []*v1.Pod{}
 	for _, v := range n.Pods.List() {
@@ -316,13 +310,12 @@ func (n *FornaxNode) activePods() []*v1.Pod {
 
 func NewFornaxNode(nodeConfig config.NodeConfiguration, dependencies *dependency.Dependencies) (*FornaxNode, error) {
 	fornaxNode := FornaxNode{
-		NodeConfig:   nodeConfig,
-		V1Node:       nil,
-		Revision:     0,
-		Pods:         NewPodPool(),
-		Dependencies: dependencies,
+		NodeConfig: nodeConfig,
+		V1Node:     nil,
+		Revision:   0,
+		Pods:       NewPodPool(),
 	}
-	v1node, err := fornaxNode.initV1Node()
+	v1node, err := fornaxNode.initV1Node(dependencies)
 	if err != nil {
 		return nil, err
 	} else {
@@ -347,7 +340,6 @@ func NewFornaxNode(nodeConfig config.NodeConfiguration, dependencies *dependency
 		}
 	}
 
-	SetNodeStatus(&fornaxNode)
 	return &fornaxNode, nil
 }
 

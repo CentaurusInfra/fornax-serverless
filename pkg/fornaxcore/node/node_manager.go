@@ -79,10 +79,10 @@ func (nm *nodeManager) List() []*ie.NodeEvent {
 
 // UpdateSessionState implements NodeManagerInterface
 func (nm *nodeManager) UpdateSessionState(nodeId string, session *fornaxv1.ApplicationSession) error {
-	podName := session.Status.PodReference.Name
+	podName := session.Annotations[fornaxv1.AnnotationFornaxCorePod]
 	pod := nm.podManager.FindPod(podName)
 	if pod != nil {
-		nm.sessionManager.OnSessionStatusFromNode(nodeId, pod, session)
+		nm.sessionManager.OnSessionStatusFromNode(pod, session)
 	} else {
 		klog.Warningf("Pod %s does not exist in pod manager, can not update session %s", podName, util.Name(session))
 	}
@@ -107,7 +107,7 @@ func (nm *nodeManager) UpdatePodState(nodeId string, pod *v1.Pod, sessions []*fo
 		}
 		nodeWS.Pods.Add(podName)
 		for _, session := range sessions {
-			nm.sessionManager.OnSessionStatusFromNode(nodeId, updatedPod, session)
+			nm.sessionManager.OnSessionStatusFromNode(updatedPod, session)
 		}
 	} else {
 		// not supposed to happend node state is send when node register

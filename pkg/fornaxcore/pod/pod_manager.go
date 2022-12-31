@@ -155,7 +155,7 @@ func (pm *podManager) TerminatePod(podName string) error {
 	// 2/ pod is scheduled, but have not report back from node,
 	// there could be a race condition when scheduler send a pod to node, but node have not report back,
 	// we decided to just delete this pod, when node report it back and app owner will determine should pod de deleted again
-	nodeId := util.GetPodFornaxNodeIdLabel(podInStore)
+	nodeId := util.GetPodFornaxNodeIdAnnotation(podInStore)
 	if len(nodeId) == 0 {
 		pm.DeletePod(podInStore)
 	}
@@ -190,7 +190,7 @@ func (pm *podManager) HibernatePod(podName string) error {
 		}
 	}
 
-	nodeId := util.GetPodFornaxNodeIdLabel(podInStore)
+	nodeId := util.GetPodFornaxNodeIdAnnotation(podInStore)
 	if len(nodeId) > 0 && util.PodNotTerminated(podInStore) {
 		err := pm.nodeAgentClient.HibernatePod(nodeId, podInStore)
 		if err != nil {
@@ -227,7 +227,7 @@ func (pm *podManager) createPodAndSendEvent(pod *v1.Pod) (*v1.Pod, error) {
 // if pod is terminated, delete it, otherwise add or update it.
 // when pod in cache has delete timestamp, termiante pod reported by node
 func (pm *podManager) AddOrUpdatePod(pod *v1.Pod) (*v1.Pod, error) {
-	nodeId := util.GetPodFornaxNodeIdLabel(pod)
+	nodeId := util.GetPodFornaxNodeIdAnnotation(pod)
 	podInStore, err := factory.GetFornaxPodCache(pm.podStore, util.Name(pod))
 	if err != nil {
 		return nil, err

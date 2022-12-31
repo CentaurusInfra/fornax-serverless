@@ -116,7 +116,7 @@ func (am *ApplicationManager) handlePodAddUpdateFromNode(pod *v1.Pod) {
 			pool.addOrUpdatePod(podName, PodStatePending, []string{})
 		} else if util.PodIsRunning(pod) {
 			if _, yes := util.PodHasSession(pod); yes {
-				pool.addOrUpdatePod(podName, PodStateAllocated, util.GetPodSessionNames(pod))
+				pool.addOrUpdatePod(podName, PodStateAllocated, util.GetPodSessionAnnotation(pod))
 			} else {
 				pool.addOrUpdatePod(podName, PodStateIdle, []string{})
 			}
@@ -185,7 +185,7 @@ func (am *ApplicationManager) deleteApplicationPod(pool *ApplicationPool, podNam
 			return err
 		}
 	} else {
-		klog.InfoS("Delete a application pod", "application", pool.appName, "pod", podName)
+		klog.V(5).InfoS("Delete a application pod", "application", pool.appName, "pod", podName)
 	}
 
 	return nil
@@ -293,7 +293,7 @@ func (am *ApplicationManager) getPodApplicationPodTemplate(uid uuid.UUID, name s
 	for _, v := range application.Spec.Containers {
 		cont := v.DeepCopy()
 		cont.Env = append(cont.Env, v1.EnvVar{
-			Name:  fornaxv1.LabelFornaxCorePod,
+			Name:  fornaxv1.AnnotationFornaxCorePod,
 			Value: util.Name(pod),
 		})
 		cont.Env = append(cont.Env, v1.EnvVar{
@@ -301,7 +301,7 @@ func (am *ApplicationManager) getPodApplicationPodTemplate(uid uuid.UUID, name s
 			Value: util.Name(application),
 		})
 		cont.Env = append(cont.Env, v1.EnvVar{
-			Name: fornaxv1.LabelFornaxCoreSessionService,
+			Name: fornaxv1.AnnotationFornaxCoreSessionService,
 			ValueFrom: &v1.EnvVarSource{
 				FieldRef: &v1.ObjectFieldSelector{
 					APIVersion: "v1",
@@ -408,7 +408,7 @@ func (am *ApplicationManager) deployApplicationPods(pool *ApplicationPool, appli
 			desiredAddition = applicationBurst
 		}
 
-		klog.InfoS("Creating pods", "application", pool.appName, "addition", desiredAddition)
+		klog.V(5).InfoS("Creating pods", "application", pool.appName, "addition", desiredAddition)
 		createdPods := []*v1.Pod{}
 		createErrors := []error{}
 		standby := !application.Spec.UsingNodeSessionService
@@ -435,7 +435,7 @@ func (am *ApplicationManager) deployApplicationPods(pool *ApplicationPool, appli
 		if desiredSubstraction > applicationBurst {
 			desiredSubstraction = applicationBurst
 		}
-		klog.InfoS("Deleting pods", "application", pool.appName, "substraction", desiredSubstraction)
+		klog.V(5).InfoS("Deleting pods", "application", pool.appName, "substraction", desiredSubstraction)
 
 		// Choose which Pods to delete, preferring those in earlier phases of startup.
 		deleteErrors := []error{}

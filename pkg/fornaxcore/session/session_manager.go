@@ -52,7 +52,7 @@ func NewSessionManager(ctx context.Context, nodeAgentProxy nodeagent.NodeAgentCl
 // treat node as authority for session status, session status from node could be Starting, Available, Closed,
 // use status from node to update storge status, session will be deleted if session is already closed
 // if a session from node does not exist in pool, add it
-func (sm *sessionManager) OnSessionStatusFromNode(nodeId string, pod *v1.Pod, session *fornaxv1.ApplicationSession) error {
+func (sm *sessionManager) OnSessionStatusFromNode(pod *v1.Pod, session *fornaxv1.ApplicationSession) error {
 	storeCopy, err := storefactory.GetApplicationSessionCache(sm.sessionStore, util.Name(session))
 	if err != nil {
 		return err
@@ -77,14 +77,17 @@ func (sm *sessionManager) OnSessionStatusFromNode(nodeId string, pod *v1.Pod, se
 			session.Status.CloseTime = util.NewCurrentMetaTimeNormallized()
 		}
 
-		sm.UpdateSessionStatus(storeCopy.DeepCopy(), session.Status.DeepCopy())
+		util.MergeObjectMeta(&session.ObjectMeta, &storeCopy.ObjectMeta)
+		updatedSession := setSessionStatus(storeCopy, session.Status.DeepCopy())
+		_, updateErr := storefactory.UpdateApplicationSession(sm.ctx, sm.sessionStore, updatedSession)
+		return updateErr
 	}
 
 	return nil
 }
 
 func (sm *sessionManager) CloseSession(pod *v1.Pod, session *fornaxv1.ApplicationSession) error {
-	if nodeName, found := pod.GetLabels()[fornaxv1.LabelFornaxCoreNode]; found {
+	if nodeName, found := pod.GetAnnotations()[fornaxv1.AnnotationFornaxCoreNode]; found {
 		return sm.nodeAgentClient.CloseSession(nodeName, pod, session)
 	} else {
 		return fmt.Errorf("Can not find which node this pod is on, %s", util.Name(pod))
@@ -92,7 +95,7 @@ func (sm *sessionManager) CloseSession(pod *v1.Pod, session *fornaxv1.Applicatio
 }
 
 func (sm *sessionManager) OpenSession(pod *v1.Pod, session *fornaxv1.ApplicationSession) error {
-	if nodeName, found := pod.GetLabels()[fornaxv1.LabelFornaxCoreNode]; found {
+	if nodeName, found := pod.GetAnnotations()[fornaxv1.AnnotationFornaxCoreNode]; found {
 		return sm.nodeAgentClient.OpenSession(nodeName, pod, session)
 	} else {
 		return fmt.Errorf("Can not find which node session is on, %s", util.Name(session))
@@ -116,12 +119,7 @@ func (sm *sessionManager) Watch(ctx context.Context) (<-chan fornaxstore.WatchEv
 
 // UpdateApplicationSessionStatus put updated status into a map send singal into a channel to asynchronously update session status
 func (sm *sessionManager) UpdateSessionStatus(session *fornaxv1.ApplicationSession, newStatus *fornaxv1.ApplicationSessionStatus) error {
-	e := sm._updateSessionStatus(util.Name(session), newStatus)
-	return e
-}
-
-// attempts to update the Status of the given Application Session name
-func (sm *sessionManager) _updateSessionStatus(sessionName string, newStatus *fornaxv1.ApplicationSessionStatus) error {
+	sessionName := util.Name(session)
 	var updateErr error
 	for i := 0; i <= 3; i++ {
 		session, err := storefactory.GetApplicationSessionCache(sm.sessionStore, sessionName)
@@ -133,17 +131,22 @@ func (sm *sessionManager) _updateSessionStatus(sessionName string, newStatus *fo
 		}
 
 		updatedSession := session.DeepCopy()
-		updatedSession.Status = *newStatus
-		if util.SessionIsOpen(updatedSession) {
-			util.AddFinalizer(&updatedSession.ObjectMeta, fornaxv1.FinalizerOpenSession)
-		} else {
-			util.RemoveFinalizer(&updatedSession.ObjectMeta, fornaxv1.FinalizerOpenSession)
-		}
-
+		setSessionStatus(updatedSession, newStatus)
 		_, updateErr = storefactory.UpdateApplicationSession(sm.ctx, sm.sessionStore, updatedSession)
 		if updateErr == nil {
 			break
 		}
 	}
 	return updateErr
+}
+
+// attempts to update the Status of the given Application Session name
+func setSessionStatus(session *fornaxv1.ApplicationSession, newStatus *fornaxv1.ApplicationSessionStatus) *fornaxv1.ApplicationSession {
+	session.Status = *newStatus
+	if util.SessionIsOpen(session) {
+		util.AddFinalizer(&session.ObjectMeta, fornaxv1.FinalizerOpenSession)
+	} else {
+		util.RemoveFinalizer(&session.ObjectMeta, fornaxv1.FinalizerOpenSession)
+	}
+	return session
 }

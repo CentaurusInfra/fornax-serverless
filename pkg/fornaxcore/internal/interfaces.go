@@ -68,7 +68,7 @@ type NodeManagerInterface interface {
 // and update session status using session state reported back from node agent
 type SessionManagerInterface interface {
 	UpdateSessionStatus(session *fornaxv1.ApplicationSession, newStatus *fornaxv1.ApplicationSessionStatus) error
-	OnSessionStatusFromNode(nodeId string, pod *v1.Pod, session *fornaxv1.ApplicationSession) error
+	OnSessionStatusFromNode(pod *v1.Pod, session *fornaxv1.ApplicationSession) error
 	OpenSession(pod *v1.Pod, session *fornaxv1.ApplicationSession) error
 	CloseSession(pod *v1.Pod, session *fornaxv1.ApplicationSession) error
 	Watch(ctx context.Context) (<-chan fornaxstore.WatchEventWithOldObj, error)

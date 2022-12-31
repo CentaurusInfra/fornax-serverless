@@ -154,7 +154,7 @@ func (ps *podScheduler) selectNode(pod *v1.Pod, nodes []*SchedulableNode) *Sched
 func (ps *podScheduler) bindNode(snode *SchedulableNode, pod *v1.Pod) error {
 	podName := util.Name(pod)
 	nodeId := snode.NodeName
-	klog.InfoS("Bind pod to node", "pod", podName, "node", nodeId, "available resource", snode.GetAllocatableResources())
+	klog.V(5).InfoS("Bind pod to node", "pod", podName, "node", nodeId, "available resource", snode.GetAllocatableResources())
 
 	resourceList := util.GetPodResourceList(pod)
 	snode.AdmitPodOccupiedResourceList(resourceList)
@@ -164,7 +164,7 @@ func (ps *podScheduler) bindNode(snode *SchedulableNode, pod *v1.Pod) error {
 	pod.Status.HostIP = snode.NodeName
 	pod.Status.Message = "Scheduled"
 	pod.Status.Reason = "Scheduled"
-	pod.Labels[fornaxv1.LabelFornaxCoreNode] = util.Name(snode.Node)
+	pod.Annotations[fornaxv1.AnnotationFornaxCoreNode] = util.Name(snode.Node)
 
 	// call nodeagent to start pod
 	err := ps.nodeAgentClient.CreatePod(nodeId, pod)
@@ -216,7 +216,6 @@ func (ps *podScheduler) schedulePod(pod *v1.Pod, candidateNodes []*SchedulableNo
 	}
 
 	if len(availableNodes) == 0 {
-		klog.InfoS("Can not find node met condition for pod, come back later", "pod", util.Name(pod), "required resource", util.GetPodResourceList(pod))
 		return InsufficientResourceError
 	} else {
 		// sort candidates to use first one,
@@ -391,6 +390,7 @@ func (ps *podScheduler) Run() {
 							}
 						}
 						if schedErr != nil {
+							klog.ErrorS(schedErr, "Can not find node for pod, come back later", "pod", util.Name(pod), "required resource", util.GetPodResourceList(pod))
 							ps.scheduleQueue.BackoffPod(pod, ps.policy.BackoffDuration)
 						}
 						wg.Done()
@@ -424,7 +424,7 @@ func (ps *podScheduler) Run() {
 				ps.stop = true
 				return
 			case update := <-ps.podUpdateCh:
-				nodeId := util.GetPodFornaxNodeIdLabel(update.Pod)
+				nodeId := util.GetPodFornaxNodeIdAnnotation(update.Pod)
 				if len(nodeId) == 0 {
 					nodeId = update.Pod.Status.HostIP
 				}

@@ -116,10 +116,6 @@ type AccessEndPoint struct {
 type ApplicationSessionStatus struct {
 	// Endpoint this session is using
 	// +optional
-	PodReference *v1.LocalObjectReference `json:"podReference,omitempty"`
-
-	// Endpoint this session is using
-	// +optional
 	AccessEndPoints []AccessEndPoint `json:"accessEndPoints,omitempty"`
 
 	// Session status, is Starting, Available or Closed.

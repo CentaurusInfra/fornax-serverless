@@ -282,8 +282,7 @@ func (pool *ApplicationPool) addSession(sessionName string, session *fornaxv1.Ap
 		session: session,
 		state:   newState,
 	}
-	if session.Status.PodReference != nil {
-		podName := session.Status.PodReference.Name
+	if podName, found := session.Annotations[fornaxv1.AnnotationFornaxCorePod]; found {
 		pool._addOrUpdatePodNoLock(podName, PodStateAllocated, []string{sessionName})
 	}
 }
@@ -313,8 +312,7 @@ func (pool *ApplicationPool) deleteSession(session *fornaxv1.ApplicationSession)
 // only allow from allocated => idle when delete a session from this pod, pod is in pending/deleting state should keep its state
 func (pool *ApplicationPool) _deleteSessionNoLock(session *fornaxv1.ApplicationSession) {
 	sessionName := util.Name(session)
-	if session.Status.PodReference != nil {
-		podName := session.Status.PodReference.Name
+	if podName, found := session.Annotations[fornaxv1.AnnotationFornaxCorePod]; found {
 		for _, podsOfState := range pool.podsByState {
 			if pod, found := podsOfState[podName]; found {
 				delete(pod.sessions, sessionName)

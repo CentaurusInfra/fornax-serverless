@@ -142,7 +142,7 @@ func run(ctx context.Context, nodeConfig config.NodeConfiguration, dependencies 
 	if err != nil {
 		klog.ErrorS(err, "Can not initialize node")
 	}
-	nodeActor, err := node.NewNodeActor(fornaxNode)
+	nodeActor, err := node.NewNodeActor(fornaxNode, dependencies)
 	if err != nil {
 		klog.ErrorS(err, "Can not initialize node actor")
 	}

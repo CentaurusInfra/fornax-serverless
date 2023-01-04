@@ -34,16 +34,16 @@ import (
 // createPodSandbox creates a pod sandbox and returns (podSandBoxID, message, error).
 func (a *PodActor) createPodSandbox() (*runtime.Pod, error) {
 	pod := a.pod.Pod
-	klog.InfoS("Generate pod sandbox config", "pod", types.UniquePodName(a.pod))
+	klog.InfoS("Generate pod sandbox config", "pod", types.PodName(a.pod))
 	podSandboxConfig, err := a.generatePodSandboxConfig()
 	if err != nil {
-		message := fmt.Sprintf("Failed to generate sandbox config for pod %s", types.UniquePodName(a.pod))
+		message := fmt.Sprintf("Failed to generate sandbox config for pod %s", types.PodName(a.pod))
 		klog.ErrorS(err, message)
 		return nil, err
 	}
 
 	// Create pod logs directory
-	klog.InfoS("Make pod log dir", "pod", types.UniquePodName(a.pod))
+	klog.InfoS("Make pod log dir", "pod", types.PodName(a.pod))
 	err = os.MkdirAll(podSandboxConfig.LogDirectory, 0755)
 	if err != nil {
 		message := fmt.Sprintf("Failed to create log directory %s", podSandboxConfig.LogDirectory)
@@ -52,7 +52,7 @@ func (a *PodActor) createPodSandbox() (*runtime.Pod, error) {
 	}
 
 	runtimeHandler := a.nodeConfig.RuntimeHandler
-	klog.InfoS("Call runtime to create sandbox", "pod", types.UniquePodName(a.pod), "sandboxConfig", podSandboxConfig)
+	klog.InfoS("Call runtime to create sandbox", "pod", types.PodName(a.pod), "sandboxConfig", podSandboxConfig)
 	runtimepod, err := a.dependencies.RuntimeService.CreateSandbox(podSandboxConfig, runtimeHandler)
 	if err != nil {
 		message := fmt.Sprintf("Failed to create sandbox for pod %q: %v", util.Name(pod), err)
@@ -71,14 +71,14 @@ func (a *PodActor) removePodSandbox(podSandboxId string, podSandboxConfig *criv1
 	// remove pod sandbox, assume all containers have been terminated
 	err = a.dependencies.RuntimeService.TerminatePod(podSandboxId, []string{})
 	if err != nil {
-		klog.ErrorS(err, "Failed to remove pod sandbox", "Pod", types.UniquePodName(a.pod))
+		klog.ErrorS(err, "Failed to remove pod sandbox", "Pod", types.PodName(a.pod))
 		return err
 	}
 
 	// remove pod logs directory
 	err = os.RemoveAll(podSandboxConfig.LogDirectory)
 	if err != nil {
-		klog.ErrorS(err, "Failed to remove pod log directory", "Pod", types.UniquePodName(a.pod))
+		klog.ErrorS(err, "Failed to remove pod log directory", "Pod", types.PodName(a.pod))
 		return err
 	}
 

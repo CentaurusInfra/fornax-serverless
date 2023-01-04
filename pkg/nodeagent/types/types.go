@@ -111,7 +111,7 @@ type FornaxSession struct {
 	ClientSessions map[string]*ClientSession    `json:"clientSessions,omitempty"`
 }
 
-func UniquePodName(pod *FornaxPod) string {
+func PodName(pod *FornaxPod) string {
 	return fmt.Sprintf("Namespace:%s,Name:%s,UID:%s", pod.Pod.Namespace, pod.Pod.Name, pod.Pod.UID)
 }
 

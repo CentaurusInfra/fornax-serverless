@@ -59,7 +59,7 @@ type FornaxNodeActor struct {
 	state           NodeState
 	innerActor      message.Actor
 	fornoxCoreRef   message.ActorRef
-	podActors       *PodActorPool
+	podActors       *PodActorMap
 	nodePortManager *nodePortManager
 	dependencies    *dependency.Dependencies
 }
@@ -126,7 +126,7 @@ func (n *FornaxNodeActor) recreatePodStateFromRuntimeSummary(runtimeSummary Cont
 	}
 
 	for _, fpod := range runtimeSummary.runningPods {
-		klog.InfoS("Recover pod actor for a running pod", "pod", types.UniquePodName(fpod), "state", fpod.FornaxPodState)
+		klog.InfoS("Recover pod actor for a running pod", "pod", types.PodName(fpod), "state", fpod.FornaxPodState)
 		n.nodePortManager.initNodePortRangeSlot(fpod.Pod)
 		n.startPodActor(fpod)
 	}
@@ -414,7 +414,7 @@ func (n *FornaxNodeActor) createPodAndActor(state types.PodState, v1Pod *v1.Pod,
 }
 
 func (n *FornaxNodeActor) cleanupPodStoreAndActor(fppod *types.FornaxPod) error {
-	klog.InfoS("Cleanup pod actor and store", "pod", types.UniquePodName(fppod), "state", fppod.FornaxPodState)
+	klog.InfoS("Cleanup pod actor and store", "pod", types.PodName(fppod), "state", fppod.FornaxPodState)
 	actor := n.podActors.Get(string(fppod.Identifier))
 	if actor != nil {
 		actor.Stop()
@@ -542,7 +542,7 @@ func NewNodeActor(node *FornaxNode, dependencies *dependency.Dependencies) (*For
 		state:           NodeStateInitializing,
 		innerActor:      nil,
 		fornoxCoreRef:   nil,
-		podActors:       NewPodActorPool(),
+		podActors:       NewPodActorMap(),
 		nodePortManager: NewNodePortManager(&node.NodeConfig),
 		dependencies:    dependencies,
 	}

@@ -71,26 +71,30 @@ func (m *PodContainerManagerImpl) Exists(pod *v1.Pod) bool {
 func (m *PodContainerManagerImpl) EnsureExists(pod *v1.Pod) error {
 	podContainerName, _ := m.GetPodContainerName(pod)
 	// check if container already exist
+	enforceMemoryQoS := false
+	if libcontainercgroups.IsCgroup2UnifiedMode() {
+		enforceMemoryQoS = true
+	}
+	// Create the pod container
+	podCgroupConfig := &CgroupConfig{
+		Name:               podContainerName,
+		ResourceParameters: ResourceConfigForPod(pod, m.EnforceCPULimits, m.CPUCFSQuotaPeriod, enforceMemoryQoS),
+	}
+	if m.PodPidsLimit > 0 {
+		podCgroupConfig.ResourceParameters.PidsLimit = &m.PodPidsLimit
+	}
+	if enforceMemoryQoS {
+		klog.InfoS("MemoryQoS config for pod", "pod", klog.KObj(pod), "unified", podCgroupConfig.ResourceParameters.Unified)
+	}
+	klog.InfoS("Cgroup config for pod", "pod", klog.KObj(pod), "cgroupname", podContainerName, "cgroupresource", *podCgroupConfig.ResourceParameters)
 	alreadyExists := m.Exists(pod)
 	if !alreadyExists {
-		enforceMemoryQoS := false
-		if libcontainercgroups.IsCgroup2UnifiedMode() {
-			enforceMemoryQoS = true
-		}
-		// Create the pod container
-		podCgroupConfig := &CgroupConfig{
-			Name:               podContainerName,
-			ResourceParameters: ResourceConfigForPod(pod, m.EnforceCPULimits, m.CPUCFSQuotaPeriod, enforceMemoryQoS),
-		}
-		if m.PodPidsLimit > 0 {
-			podCgroupConfig.ResourceParameters.PidsLimit = &m.PodPidsLimit
-		}
-		if enforceMemoryQoS {
-			klog.InfoS("MemoryQoS config for pod", "pod", klog.KObj(pod), "unified", podCgroupConfig.ResourceParameters.Unified)
-		}
-		klog.InfoS("Cgroup config for pod", "pod", klog.KObj(pod), "cgroupname", podContainerName, "cgroupresource", *podCgroupConfig.ResourceParameters)
 		if err := m.CgroupManager.Create(podCgroupConfig); err != nil {
-			return fmt.Errorf("failed to create container for %v : %v", podContainerName, err)
+			return fmt.Errorf("failed to create cgroup for %v : %v", podContainerName, err)
+		}
+	} else {
+		if err := m.CgroupManager.Update(podCgroupConfig); err != nil {
+			return fmt.Errorf("failed to update cgroup for %v : %v", podContainerName, err)
 		}
 	}
 	return nil

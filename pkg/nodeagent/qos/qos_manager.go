@@ -46,6 +46,7 @@ type QoSManager interface {
 	IsSystemPod(*kubeletcm.CgroupConfig) bool
 	IsPodCgroupExist(*v1.Pod) bool
 	CreatePodCgroup(*v1.Pod) error
+	UpdatePodCgroup(*v1.Pod) error
 	DeletePodCgroup(*v1.Pod) error
 	UpdateQOSCgroups() error
 	GetPodCgroupParent(pod *v1.Pod) string
@@ -90,6 +91,11 @@ func (qm *QoSManagerImpl) IsSystemPod(config *kubeletcm.CgroupConfig) bool {
 
 // CreateQOSCgroup implements QoSManager
 func (qm *QoSManagerImpl) CreatePodCgroup(pod *v1.Pod) error {
+	return qm.PodCgroupManager.EnsureExists(pod)
+}
+
+// CreateQOSCgroup implements QoSManager
+func (qm *QoSManagerImpl) UpdatePodCgroup(pod *v1.Pod) error {
 	return qm.PodCgroupManager.EnsureExists(pod)
 }
 

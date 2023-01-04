@@ -70,23 +70,29 @@ func ValidateSecretSpec(secret *v1.Secret) []error {
 
 func (a *PodActor) CreatePod() (err error) {
 	pod := a.pod.Pod
+	podName := types.PodName(a.pod)
 
 	var firstSeenTime time.Time = time.Now()
 	metrics.PodWorkerStartDuration.Observe(metrics.SinceInSeconds(firstSeenTime))
 
 	// Create Cgroups for the pod and apply resource parameters
-	klog.InfoS("Create Pod Cgroup", "pod", types.UniquePodName(a.pod))
+	klog.InfoS("Create Pod Cgroup", "pod", podName)
 	pcm := a.dependencies.QosManager
 	if pcm.IsPodCgroupExist(pod) {
 		// daemon pod can be recreated, allow cgroup exist for daemon pod cgroup
 		if !a.pod.Daemon {
-			pcm.UpdateQOSCgroups()
-			return fmt.Errorf("cgroup already exist for pod %s, possibly previous cgroup not cleaned", types.UniquePodName(a.pod))
+			return fmt.Errorf("cgroup already exist for pod %s, possibly previous cgroup not cleaned", podName)
 		}
+		err := pcm.UpdatePodCgroup(pod)
+		if err != nil {
+			klog.ErrorS(err, "Failed to create pod cgroup ", "pod", podName)
+			return err
+		}
+		pcm.UpdateQOSCgroups()
 	} else {
 		err := pcm.CreatePodCgroup(pod)
 		if err != nil {
-			klog.ErrorS(err, "Failed to create pod cgroup ", "pod", types.UniquePodName(a.pod))
+			klog.ErrorS(err, "Failed to create pod cgroup ", "pod", podName)
 			return err
 		}
 		// call update qos to make sure cgroup manager internal state update to date
@@ -94,53 +100,52 @@ func (a *PodActor) CreatePod() (err error) {
 	}
 
 	// Make data directories for the pod
-	klog.InfoS("Make Pod data dirs", "pod", types.UniquePodName(a.pod))
+	klog.InfoS("Make Pod data dirs", "pod", podName)
 	if err := MakePodDataDirs(a.nodeConfig.RootPath, pod); err != nil {
-		klog.ErrorS(err, "Unable to make pod data directories for pod", "pod", types.UniquePodName(a.pod))
+		klog.ErrorS(err, "Unable to make pod data directories for pod", "pod", podName)
 		return err
 	}
 
 	// Make log directories for the pod
-	klog.InfoS("Make Pod log dirs", "pod", types.UniquePodName(a.pod))
+	klog.InfoS("Make Pod log dirs", "pod", podName)
 	if err := MakePodLogDir(a.nodeConfig.PodLogRootPath, pod); err != nil {
-		klog.ErrorS(err, "Unable to make pod data directories for pod", "pod", types.UniquePodName(a.pod))
+		klog.ErrorS(err, "Unable to make pod data directories for pod", "pod", podName)
 		return err
 	}
 
 	// TODO, Try to attach and mount volumes into pod, mounted vol will be mounted into container later, do not support volume for now
-	klog.InfoS("Prepare pod volumes", "pod", types.UniquePodName(a.pod))
+	klog.InfoS("Prepare pod volumes", "pod", podName)
 	if err := a.dependencies.VolumeManager.WaitForAttachAndMount(pod); err != nil {
-		klog.ErrorS(err, "Unable to attach or mount volumes for pod; skipping pod", "pod", types.UniquePodName(a.pod))
+		klog.ErrorS(err, "Unable to attach or mount volumes for pod; skipping pod", "pod", podName)
 		return err
 	}
 
-	// TODO, Fetch the pull secrets for the pod, for now assume no secrect required
-	// pullSecrets := GetPullSecretsForPod(pod)
-	klog.InfoS("Pull pod secret", "pod", types.UniquePodName(a.pod))
-	pullSecrets := []*v1.Secret{}
-
-	klog.InfoS("Create pod sandbox", "pod", types.UniquePodName(a.pod))
+	klog.InfoS("Create pod sandbox", "pod", podName)
 	var runtimePod *runtime.Pod
 	runtimePod, err = a.createPodSandbox()
 	if err != nil {
-		klog.ErrorS(err, "Failed to create pod sandbox", "pod", types.UniquePodName(a.pod))
+		klog.ErrorS(err, "Failed to create pod sandbox", "pod", podName)
 		return err
 	}
-	klog.InfoS("Get pod sandbox", "pod", types.UniquePodName(a.pod), "sandbox", runtimePod.Sandbox)
+	klog.InfoS("Get pod sandbox", "pod", podName, "sandbox", runtimePod.Sandbox)
 
 	if runtimePod.Sandbox != nil {
 		a.pod.RuntimePod = runtimePod
 	} else {
-		klog.ErrorS(err, "Failed to get sandbox obj, but do get a sandbox id", "Pod", types.UniquePodName(a.pod), "SandboxId", runtimePod.Id)
+		klog.ErrorS(err, "Failed to get sandbox obj, but do get a sandbox id", "Pod", podName, "SandboxId", runtimePod.Id)
 		return err
 	}
 
-	klog.InfoS("Start pod init containers", "pod", types.UniquePodName(a.pod))
+	klog.InfoS("Start pod init containers", "pod", podName)
+	// TODO, Fetch the pull secrets for the pod, for now assume no secrect required
+	// pullSecrets := GetPullSecretsForPod(pod)
+	pullSecrets := []*v1.Secret{}
+
 	var runtimeContainer *runtime.Container
 	for _, v1InitContainer := range pod.Spec.InitContainers {
 		runtimeContainer, err = a.createContainer(runtimePod.SandboxConfig, &v1InitContainer, pullSecrets)
 		if err != nil {
-			klog.ErrorS(err, "Cannot create init container", "Pod", types.UniquePodName(a.pod), "Container", v1InitContainer.Name)
+			klog.ErrorS(err, "Cannot create init container", "Pod", podName, "Container", v1InitContainer.Name)
 			return err
 		}
 		container := &types.FornaxContainer{
@@ -153,18 +158,18 @@ func (a *PodActor) CreatePod() (err error) {
 		a.pod.Containers[v1InitContainer.Name] = container
 		runtimePod.Containers[v1InitContainer.Name] = runtimeContainer.Container
 
-		klog.InfoS("New pod container actor", "pod", types.UniquePodName(a.pod), "container", container.ContainerSpec.Name)
+		klog.InfoS("New pod container actor", "pod", podName, "container", container.ContainerSpec.Name)
 		// start container actor, container actor will start runtime container, and start to probe it
 		containerActor := podcontainer.NewPodContainerActor(a.Reference(), a.pod, container, a.dependencies)
 		a.containerActors[v1InitContainer.Name] = containerActor
 		containerActor.Start()
 	}
 
-	klog.InfoS("Start pod containers", "podName", types.UniquePodName(a.pod))
+	klog.InfoS("Start pod containers", "podName", podName)
 	for _, v1Container := range pod.Spec.Containers {
 		runtimeContainer, err = a.createContainer(runtimePod.SandboxConfig, &v1Container, []*v1.Secret{})
 		if err != nil {
-			klog.ErrorS(err, "cannot create container", "Pod", types.UniquePodName(a.pod), "Container", v1Container.Name)
+			klog.ErrorS(err, "cannot create container", "Pod", podName, "Container", v1Container.Name)
 			return err
 		}
 		container := &types.FornaxContainer{
@@ -188,17 +193,24 @@ func (a *PodActor) CreatePod() (err error) {
 	return nil
 }
 
+func validatePodTermination(pod *types.FornaxPod, gracefulPeriod time.Duration, force bool) error {
+	if pod.FornaxPodState != types.PodStateTerminating && pod.FornaxPodState != types.PodStateFailed {
+		return fmt.Errorf("Pod %s is in not terminatable state %s", types.PodName(pod), pod.FornaxPodState)
+	}
+	return nil
+}
+
 func (a *PodActor) TerminatePod(gracefulPeriod time.Duration, force bool) (bool, error) {
 	pod := a.pod
-	if pod.FornaxPodState != types.PodStateTerminating && pod.FornaxPodState != types.PodStateFailed {
-		return false, fmt.Errorf("Pod %s is in not terminatable state %s", types.UniquePodName(a.pod), a.pod.FornaxPodState)
+	if err := validatePodTermination(a.pod, gracefulPeriod, force); err != nil {
+		return false, fmt.Errorf("Pod %s is not terminatable, state %s", types.PodName(a.pod), a.pod.FornaxPodState)
 	}
 
 	allContainerTerminated := true
 	for n, c := range pod.Containers {
 		if !runtime.ContainerExit(c.ContainerStatus) && !force {
 			allContainerTerminated = false
-			klog.InfoS("Notify running container to stop", "pod", types.UniquePodName(pod), "container", n)
+			klog.InfoS("Notify running container to stop", "pod", types.PodName(pod), "container", n)
 			if gracefulPeriod == 0 {
 				gracefulPeriod = DefaultStopContainerGracePeriod
 			}
@@ -212,7 +224,7 @@ func (a *PodActor) TerminatePod(gracefulPeriod time.Duration, force bool) (bool,
 			})
 		}
 
-		klog.InfoS("Terminating container", "pod", types.UniquePodName(pod), "container", n)
+		klog.InfoS("Terminating container", "pod", types.PodName(pod), "container", n)
 		if err := a.terminateContainer(c); err != nil {
 			allContainerTerminated = false
 			return false, err
@@ -224,8 +236,9 @@ func (a *PodActor) TerminatePod(gracefulPeriod time.Duration, force bool) (bool,
 
 func (a *PodActor) CleanupPod() (err error) {
 	// cleanup podsandbox
-	klog.InfoS("Remove Pod sandbox", "pod", types.UniquePodName(a.pod))
+	klog.InfoS("Remove Pod sandbox", "pod", types.PodName(a.pod))
 	pod := a.pod.Pod
+	podName := types.PodName(a.pod)
 	if a.pod.RuntimePod != nil && a.pod.RuntimePod.Sandbox != nil {
 		err = a.removePodSandbox(a.pod.RuntimePod.Sandbox.Id, a.pod.RuntimePod.SandboxConfig)
 		if err != nil {
@@ -235,27 +248,27 @@ func (a *PodActor) CleanupPod() (err error) {
 	}
 
 	// TODO, Try to unmount volumes into pod, mounted vol will be detached by volumemanager if volume not required anymore
-	klog.InfoS("Unmount Pod volume", "pod", types.UniquePodName(a.pod))
+	klog.InfoS("Unmount Pod volume", "pod", podName)
 	if err := a.dependencies.VolumeManager.UnmountPodVolume(pod); err != nil {
-		klog.ErrorS(err, "Unable to unmount volumes for pod", "pod", types.UniquePodName(a.pod))
+		klog.ErrorS(err, "Unable to unmount volumes for pod", "pod", podName)
 		return err
 	}
 
 	// Remove data directories for the pod
-	klog.InfoS("Remove Pod Data dirs", "pod", types.UniquePodName(a.pod))
+	klog.InfoS("Remove Pod Data dirs", "pod", podName)
 	if err := CleanupPodDataDirs(a.nodeConfig.RootPath, pod); err != nil {
-		klog.ErrorS(err, "Unable to remove pod data directories for pod", "pod", types.UniquePodName(a.pod))
+		klog.ErrorS(err, "Unable to remove pod data directories for pod", "pod", podName)
 		return err
 	}
 
-	klog.InfoS("Remove Pod log dirs", "pod", types.UniquePodName(a.pod))
+	klog.InfoS("Remove Pod log dirs", "pod", podName)
 	if err := CleanupPodLogDir(a.nodeConfig.PodLogRootPath, pod); err != nil {
-		klog.ErrorS(err, "Unable to remove pod log directories for pod", "pod", types.UniquePodName(a.pod))
+		klog.ErrorS(err, "Unable to remove pod log directories for pod", "pod", podName)
 		return err
 	}
 
 	// remove cgroups for the pod and apply resource parameters
-	klog.InfoS("Remove Pod Cgroup", "pod", types.UniquePodName(a.pod))
+	klog.InfoS("Remove Pod Cgroup", "pod", podName)
 	pcm := a.dependencies.QosManager
 	if pcm.IsPodCgroupExist(pod) {
 		err := pcm.DeletePodCgroup(pod)

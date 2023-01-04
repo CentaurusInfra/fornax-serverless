@@ -105,7 +105,7 @@ func NewFornaxNode(hostIp, hostName string, nodeConfig config.NodeConfiguration)
 		NodeConfig: nodeConfig,
 		V1Node:     nil,
 		Revision:   0,
-		Pods:       node.NewPodPool(),
+		Pods:       node.NewPodMap(),
 	}
 	v1node, err := InitV1Node(hostIp, hostName)
 	if err != nil {

@@ -44,37 +44,37 @@ import (
 	"k8s.io/klog/v2"
 )
 
-type PodPool struct {
+type PodMap struct {
 	mu   sync.Mutex
 	pods map[string]*fornaxtypes.FornaxPod
 }
 
-func NewPodPool() *PodPool {
-	return &PodPool{
+func NewPodMap() *PodMap {
+	return &PodMap{
 		mu:   sync.Mutex{},
 		pods: map[string]*fornaxtypes.FornaxPod{},
 	}
 }
 
-func (pool *PodPool) Get(id string) *fornaxtypes.FornaxPod {
+func (pool *PodMap) Get(id string) *fornaxtypes.FornaxPod {
 	pool.mu.Lock()
 	defer pool.mu.Unlock()
 	return pool.pods[id]
 }
 
-func (pool *PodPool) Add(id string, pod *fornaxtypes.FornaxPod) {
+func (pool *PodMap) Add(id string, pod *fornaxtypes.FornaxPod) {
 	pool.mu.Lock()
 	defer pool.mu.Unlock()
 	pool.pods[id] = pod
 }
 
-func (pool *PodPool) Del(id string) {
+func (pool *PodMap) Del(id string) {
 	pool.mu.Lock()
 	defer pool.mu.Unlock()
 	delete(pool.pods, id)
 }
 
-func (pool *PodPool) List() []*fornaxtypes.FornaxPod {
+func (pool *PodMap) List() []*fornaxtypes.FornaxPod {
 	pool.mu.Lock()
 	defer pool.mu.Unlock()
 	v1Pods := []*fornaxtypes.FornaxPod{}
@@ -88,7 +88,7 @@ type FornaxNode struct {
 	NodeConfig config.NodeConfiguration
 	V1Node     *v1.Node
 	Revision   int64
-	Pods       *PodPool
+	Pods       *PodMap
 }
 
 func (n *FornaxNode) initV1Node(dependencies *dependency.Dependencies) (*v1.Node, error) {
@@ -313,7 +313,7 @@ func NewFornaxNode(nodeConfig config.NodeConfiguration, dependencies *dependency
 		NodeConfig: nodeConfig,
 		V1Node:     nil,
 		Revision:   0,
-		Pods:       NewPodPool(),
+		Pods:       NewPodMap(),
 	}
 	v1node, err := fornaxNode.initV1Node(dependencies)
 	if err != nil {
@@ -343,37 +343,37 @@ func NewFornaxNode(nodeConfig config.NodeConfiguration, dependencies *dependency
 	return &fornaxNode, nil
 }
 
-type SessionActorPool struct {
+type SessionActorMap struct {
 	mu     sync.RWMutex
 	actors map[string]*session.SessionActor
 }
 
-func NewSessionActorPool() *SessionActorPool {
-	return &SessionActorPool{
+func NewSessionActorMap() *SessionActorMap {
+	return &SessionActorMap{
 		mu:     sync.RWMutex{},
 		actors: map[string]*session.SessionActor{},
 	}
 }
 
-func (pool *SessionActorPool) Get(id string) *session.SessionActor {
+func (pool *SessionActorMap) Get(id string) *session.SessionActor {
 	pool.mu.RLock()
 	defer pool.mu.RUnlock()
 	return pool.actors[id]
 }
 
-func (pool *SessionActorPool) Add(id string, actor *session.SessionActor) {
+func (pool *SessionActorMap) Add(id string, actor *session.SessionActor) {
 	pool.mu.Lock()
 	defer pool.mu.Unlock()
 	pool.actors[id] = actor
 }
 
-func (pool *SessionActorPool) Del(id string) {
+func (pool *SessionActorMap) Del(id string) {
 	pool.mu.Lock()
 	defer pool.mu.Unlock()
 	delete(pool.actors, id)
 }
 
-func (pool *SessionActorPool) List() []*session.SessionActor {
+func (pool *SessionActorMap) List() []*session.SessionActor {
 	pool.mu.RLock()
 	defer pool.mu.RUnlock()
 	actors := []*session.SessionActor{}
@@ -383,37 +383,37 @@ func (pool *SessionActorPool) List() []*session.SessionActor {
 	return actors
 }
 
-type PodActorPool struct {
+type PodActorMap struct {
 	mu     sync.RWMutex
 	actors map[string]*pod.PodActor
 }
 
-func NewPodActorPool() *PodActorPool {
-	return &PodActorPool{
+func NewPodActorMap() *PodActorMap {
+	return &PodActorMap{
 		mu:     sync.RWMutex{},
 		actors: map[string]*pod.PodActor{},
 	}
 }
 
-func (pool *PodActorPool) Get(id string) *pod.PodActor {
+func (pool *PodActorMap) Get(id string) *pod.PodActor {
 	pool.mu.RLock()
 	defer pool.mu.RUnlock()
 	return pool.actors[id]
 }
 
-func (pool *PodActorPool) Add(id string, actor *pod.PodActor) {
+func (pool *PodActorMap) Add(id string, actor *pod.PodActor) {
 	pool.mu.Lock()
 	defer pool.mu.Unlock()
 	pool.actors[id] = actor
 }
 
-func (pool *PodActorPool) Del(id string) {
+func (pool *PodActorMap) Del(id string) {
 	pool.mu.Lock()
 	defer pool.mu.Unlock()
 	delete(pool.actors, id)
 }
 
-func (pool *PodActorPool) List() []*pod.PodActor {
+func (pool *PodActorMap) List() []*pod.PodActor {
 	pool.mu.RLock()
 	defer pool.mu.RUnlock()
 	actors := []*pod.PodActor{}

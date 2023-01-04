@@ -47,7 +47,7 @@ func (a *PodContainerActor) Reference() message.ActorRef {
 }
 
 func (a *PodContainerActor) Stop() {
-	klog.InfoS("Stopping container actor", "pod", types.UniquePodName(a.pod), "container", a.container.ContainerSpec.Name)
+	klog.InfoS("Stopping container actor", "pod", types.PodName(a.pod), "container", a.container.ContainerSpec.Name)
 
 	for _, v := range a.probers {
 		v.Stop()
@@ -56,7 +56,7 @@ func (a *PodContainerActor) Stop() {
 }
 
 func (a *PodContainerActor) Start() {
-	klog.InfoS("Starting container actor", "pod", types.UniquePodName(a.pod), "container", a.container.ContainerSpec.Name, "init container", a.container.InitContainer)
+	klog.InfoS("Starting container actor", "pod", types.PodName(a.pod), "container", a.container.ContainerSpec.Name, "init container", a.container.InitContainer)
 	a.innerActor.Start()
 
 	if a.container.ContainerStatus.RuntimeStatus != nil {
@@ -93,10 +93,10 @@ func (a *PodContainerActor) containerHandler(msg message.ActorMessage) (interfac
 }
 
 func (a *PodContainerActor) startContainer() error {
-	klog.InfoS("Starting container", "pod", types.UniquePodName(a.pod), "container", a.container.ContainerSpec.Name)
+	klog.InfoS("Starting container", "pod", types.PodName(a.pod), "container", a.container.ContainerSpec.Name)
 	err := a.dependencies.RuntimeService.StartContainer(a.container.RuntimeContainer.Id)
 	if err != nil {
-		klog.ErrorS(err, "Failed to start container", "pod", types.UniquePodName(a.pod), "container", a.container.ContainerSpec.Name)
+		klog.ErrorS(err, "Failed to start container", "pod", types.PodName(a.pod), "container", a.container.ContainerSpec.Name)
 		a.notify(internal.PodContainerFailed{Pod: a.pod, Container: a.container})
 		return err
 	}
@@ -108,7 +108,7 @@ func (a *PodContainerActor) startContainer() error {
 
 // start container spec startup status prober
 func (a *PodContainerActor) startStartupProber() {
-	klog.InfoS("Starting container startup probers", "pod", types.UniquePodName(a.pod), "container", a.container.ContainerSpec.Name)
+	klog.InfoS("Starting container startup probers", "pod", types.PodName(a.pod), "container", a.container.ContainerSpec.Name)
 	if !a.container.InitContainer && a.container.ContainerSpec.StartupProbe != nil {
 		startupProber := NewContainerProber(a.onContainerProbeResult,
 			a.pod.Pod.DeepCopy(),
@@ -175,7 +175,7 @@ func (a *PodContainerActor) onContainerProbeResult(result PodContainerProbeResul
 		containerStatus := probeStatus.(*runtime.ContainerStatus)
 		// if runtime container exit or disapper, check it as failed
 		if containerStatus.RuntimeStatus == nil {
-			klog.InfoS("Container runtime status is nil", "pod", types.UniquePodName(a.pod), "container", a.container.ContainerSpec.Name)
+			klog.InfoS("Container runtime status is nil", "pod", types.PodName(a.pod), "container", a.container.ContainerSpec.Name)
 			a.notify(internal.PodContainerFailed{Pod: a.pod, Container: a.container})
 		} else {
 			if a.container.ContainerStatus == nil {
@@ -186,7 +186,7 @@ func (a *PodContainerActor) onContainerProbeResult(result PodContainerProbeResul
 
 			// when container exit, report it
 			if runtime.ContainerExit(a.container.ContainerStatus) && !a.container.InitContainer {
-				klog.InfoS("Container exit", "pod", types.UniquePodName(a.pod), "container", a.container.ContainerSpec.Name, "exit code", a.container.ContainerStatus.RuntimeStatus.ExitCode, "finished at", a.container.ContainerStatus.RuntimeStatus.FinishedAt)
+				klog.InfoS("Container exit", "pod", types.PodName(a.pod), "container", a.container.ContainerSpec.Name, "exit code", a.container.ContainerStatus.RuntimeStatus.ExitCode, "finished at", a.container.ContainerStatus.RuntimeStatus.FinishedAt)
 				a.onContainerFailed()
 			}
 
@@ -363,7 +363,7 @@ func (a *PodContainerActor) stopRuntimeContainer(timeout time.Duration) (err err
 }
 
 func NewPodContainerActor(supervisor message.ActorRef, pod *types.FornaxPod, container *types.FornaxContainer, dependencies *dependency.Dependencies) *PodContainerActor {
-	id := fmt.Sprintf("%s:%s", types.UniquePodName(pod), string(container.ContainerSpec.Name))
+	id := fmt.Sprintf("%s:%s", types.PodName(pod), string(container.ContainerSpec.Name))
 	pca := &PodContainerActor{
 		stop:         false,
 		pod:          pod,

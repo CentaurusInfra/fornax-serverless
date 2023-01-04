@@ -35,20 +35,20 @@ import (
 func (a *PodActor) createContainer(podSandboxConfig *criv1.PodSandboxConfig, containerSpec *v1.Container, pullSecrets []*v1.Secret,
 ) (*cruntime.Container, error) {
 
-	klog.InfoS("Pull image for container", "pod", types.UniquePodName(a.pod), "container", containerSpec.Name)
+	klog.InfoS("Pull image for container", "pod", types.PodName(a.pod), "container", containerSpec.Name)
 	pod := a.pod.Pod
 	// pull the image.
 	imageRef, err := a.dependencies.ImageManager.PullImageForContainer(containerSpec, podSandboxConfig)
 	if err != nil {
-		klog.ErrorS(err, "Failed to pull image", "pod", types.UniquePodName(a.pod), "container", containerSpec.Name)
+		klog.ErrorS(err, "Failed to pull image", "pod", types.PodName(a.pod), "container", containerSpec.Name)
 		return nil, err
 	}
 
 	// create the container log dir
-	klog.InfoS("Create container log dir", "pod", types.UniquePodName(a.pod), "container", containerSpec.Name)
+	klog.InfoS("Create container log dir", "pod", types.PodName(a.pod), "container", containerSpec.Name)
 	logDir, err := BuildContainerLogsDirectory(pod, containerSpec.Name)
 	if err != nil {
-		klog.ErrorS(err, "Failed to create container log", "pod", types.UniquePodName(a.pod), "container", containerSpec.Name, "logDir", logDir)
+		klog.ErrorS(err, "Failed to create container log", "pod", types.PodName(a.pod), "container", containerSpec.Name, "logDir", logDir)
 		return nil, ErrCreateContainerConfig
 	}
 
@@ -59,18 +59,18 @@ func (a *PodActor) createContainer(podSandboxConfig *criv1.PodSandboxConfig, con
 	// }
 
 	// create the container runtime configuration
-	klog.InfoS("Generate container runtime config", "pod", types.UniquePodName(a.pod), "container", containerSpec.Name)
+	klog.InfoS("Generate container runtime config", "pod", types.PodName(a.pod), "container", containerSpec.Name)
 	containerConfig, err := a.generateContainerConfig(containerSpec, imageRef)
 	if err != nil {
-		klog.ErrorS(err, "Failed to generate container runtime config", "pod", types.UniquePodName(a.pod), "container", containerSpec.Name)
+		klog.ErrorS(err, "Failed to generate container runtime config", "pod", types.PodName(a.pod), "container", containerSpec.Name)
 		return nil, ErrCreateContainerConfig
 	}
 
 	// call runtime to create the container
-	klog.InfoS("Call runtime to create container", "pod", types.UniquePodName(a.pod), "container", containerSpec.Name)
+	klog.InfoS("Call runtime to create container", "pod", types.PodName(a.pod), "container", containerSpec.Name)
 	runtimeContainer, err := a.dependencies.RuntimeService.CreateContainer(a.pod.RuntimePod.Sandbox.Id, containerConfig, podSandboxConfig)
 	if err != nil {
-		klog.ErrorS(err, "Failed to call runtime to create container", "pod", types.UniquePodName(a.pod), "container", containerSpec.Name)
+		klog.ErrorS(err, "Failed to call runtime to create container", "pod", types.PodName(a.pod), "container", containerSpec.Name)
 		return nil, ErrCreateContainer
 	}
 	return runtimeContainer, nil
@@ -163,10 +163,10 @@ func (m *PodActor) generateContainerConfig(container *v1.Container, imageRef *cr
 
 func (a *PodActor) terminateContainer(container *types.FornaxContainer) error {
 	pod := a.pod
-	klog.InfoS("Terminate container and remove it", "Pod", types.UniquePodName(pod), "ContainerName", container.ContainerSpec.Name)
+	klog.InfoS("Terminate container and remove it", "Pod", types.PodName(pod), "ContainerName", container.ContainerSpec.Name)
 	err := a.dependencies.RuntimeService.TerminateContainer(container.RuntimeContainer.Id)
 	if err != nil {
-		klog.ErrorS(err, "terminate pod container failed", "Pod", types.UniquePodName(pod), "containerName", container.ContainerSpec.Name)
+		klog.ErrorS(err, "terminate pod container failed", "Pod", types.PodName(pod), "containerName", container.ContainerSpec.Name)
 		return err
 	}
 

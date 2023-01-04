@@ -886,7 +886,6 @@ func (ms *MemoryStore) getSingleObjectAsList(ctx context.Context, key string, op
 				}
 			case "":
 				if rv > *fromRV {
-					// append
 					store.AppendListItem(listRetVal, obj.obj, rv, pred)
 				}
 			default:

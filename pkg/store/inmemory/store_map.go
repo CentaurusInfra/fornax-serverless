@@ -27,15 +27,6 @@ import (
 	"k8s.io/apiserver/pkg/storage"
 )
 
-type objEvent struct {
-	key       string
-	obj       runtime.Object
-	oldObj    runtime.Object
-	rev       uint64
-	isDeleted bool
-	isCreated bool
-}
-
 type objWithIndex struct {
 	key     string
 	obj     runtime.Object

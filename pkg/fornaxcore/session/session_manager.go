@@ -40,7 +40,7 @@ type sessionManager struct {
 	sessionStore    fornaxstore.ApiStorageInterface
 }
 
-func NewSessionManager(ctx context.Context, nodeAgentProxy nodeagent.NodeAgentClient, sessionStore fornaxstore.ApiStorageInterface) *sessionManager {
+func NewSessionManager(ctx context.Context, sessionStore fornaxstore.ApiStorageInterface, nodeAgentProxy nodeagent.NodeAgentClient) *sessionManager {
 	mgr := &sessionManager{
 		ctx:             ctx,
 		nodeAgentClient: nodeAgentProxy,

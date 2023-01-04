@@ -14,14 +14,11 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package store
+package capacity
 
-type Bucket struct {
-	Prev, Next *Bucket
-	Elements   map[string]interface{}
+type SandboxPool struct {
 }
 
-type ArrayBucket struct {
-	Prev, Next *ArrayBucket
-	Elements   []interface{}
+func (*SandboxPool) getAvailableSandbox() *FornaxSandbox {
+	return nil
 }

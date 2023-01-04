@@ -28,6 +28,15 @@ import (
 	"k8s.io/klog/v2"
 )
 
+type objEvent struct {
+	key       string
+	obj       runtime.Object
+	oldObj    runtime.Object
+	rev       uint64
+	isDeleted bool
+	isCreated bool
+}
+
 type memoryStoreWatcher struct {
 	ctx                    context.Context
 	stopped                bool

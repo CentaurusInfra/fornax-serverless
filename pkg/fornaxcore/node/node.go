@@ -20,60 +20,7 @@ import (
 	"sync"
 
 	ie "centaurusinfra.io/fornax-serverless/pkg/fornaxcore/internal"
-	"centaurusinfra.io/fornax-serverless/pkg/fornaxcore/store"
 )
-
-type NodeUpdateBucket struct {
-	internalGlobalRevision int64
-	bucketHead             *store.ArrayBucket
-	bucketTail             *store.ArrayBucket
-}
-
-func (nub *NodeUpdateBucket) truncate() {
-	// drop one bucket
-	if nub.internalGlobalRevision > MaxlengthOfNodeUpdates {
-		nub.bucketHead = nub.bucketHead.Next
-	}
-}
-
-func (nub *NodeUpdateBucket) appendUpdate(update interface{}) {
-	// every bucket has maxium 500 elements
-	if len(nub.bucketTail.Elements) >= 500 {
-		newBucket := &store.ArrayBucket{
-			Prev:     nub.bucketTail,
-			Next:     nil,
-			Elements: []interface{}{},
-		}
-		nub.bucketTail.Next = newBucket
-		nub.bucketTail = newBucket
-		nub.bucketTail.Elements = append(nub.bucketTail.Elements, update)
-	} else {
-		nub.bucketTail.Elements = append(nub.bucketTail.Elements, update)
-	}
-	nub.internalGlobalRevision++
-	nub.truncate()
-}
-
-type StaleNodeBucket struct {
-	sync.RWMutex
-	bucketStale   map[string]*ie.FornaxNodeWithState
-	bucketRefresh map[string]*ie.FornaxNodeWithState
-}
-
-func (snb *StaleNodeBucket) getStaleNodes() []*ie.FornaxNodeWithState {
-	snb.Lock()
-	defer snb.Unlock()
-
-	var stales []*ie.FornaxNodeWithState
-	for _, v := range snb.bucketStale {
-		stales = append(stales, v)
-	}
-
-	newBucket := map[string]*ie.FornaxNodeWithState{}
-	snb.bucketStale = snb.bucketRefresh
-	snb.bucketRefresh = newBucket
-	return stales
-}
 
 type NodePool struct {
 	mu    sync.RWMutex

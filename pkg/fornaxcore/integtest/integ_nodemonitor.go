@@ -96,7 +96,7 @@ func (*integtestNodeMonitor) OnNodeReady(message *grpc.FornaxCoreMessage) (*grpc
 }
 
 // OnRegistry implements server.NodeMonitor
-func (*integtestNodeMonitor) OnRegistry(message *grpc.FornaxCoreMessage) (*grpc.FornaxCoreMessage, error) {
+func (*integtestNodeMonitor) OnNodeRegistry(message *grpc.FornaxCoreMessage) (*grpc.FornaxCoreMessage, error) {
 	registry := message.GetNodeRegistry()
 
 	daemonPod := BuildATestDaemonPod()

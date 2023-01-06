@@ -19,7 +19,6 @@ package inmemory
 import (
 	"fmt"
 	"sync"
-	"sync/atomic"
 
 	"centaurusinfra.io/fornax-serverless/pkg/store"
 
@@ -88,13 +87,8 @@ type objMapOrObj struct {
 }
 
 type objStoreMap struct {
-	mu       sync.RWMutex
-	kvs      map[string]objMapOrObj
-	objCount int64
-}
-
-func (mm *objStoreMap) estimateCount() int64 {
-	return atomic.LoadInt64(&mm.objCount)
+	mu  sync.RWMutex
+	kvs map[string]objMapOrObj
 }
 
 func (mm *objStoreMap) count(keys []string) (int64, error) {
@@ -176,18 +170,20 @@ func (mm *objStoreMap) get(keys []string) *objWithIndex {
 
 func (mm *objStoreMap) _putObj(key string, obj *objWithIndex, expectedRV uint64) error {
 	mm.mu.Lock()
-	defer mm.mu.Unlock()
 	if o, f := mm.kvs[key]; f {
 		if o.obj != nil {
 			objRv, err := store.GetObjectResourceVersion(o.obj.obj)
 			if err != nil {
+				mm.mu.Unlock()
 				return err
 			}
 			if objRv > expectedRV {
+				mm.mu.Unlock()
 				return storage.NewTooLargeResourceVersionError(expectedRV, objRv, 0)
 			}
 		} else {
 			// not supposed to happen, for syntax correctness
+			mm.mu.Unlock()
 			return storage.NewInternalErrorf("tree node with final key %s is not nil, but has nil value", key)
 		}
 	}
@@ -196,16 +192,17 @@ func (mm *objStoreMap) _putObj(key string, obj *objWithIndex, expectedRV uint64)
 		obj:    obj,
 		objMap: nil,
 	}
+	mm.mu.Unlock()
 	return nil
 }
 
 func (mm *objStoreMap) _putObjMap(key string, objMap *objStoreMap) {
 	mm.mu.Lock()
-	defer mm.mu.Unlock()
 	mm.kvs[key] = objMapOrObj{
 		obj:    nil,
 		objMap: objMap,
 	}
+	mm.mu.Unlock()
 }
 
 func (mm *objStoreMap) put(keys []string, obj *objWithIndex, expectedRV uint64) error {
@@ -245,7 +242,6 @@ func (mm *objStoreMap) put(keys []string, obj *objWithIndex, expectedRV uint64) 
 		}
 	}
 
-	atomic.AddInt64(&mm.objCount, 1)
 	return nil
 }
 
@@ -267,7 +263,6 @@ func (mm *objStoreMap) del(keys []string) error {
 		} else {
 			if i == len(keys)-1 {
 				if o.obj != nil {
-					atomic.AddInt64(&mm.objCount, -1)
 					thismm._del(keys[i])
 				} else {
 					return fmt.Errorf("leaf node of keys %v is a map, it's supposed to be nil or obj", keys)

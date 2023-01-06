@@ -29,38 +29,40 @@ type NodePool struct {
 
 func (pool *NodePool) add(name string, pod *ie.FornaxNodeWithState) {
 	pool.mu.Lock()
-	defer pool.mu.Unlock()
 	pool.nodes[name] = pod
+	pool.mu.Unlock()
 }
 
 func (pool *NodePool) delete(name string) {
 	pool.mu.Lock()
-	defer pool.mu.Unlock()
 	delete(pool.nodes, name)
+	pool.mu.Unlock()
 }
 
 func (pool *NodePool) get(name string) *ie.FornaxNodeWithState {
-	pool.mu.Lock()
-	defer pool.mu.Unlock()
+	pool.mu.RLock()
 	if n, found := pool.nodes[name]; found {
+		pool.mu.RUnlock()
 		return n
 	}
 
+	pool.mu.RUnlock()
 	return nil
 }
 
 func (pool *NodePool) length() int {
 	pool.mu.RLock()
-	defer pool.mu.RUnlock()
-	return len(pool.nodes)
+	l := len(pool.nodes)
+	pool.mu.RUnlock()
+	return l
 }
 
 func (pool *NodePool) list() []*ie.FornaxNodeWithState {
 	pool.mu.RLock()
-	defer pool.mu.RUnlock()
 	nodes := []*ie.FornaxNodeWithState{}
 	for _, v := range pool.nodes {
 		nodes = append(nodes, v)
 	}
+	pool.mu.RUnlock()
 	return nodes
 }

@@ -204,7 +204,7 @@ func (n *SimulationNodeActor) onNodeConfigurationCommand(msg *fornaxgrpc.NodeCon
 					n.notify(n.fornoxCoreRef, node.BuildFornaxGrpcNodeReady(n.node, revision))
 				}()
 				n.state = node.NodeStateReady
-				n.startStateReport()
+				// n.startStateReport()
 			} else {
 				time.Sleep(1 * time.Second)
 			}

@@ -123,7 +123,7 @@ func Run(ctx context.Context, testConfig config.TestConfiguration) {
 	ns := "fornaxtest"
 	initNodeInformer(ctx, ns)
 	// initPodInformer(ctx, ns)
-	initApplicationInformer(ctx, ns)
+	// initApplicationInformer(ctx, ns)
 	initApplicationSessionInformer(ctx, ns)
 
 	done := false

@@ -137,7 +137,7 @@ func (nm *nodeManager) SyncPodStates(nodeId string, podStates []*fornaxgrpc.PodS
 	for _, podState := range podStates {
 		podName := util.Name(podState.GetPod())
 		reportedPods[podName] = true
-		err = nm.UpdatePodState(nodeId, podState.GetPod().DeepCopy(), podState.GetSessionStates())
+		err = nm.UpdatePodState(nodeId, podState.GetPod(), podState.GetSessionStates())
 		if err != nil {
 			klog.ErrorS(err, "Failed to update a pod state, wait for next sync", "pod", podName)
 		}

@@ -218,10 +218,10 @@ func (nm *nodeMonitor) OnPodStateUpdate(message *grpc.FornaxCoreMessage) (*grpc.
 	revision := podState.GetNodeRevision()
 	nodeId := message.GetNodeIdentifier()
 	// klog.V(5).InfoS("Received a pod state", "nodeId", nodeId,
-	// 	"pod", util.Name(podState.GetPod()),
-	// 	"pod phase", podState.GetPod().Status.Phase,
-	// 	"condition", k8spodutil.IsPodReady(podState.GetPod()),
-	// 	"node revision", revision)
+	//  "pod", util.Name(podState.GetPod()),
+	//  "pod phase", podState.GetPod().Status.Phase,
+	//  "condition", k8spodutil.IsPodReady(podState.GetPod()),
+	//  "node revision", revision)
 
 	nodeWRev := nm.nodes.get(nodeId.GetIdentifier())
 	if nodeWRev == nil {
@@ -241,7 +241,7 @@ func (nm *nodeMonitor) OnPodStateUpdate(message *grpc.FornaxCoreMessage) (*grpc.
 		klog.ErrorS(err, "pod", podState)
 		return nil, err
 	}
-	err := nm.nodeManager.UpdatePodState(nodeId.GetIdentifier(), podState.GetPod().DeepCopy(), podState.GetSessionStates())
+	err := nm.nodeManager.UpdatePodState(nodeId.GetIdentifier(), podState.GetPod(), podState.GetSessionStates())
 	if err != nil {
 		klog.ErrorS(err, "Failed to update pod state", "pod", podState)
 		return nil, err

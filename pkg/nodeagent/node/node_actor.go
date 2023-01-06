@@ -301,7 +301,8 @@ func (n *FornaxNodeActor) onNodeConfigurationCommand(msg *fornaxgrpc.NodeConfigu
 				n.node.V1Node.Status.Phase = v1.NodeRunning
 				n.notify(n.fornoxCoreRef, BuildFornaxGrpcNodeReady(n.node, revision))
 				n.state = NodeStateReady
-				n.startStateReport()
+				// do not periodically report, fornaxcore will send syncup request when it determine resyncup is required
+				// n.startStateReport()
 			} else {
 				time.Sleep(5 * time.Second)
 			}

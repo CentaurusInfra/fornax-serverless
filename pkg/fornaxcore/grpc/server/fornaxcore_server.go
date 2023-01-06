@@ -108,9 +108,16 @@ func (g *grpcServer) enlistNode(node string, ch chan<- *fornaxcore_grpc.FornaxCo
 		g.Unlock()
 		return fmt.Errorf("node %s already has channel", node)
 	}
-	g.nodeMonitor.OnNodeConnect(node)
 	g.nodeOutgoingChans[node] = ch
 	g.Unlock()
+	err := g.nodeMonitor.OnNodeConnect(node)
+	if err != nil {
+		if err == nodeagent.NodeRevisionOutOfOrderError {
+			g.DispatchNodeMessage(node, NewFullSyncRequest())
+		} else {
+			return err
+		}
+	}
 	return nil
 }
 

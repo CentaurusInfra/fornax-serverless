@@ -440,7 +440,6 @@ func (ps *podScheduler) Run() {
 					}
 				}
 			case update := <-ps.nodeUpdateCh:
-				klog.InfoS("GWJ Received node update", "node", update.Node.Name, "state", update.Node.Status.Phase)
 				oldSize := ps.nodePool.size()
 				ps.updateNodePool(update.Node.DeepCopy(), update.Type)
 				newSize := ps.nodePool.size()

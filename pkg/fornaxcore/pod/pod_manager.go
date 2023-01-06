@@ -45,17 +45,22 @@ const (
 	DefaultNotScheduledDeletionGracefulSeconds = int64(5)
 )
 
+// pod manager provide function to create and update pods in store,
+// pod manager is called by node monitor to update pod when receiving messages from node
+// or called by controllers to create a new pod or delete pods
+// pod manager provide watch method to notify pod updates internally,
+// controllers in process do not need to watch store or api server
+// pod manager provide a scheduler to find available node for a pending pod,
+// also, call node to terminate pod when pod is being deleted
 type podManager struct {
-	ctx        context.Context
-	podUpdates chan *ie.PodEvent
-	watchers   []chan<- *ie.PodEvent
-	// podStateMap     *PodStateMap
+	ctx             context.Context
+	podUpdates      chan *ie.PodEvent
+	watchers        []chan<- *ie.PodEvent
 	podStore        fornaxstore.ApiStorageInterface
 	podScheduler    podscheduler.PodScheduler
 	nodeAgentClient nodeagent.NodeAgentClient
 }
 
-// FindPod implements PodManager
 func (pm *podManager) FindPod(podName string) *v1.Pod {
 	if p, err := factory.GetFornaxPodCache(pm.podStore, podName); err != nil || p == nil {
 		return nil
@@ -69,15 +74,13 @@ func (pm *podManager) Watch(watcher chan<- *ie.PodEvent) {
 }
 
 func (pm *podManager) Run(podScheduler podscheduler.PodScheduler) error {
-	klog.Info("starting pod manager")
 	pm.podScheduler = podScheduler
 
-	klog.Info("starting pod updates notification")
+	klog.Info("starting pod updates watcher notification")
 	go func() {
 		for {
 			select {
 			case <-pm.ctx.Done():
-				// TODO, shutdown more gracefully, handoff fornaxcore primary ownership
 				break
 			case update := <-pm.podUpdates:
 				for _, watcher := range pm.watchers {

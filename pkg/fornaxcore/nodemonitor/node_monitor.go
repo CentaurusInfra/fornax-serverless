@@ -138,7 +138,7 @@ func (nm *nodeMonitor) OnNodeRegistry(message *grpc.FornaxCoreMessage) (*grpc.Fo
 	for _, v := range fornaxNode.DaemonPods {
 		daemons = append(daemons, v.DeepCopy())
 	}
-	// update node, send node configuration
+	// return node configuration back to node to initialize
 	domain := default_config.DefaultDomainName
 	nodeConig := grpc.FornaxCoreMessage_NodeConfiguration{
 		NodeConfiguration: &grpc.NodeConfiguration{
@@ -156,7 +156,7 @@ func (nm *nodeMonitor) OnNodeRegistry(message *grpc.FornaxCoreMessage) (*grpc.Fo
 	return m, nil
 }
 
-// OnNodeConnect update node state, make node ready for schedule pod
+// OnNodeConnect remove node from staled list, and ask stale node to send a full sync state
 func (nm *nodeMonitor) OnNodeConnect(nodeId string) error {
 	klog.InfoS("A node connected to FornaxCore", "node", nodeId)
 	nodeWRev := nm.staleNodes.get(nodeId)
@@ -168,7 +168,7 @@ func (nm *nodeMonitor) OnNodeConnect(nodeId string) error {
 	return nil
 }
 
-// OnNodeDisconnect update node state, make node ready for schedule pod
+// OnNodeDisconnect add node to staled list and call node manager to update node state
 func (nm *nodeMonitor) OnNodeDisconnect(nodeId string) error {
 	klog.InfoS("A node disconnected from FornaxCore", "node", nodeId)
 	nodeWRev := nm.nodes.get(nodeId)

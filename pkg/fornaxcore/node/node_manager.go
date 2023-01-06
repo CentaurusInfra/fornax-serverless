@@ -278,7 +278,8 @@ func (nm *nodeManager) updateNode(nodeId string, node *v1.Node) (*ie.FornaxNodeW
 	}
 }
 
-// DeleteNode send node event tell node not schedulable, it got removed from list after a graceful period
+// DisconnectNode update node to pending phase and send node event tell node not schedulable,
+// TODO, it got removed from store after a graceful period
 func (nm *nodeManager) DisconnectNode(nodeId string) error {
 	if fornaxNode := nm.nodes.get(nodeId); fornaxNode != nil {
 		fornaxNode.State = ie.NodeWorkingStateDisconnected

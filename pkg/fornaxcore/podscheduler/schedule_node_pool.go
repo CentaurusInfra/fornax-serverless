@@ -39,7 +39,6 @@ type SchedulableNode struct {
 
 func (snode *SchedulableNode) AdmitPodOccupiedResourceList(resourceList *v1.ResourceList) {
 	snode.mu.Lock()
-	defer snode.mu.Unlock()
 	nodeCpu := snode.PodPreOccupiedResourceList.Cpu().DeepCopy()
 	cpu := resourceList.Cpu().DeepCopy()
 	nodeCpu.Add(cpu)
@@ -63,11 +62,11 @@ func (snode *SchedulableNode) AdmitPodOccupiedResourceList(resourceList *v1.Reso
 		nodeStorage.Set(0)
 	}
 	snode.PodPreOccupiedResourceList[v1.ResourceStorage] = nodeStorage
+	snode.mu.Unlock()
 }
 
 func (snode *SchedulableNode) GetAllocatableResources() v1.ResourceList {
 	snode.mu.Lock()
-	defer snode.mu.Unlock()
 	allocatedResources := v1.ResourceList{}
 
 	nodeCpu := snode.ResourceList.Cpu().DeepCopy()
@@ -94,12 +93,12 @@ func (snode *SchedulableNode) GetAllocatableResources() v1.ResourceList {
 	}
 	allocatedResources[v1.ResourceStorage] = nodeStorage
 
+	snode.mu.Unlock()
 	return allocatedResources
 }
 
 func (snode *SchedulableNode) ReleasePodOccupiedResourceList(resourceList *v1.ResourceList) {
 	snode.mu.Lock()
-	defer snode.mu.Unlock()
 	nodeCpu := snode.PodPreOccupiedResourceList.Cpu().DeepCopy()
 	cpu := resourceList.Cpu().DeepCopy()
 	nodeCpu.Sub(cpu)
@@ -123,6 +122,7 @@ func (snode *SchedulableNode) ReleasePodOccupiedResourceList(resourceList *v1.Re
 		nodeStorage.Set(0)
 	}
 	snode.PodPreOccupiedResourceList[v1.ResourceStorage] = nodeStorage
+	snode.mu.Unlock()
 }
 
 type SortedNodes struct {
@@ -149,32 +149,33 @@ type SchedulableNodePool struct {
 
 func (pool *SchedulableNodePool) GetNode(name string) *SchedulableNode {
 	pool.mu.RLock()
-	defer pool.mu.RUnlock()
 	if n, f := pool.nodes[name]; f {
+		pool.mu.RUnlock()
 		return n
 	}
+	pool.mu.RUnlock()
 	return nil
 }
 
 func (pool *SchedulableNodePool) DeleteNode(name string) {
 	pool.mu.Lock()
-	defer pool.mu.Unlock()
 	delete(pool.nodes, name)
+	pool.mu.Unlock()
 }
 
 func (pool *SchedulableNodePool) AddNode(name string, node *SchedulableNode) {
 	pool.mu.Lock()
-	defer pool.mu.Unlock()
 	pool.nodes[name] = node
+	pool.mu.Unlock()
 }
 
 func (pool *SchedulableNodePool) GetNodes() []*SchedulableNode {
 	nodes := []*SchedulableNode{}
 	pool.mu.RLock()
-	defer pool.mu.RUnlock()
 	for _, v := range pool.nodes {
 		nodes = append(nodes, v)
 	}
+	pool.mu.RUnlock()
 	return nodes
 }
 

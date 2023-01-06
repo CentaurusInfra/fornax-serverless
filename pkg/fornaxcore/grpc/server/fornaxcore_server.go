@@ -23,6 +23,7 @@ import (
 	"math/rand"
 	"net"
 	"sync"
+	"time"
 
 	fornaxv1 "centaurusinfra.io/fornax-serverless/pkg/apis/core/v1"
 	fornaxcore_grpc "centaurusinfra.io/fornax-serverless/pkg/fornaxcore/grpc"
@@ -40,7 +41,7 @@ import (
 )
 
 const NodeOutgoingChanBufferSize = 20
-const DefaultNodeIncomingHandlerNum = 4
+const DefaultNodeIncomingHandlerNum = 5
 
 type FornaxCoreServer interface {
 	fornaxcore_grpc.FornaxCoreServiceServer
@@ -55,7 +56,7 @@ type grpcServer struct {
 	nodeMonitor             ie.NodeMonitorInterface
 	nodeOutgoingChans       map[string]chan<- *fornaxcore_grpc.FornaxCoreMessage
 	nodeIncommingChans      map[string]chan *fornaxcore_grpc.FornaxCoreMessage
-	nodeIncommingChansMutex sync.Mutex
+	nodeIncommingChansMutex sync.RWMutex
 	nodeMessageHandlerChans []chan *fornaxcore_grpc.FornaxCoreMessage
 }
 
@@ -103,21 +104,22 @@ func (g *grpcServer) RunGrpcServer(ctx context.Context, nodeMonitor ie.NodeMonit
 
 func (g *grpcServer) enlistNode(node string, ch chan<- *fornaxcore_grpc.FornaxCoreMessage) error {
 	g.Lock()
-	defer g.Unlock()
 	if _, ok := g.nodeOutgoingChans[node]; ok {
+		g.Unlock()
 		return fmt.Errorf("node %s already has channel", node)
 	}
 	g.nodeMonitor.OnNodeConnect(node)
 	g.nodeOutgoingChans[node] = ch
+	g.Unlock()
 	return nil
 }
 
 func (g *grpcServer) delistNode(node string) {
 	g.Lock()
-	defer g.Unlock()
 	g.nodeMonitor.OnNodeDisconnect(node)
 	close(g.nodeOutgoingChans[node])
 	delete(g.nodeOutgoingChans, node)
+	g.Unlock()
 }
 
 func (g *grpcServer) GetMessage(identifier *fornaxcore_grpc.NodeIdentifier, server fornaxcore_grpc.FornaxCoreService_GetMessageServer) error {
@@ -151,14 +153,17 @@ func (g *grpcServer) GetMessage(identifier *fornaxcore_grpc.NodeIdentifier, serv
 // get handeller channel to handle incomming message from this node, if not found,
 // randomly assign one channel in nodeMessageHandlerChans to this node and save it for following incomming messages from this node
 func (g *grpcServer) getNodeMessageHandlerChannel(nodeId string) chan *fornaxcore_grpc.FornaxCoreMessage {
-	g.nodeIncommingChansMutex.Lock()
-	defer g.nodeIncommingChansMutex.Unlock()
+	g.nodeIncommingChansMutex.RLock()
 	if messageCh, found := g.nodeIncommingChans[nodeId]; found {
+		g.nodeIncommingChansMutex.RUnlock()
 		return messageCh
 	} else {
+		g.nodeIncommingChansMutex.RUnlock()
 		i := rand.Intn(len(g.nodeMessageHandlerChans))
 		channel := g.nodeMessageHandlerChans[i]
+		g.nodeIncommingChansMutex.Lock()
 		g.nodeIncommingChans[nodeId] = channel
+		g.nodeIncommingChansMutex.Unlock()
 		return channel
 	}
 }
@@ -171,19 +176,20 @@ func (g *grpcServer) PutMessage(ctx context.Context, message *fornaxcore_grpc.Fo
 }
 
 func (g *grpcServer) handleMessages(message *fornaxcore_grpc.FornaxCoreMessage) {
+	st := time.Now().UnixMicro()
 	var err error
-	var msg *fornaxcore_grpc.FornaxCoreMessage
+	var reply *fornaxcore_grpc.FornaxCoreMessage
 	switch message.GetMessageType() {
 	case fornaxcore_grpc.MessageType_NODE_REGISTER:
-		msg, err = g.nodeMonitor.OnRegistry(message)
+		reply, err = g.nodeMonitor.OnNodeRegistry(message)
 	case fornaxcore_grpc.MessageType_NODE_READY:
-		msg, err = g.nodeMonitor.OnNodeReady(message)
+		reply, err = g.nodeMonitor.OnNodeReady(message)
 	case fornaxcore_grpc.MessageType_NODE_STATE:
-		msg, err = g.nodeMonitor.OnNodeStateUpdate(message)
+		reply, err = g.nodeMonitor.OnNodeStateUpdate(message)
 	case fornaxcore_grpc.MessageType_POD_STATE:
-		msg, err = g.nodeMonitor.OnPodStateUpdate(message)
+		reply, err = g.nodeMonitor.OnPodStateUpdate(message)
 	case fornaxcore_grpc.MessageType_SESSION_STATE:
-		msg, err = g.nodeMonitor.OnSessionUpdate(message)
+		reply, err = g.nodeMonitor.OnSessionUpdate(message)
 	default:
 		klog.Errorf(fmt.Sprintf("not supported message type %s, message %v", message.GetMessageType(), message))
 	}
@@ -193,9 +199,11 @@ func (g *grpcServer) handleMessages(message *fornaxcore_grpc.FornaxCoreMessage) 
 	if err == nodeagent.NodeRevisionOutOfOrderError {
 		g.DispatchNodeMessage(message.GetNodeIdentifier().GetIdentifier(), NewFullSyncRequest())
 	}
-	if msg != nil {
-		g.DispatchNodeMessage(message.GetNodeIdentifier().GetIdentifier(), msg)
+	if reply != nil {
+		g.DispatchNodeMessage(message.GetNodeIdentifier().GetIdentifier(), reply)
 	}
+	et := time.Now().UnixMicro()
+	klog.V(5).InfoS("Done processing a node message", "node", message.GetNodeIdentifier().Identifier, "type", message.GetMessageType(), "took-micro", et-st)
 }
 
 func (g *grpcServer) mustEmbedUnimplementedFornaxCoreServiceServer() {

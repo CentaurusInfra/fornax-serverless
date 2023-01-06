@@ -46,7 +46,7 @@ const (
 	DefaultApplicationSyncErrorRecycleDuration = 10 * time.Second
 
 	// The number of application workers
-	DefaultNumOfApplicationWorkers = 4
+	DefaultNumOfApplicationWorkers = 5
 )
 
 type ApplicationPool struct {
@@ -117,27 +117,28 @@ func NewApplicationManager(ctx context.Context, podManager ie.PodManagerInterfac
 
 func (am *ApplicationManager) deleteApplicationPool(applicationKey string) {
 	am.mu.Lock()
-	defer am.mu.Unlock()
 	delete(am.applicationPools, applicationKey)
+	am.mu.Unlock()
 }
 
 func (am *ApplicationManager) applicationList() map[string]*ApplicationPool {
 	am.mu.RLock()
-	defer am.mu.RUnlock()
 	apps := map[string]*ApplicationPool{}
 	for k, v := range am.applicationPools {
 		apps[k] = v
 	}
 
+	am.mu.RUnlock()
 	return apps
 }
 
 func (am *ApplicationManager) getApplicationPool(applicationKey string) *ApplicationPool {
 	am.mu.RLock()
-	defer am.mu.RUnlock()
 	if pool, found := am.applicationPools[applicationKey]; found {
+		am.mu.RUnlock()
 		return pool
 	} else {
+		am.mu.RUnlock()
 		return nil
 	}
 }
@@ -146,9 +147,9 @@ func (am *ApplicationManager) getOrCreateApplicationPool(applicationKey string) 
 	pool = am.getApplicationPool(applicationKey)
 	if pool == nil {
 		am.mu.Lock()
-		defer am.mu.Unlock()
 		pool = NewApplicationPool(applicationKey)
 		am.applicationPools[applicationKey] = pool
+		am.mu.Unlock()
 		return pool
 	} else {
 		return pool
@@ -335,11 +336,6 @@ func (am *ApplicationManager) cleanupDeletedApplication(pool *ApplicationPool) e
 func (am *ApplicationManager) syncApplication(ctx context.Context, applicationKey string) (syncErr error) {
 	klog.InfoS("Syncing application", "application", applicationKey)
 	st := time.Now().UnixMicro()
-	defer func() {
-		et := time.Now().UnixMicro()
-		klog.InfoS("Done syncing application", "application", applicationKey, "took-micro", et-st)
-		// TODO post metrics
-	}()
 	pool := am.getApplicationPool(applicationKey)
 	if pool == nil {
 		return nil
@@ -372,10 +368,11 @@ func (am *ApplicationManager) syncApplication(ctx context.Context, applicationKe
 				numOfPendingSession := sessionSummary.pendingCount
 				numOfDesiredUnAllocatedPod := am.calculateDesiredIdlePods(application, numOfAllocatedPod, numOfUnAllocatedPod, numOfPendingSession)
 				numOfDesiredPod = numOfAllocatedPod + numOfDesiredUnAllocatedPod
-				klog.InfoS("Syncing application pod", "application", applicationKey, "pending-sessions", numOfPendingSession, "active-pods", numOfAllocatedPod+numOfUnAllocatedPod, "pending-pods", numOfPendingPod, "idle-pods", numOfIdlePod, "desired-pending+idle-pods", numOfDesiredUnAllocatedPod)
 				if numOfDesiredUnAllocatedPod > numOfUnAllocatedPod {
+					klog.InfoS("Creating application pod", "application", applicationKey, "pending-sessions", numOfPendingSession, "active-pods", numOfAllocatedPod+numOfUnAllocatedPod, "pending-pods", numOfPendingPod, "idle-pods", numOfIdlePod, "desired-pending+idle-pods", numOfDesiredUnAllocatedPod)
 					action = fornaxv1.DeploymentActionCreateInstance
 				} else if numOfDesiredUnAllocatedPod < numOfUnAllocatedPod {
+					klog.InfoS("Deleting application pod", "application", applicationKey, "pending-sessions", numOfPendingSession, "active-pods", numOfAllocatedPod+numOfUnAllocatedPod, "pending-pods", numOfPendingPod, "idle-pods", numOfIdlePod, "desired-pending+idle-pods", numOfDesiredUnAllocatedPod)
 					action = fornaxv1.DeploymentActionDeleteInstance
 				}
 				// pending session will need pods immediately, the rest of pods can be created as a standby pod
@@ -386,9 +383,6 @@ func (am *ApplicationManager) syncApplication(ctx context.Context, applicationKe
 			numOfDesiredPod = 0
 			action = fornaxv1.DeploymentActionDeleteInstance
 			syncErr = am.cleanupDeletedApplication(pool)
-			// numOfAllocatedPod, numOfPendingPod, numOfIdlePod := pool.activePodNums()
-			// desiredAddition := 0 - (numOfIdlePod + numOfPendingPod + numOfAllocatedPod)
-			// syncErr = am.deployApplicationPods(pool, application, desiredAddition)
 		}
 
 		// take care of timeout and deleting pods
@@ -404,6 +398,9 @@ func (am *ApplicationManager) syncApplication(ctx context.Context, applicationKe
 		am.applicationQueue.AddAfter(applicationKey, DefaultApplicationSyncErrorRecycleDuration)
 	}
 
+	et := time.Now().UnixMicro()
+	klog.V(5).InfoS("Done syncing application", "application", applicationKey, "took-micro", et-st)
+	// TODO post metrics
 	return syncErr
 }
 

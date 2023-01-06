@@ -59,7 +59,7 @@ type NodeManagerInterface interface {
 	NodeInfoProviderInterface
 	UpdateNodeState(nodeId string, node *v1.Node) (*FornaxNodeWithState, error)
 	UpdateSessionState(nodeId string, session *fornaxv1.ApplicationSession) error
-	UpdatePodState(nodeId string, pod *v1.Pod, sessions []*fornaxv1.ApplicationSession) error
+	UpdatePodState(nodeId string, pod *v1.Pod, sessionStates []*grpc.SessionState) error
 	SyncPodStates(nodeId string, podStates []*grpc.PodState)
 	DisconnectNode(nodeId string) error
 }
@@ -89,7 +89,7 @@ type PodInfoProviderInterface interface {
 type NodeMonitorInterface interface {
 	OnNodeConnect(nodeId string) error
 	OnNodeDisconnect(nodeId string) error
-	OnRegistry(message *grpc.FornaxCoreMessage) (*grpc.FornaxCoreMessage, error)
+	OnNodeRegistry(message *grpc.FornaxCoreMessage) (*grpc.FornaxCoreMessage, error)
 	OnNodeReady(message *grpc.FornaxCoreMessage) (*grpc.FornaxCoreMessage, error)
 	OnNodeStateUpdate(message *grpc.FornaxCoreMessage) (*grpc.FornaxCoreMessage, error)
 	OnPodStateUpdate(message *grpc.FornaxCoreMessage) (*grpc.FornaxCoreMessage, error)

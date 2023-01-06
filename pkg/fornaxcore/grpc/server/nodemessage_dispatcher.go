@@ -25,13 +25,14 @@ import (
 
 func (g *grpcServer) getNodeChan(nodeIdentifer string) (chan<- *grpc.FornaxCoreMessage, error) {
 	g.RLock()
-	defer g.RUnlock()
 
 	ch, ok := g.nodeOutgoingChans[nodeIdentifer]
 	if !ok {
+		g.RUnlock()
 		return nil, fmt.Errorf("unknown destination")
 	}
 
+	g.RUnlock()
 	return ch, nil
 }
 

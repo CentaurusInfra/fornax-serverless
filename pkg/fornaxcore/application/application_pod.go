@@ -102,22 +102,29 @@ func (am *ApplicationManager) handlePodAddUpdateFromNode(pod *v1.Pod) {
 		pool := am.getOrCreateApplicationPool(applicationKey)
 		ap := pool.getPod(podName)
 		if ap != nil && ap.state == PodStateDeleting {
+			// pod is being deleted by app manager
 			am.deleteApplicationPod(pool, ap.podName)
 			return
 		}
-		if ap != nil && ap.state == PodStateAllocated {
-			return
-		}
 		if util.PodIsPending(pod) {
+			if ap != nil && ap.state == PodStateAllocated {
+				// pod allocated to a session by app manager, waiting for it become running
+				return
+			}
 			if ap != nil && ap.state == PodStatePending {
-				// this pod is just created by application itself, waiting for pod scheduled, no need to sync
+				// node is pending in both fornaxcore and node side, not need to sync
 				return
 			}
 			pool.addOrUpdatePod(podName, PodStatePending, []string{})
 		} else if util.PodIsRunning(pod) {
 			if _, yes := util.PodHasSession(pod); yes {
+				if ap != nil && ap.state == PodStateAllocated {
+					// pod is allocated in both fornaxcore and node side, not need to sync
+					return
+				}
 				pool.addOrUpdatePod(podName, PodStateAllocated, util.GetPodSessionAnnotation(pod))
 			} else {
+				// race condition chance, node just send a pod update back right after app manager allocate a pod to a session, node have not received session binding request
 				pool.addOrUpdatePod(podName, PodStateIdle, []string{})
 			}
 		} else {

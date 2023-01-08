@@ -56,7 +56,7 @@ type FornaxNodeWithState struct {
 }
 
 type NodeManagerInterface interface {
-	NodeInfoProviderInterface
+	NodeInfoLWInterface
 	UpdateNodeState(nodeId string, node *v1.Node) (*FornaxNodeWithState, error)
 	UpdateSessionState(nodeId string, session *fornaxv1.ApplicationSession) error
 	UpdatePodState(nodeId string, pod *v1.Pod, sessionStates []*grpc.SessionState) error
@@ -74,14 +74,14 @@ type SessionManagerInterface interface {
 	Watch(ctx context.Context) (<-chan fornaxstore.WatchEventWithOldObj, error)
 }
 
-// NodeInfoProviderInterface provide method to watch and list NodeEvent
-type NodeInfoProviderInterface interface {
+// NodeInfoLWInterface provide method to watch and list NodeEvent
+type NodeInfoLWInterface interface {
 	List() []*NodeEvent
 	Watch(watcher chan<- *NodeEvent)
 }
 
-// PodInfoProviderInterface provide method to watch and list PodEvent
-type PodInfoProviderInterface interface {
+// PodInfoLWInterface provide method to watch and list PodEvent
+type PodInfoLWInterface interface {
 	Watch(watcher chan<- *PodEvent)
 }
 

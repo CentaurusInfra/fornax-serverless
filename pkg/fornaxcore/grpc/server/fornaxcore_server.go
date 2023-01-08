@@ -124,8 +124,8 @@ func (g *grpcServer) enlistNode(node string, ch chan<- *fornaxcore_grpc.FornaxCo
 func (g *grpcServer) delistNode(node string) {
 	g.Lock()
 	g.nodeMonitor.OnNodeDisconnect(node)
-	close(g.nodeOutgoingChans[node])
 	delete(g.nodeOutgoingChans, node)
+	close(g.nodeOutgoingChans[node])
 	g.Unlock()
 }
 

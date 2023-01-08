@@ -18,6 +18,7 @@ limitations under the License.
 package server
 
 import (
+	"errors"
 	"fmt"
 
 	"centaurusinfra.io/fornax-serverless/pkg/fornaxcore/grpc"
@@ -37,11 +38,20 @@ func (g *grpcServer) getNodeChan(nodeIdentifer string) (chan<- *grpc.FornaxCoreM
 }
 
 func (g *grpcServer) DispatchNodeMessage(nodeIdentifier string, message *grpc.FornaxCoreMessage) error {
-	ch, err := g.getNodeChan(nodeIdentifier)
-	if err != nil {
-		return err
-	}
+	var err error
+	func() {
+		defer func() {
+			if err := recover(); err != nil {
+				// node could be disconnected when dispacthing message
+				err = errors.New("channel panic")
+			}
+		}()
 
-	ch <- message
-	return nil
+		var ch chan<- *grpc.FornaxCoreMessage
+		ch, err = g.getNodeChan(nodeIdentifier)
+		if err == nil && ch != nil {
+			ch <- message
+		}
+	}()
+	return err
 }

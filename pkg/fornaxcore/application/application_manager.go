@@ -405,9 +405,9 @@ func (am *ApplicationManager) syncApplication(ctx context.Context, applicationKe
 }
 
 // pruneDeadPods check pending and deleting pods,
-// if a pending pod was assigned to a node but did not report back after a time limit, deleted it
-// if a deleting pod was assigned to node to teminate but node did not report back after a time limit, deleted it again until node report back or dead node deleted
-// any pod can not find from pod manager will be just deleted
+// 1/ any pod can not find from pod manager will be just deleted
+// 2/ if a pending pod was assigned to a node but did not report back after a time limit, delete it
+// 3/ retry deleting pods
 func (am *ApplicationManager) pruneDeadPods(pool *ApplicationPool) {
 	pendingPods := pool.podListOfState(PodStatePending)
 	deletingPods := pool.podListOfState(PodStateDeleting)

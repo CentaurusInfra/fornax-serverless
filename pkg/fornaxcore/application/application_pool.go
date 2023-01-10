@@ -18,32 +18,45 @@ package application
 
 import (
 	"fmt"
+	"sync"
 	"time"
 
 	fornaxv1 "centaurusinfra.io/fornax-serverless/pkg/apis/core/v1"
-	ie "centaurusinfra.io/fornax-serverless/pkg/fornaxcore/internal"
 	"centaurusinfra.io/fornax-serverless/pkg/util"
 )
 
-type ApplicationPodSummary struct {
-	totalCount    int32
-	pendingCount  int32
-	deletingCount int32
-	idleCount     int32
-	occupiedCount int32
+type ApplicationPool struct {
+	appName     string
+	mu          sync.RWMutex
+	podsByState map[ApplicationPodState]map[string]*ApplicationPod
+	sessions    map[ApplicationSessionState]map[string]*ApplicationSession
 }
 
-func (pool *ApplicationPool) summaryPod(podManager ie.PodManagerInterface) ApplicationPodSummary {
-	pool.mu.RLock()
-	summary := ApplicationPodSummary{}
-	summary.pendingCount = int32(len(pool.podsByState[PodStatePending]))
-	summary.deletingCount = int32(len(pool.podsByState[PodStateDeleting]))
-	summary.occupiedCount = int32(len(pool.podsByState[PodStateAllocated]))
-	summary.idleCount = int32(len(pool.podsByState[PodStateIdle]))
-	summary.totalCount = summary.pendingCount + summary.deletingCount + summary.idleCount + summary.occupiedCount
+func NewApplicationPool(appName string) *ApplicationPool {
+	return &ApplicationPool{
+		appName: appName,
+		mu:      sync.RWMutex{},
+		podsByState: map[ApplicationPodState]map[string]*ApplicationPod{
+			PodStatePending:   {},
+			PodStateIdle:      {},
+			PodStateAllocated: {},
+			PodStateDeleting:  {},
+		},
+		sessions: map[ApplicationSessionState]map[string]*ApplicationSession{
+			SessionStatePending:  {},
+			SessionStateStarting: {},
+			SessionStateRunning:  {},
+			SessionStateDeleting: {},
+		},
+	}
+}
 
-	pool.mu.RUnlock()
-	return summary
+type ApplicationPodSummary struct {
+	totalCount    int
+	pendingCount  int
+	deletingCount int
+	idleCount     int
+	occupiedCount int
 }
 
 func (pool *ApplicationPool) getPodSessions(podName string) []*ApplicationSession {
@@ -156,15 +169,6 @@ func (pool *ApplicationPool) getSomeIdlePods(num int) []*ApplicationPod {
 	return pods
 }
 
-func (pool *ApplicationPool) activePodNums() (occupiedPods, pendingPods, idlePods int) {
-	pool.mu.RLock()
-	pendingPods = len(pool.podsByState[PodStatePending])
-	idlePods = len(pool.podsByState[PodStateIdle])
-	occupiedPods = len(pool.podsByState[PodStateAllocated])
-	pool.mu.RUnlock()
-	return occupiedPods, pendingPods, idlePods
-}
-
 func (pool *ApplicationPool) podLength() int {
 	pool.mu.RLock()
 	length := 0
@@ -227,16 +231,22 @@ func (pool *ApplicationPool) sessionList() []*ApplicationSession {
 	return sessions
 }
 
-func (pool *ApplicationPool) summarySession() ApplicationSessionSummary {
+func (pool *ApplicationPool) summarySessionAndPods() (ApplicationSessionSummary, ApplicationPodSummary) {
 	pool.mu.RLock()
-	summary := ApplicationSessionSummary{}
-	summary.deletingCount = len(pool.sessions[SessionStateDeleting])
-	summary.runningCount = len(pool.sessions[SessionStateRunning])
-	summary.startingCount = len(pool.sessions[SessionStateStarting])
-	summary.pendingCount = len(pool.sessions[SessionStatePending])
+	ssummary := ApplicationSessionSummary{}
+	ssummary.deletingCount = len(pool.sessions[SessionStateDeleting])
+	ssummary.runningCount = len(pool.sessions[SessionStateRunning])
+	ssummary.startingCount = len(pool.sessions[SessionStateStarting])
+	ssummary.pendingCount = len(pool.sessions[SessionStatePending])
 
+	psummary := ApplicationPodSummary{}
+	psummary.pendingCount = len(pool.podsByState[PodStatePending])
+	psummary.deletingCount = len(pool.podsByState[PodStateDeleting])
+	psummary.occupiedCount = len(pool.podsByState[PodStateAllocated])
+	psummary.idleCount = len(pool.podsByState[PodStateIdle])
+	psummary.totalCount = psummary.pendingCount + psummary.deletingCount + psummary.idleCount + psummary.occupiedCount
 	pool.mu.RUnlock()
-	return summary
+	return ssummary, psummary
 }
 
 func (pool *ApplicationPool) getSession(key string) *ApplicationSession {
@@ -283,7 +293,7 @@ func (pool *ApplicationPool) addSession(sessionName string, session *fornaxv1.Ap
 		}
 	}
 
-	// update pool with new state
+	// add into pool with new state
 	pool.sessions[newState][sessionName] = &ApplicationSession{
 		session: session,
 		state:   newState,

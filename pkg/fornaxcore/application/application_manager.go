@@ -30,7 +30,6 @@ import (
 	storefactory "centaurusinfra.io/fornax-serverless/pkg/store/factory"
 	"centaurusinfra.io/fornax-serverless/pkg/util"
 
-	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
@@ -314,35 +313,29 @@ func (am *ApplicationManager) syncApplication(ctx context.Context, applicationKe
 
 	var numOfDesiredPod, addition int
 	application, syncErr := storefactory.GetApplicationCache(am.applicationStore, applicationKey)
-	if syncErr != nil {
-		if apierrors.IsNotFound(syncErr) {
-			_, syncErr = am.cleanupDeletedApplication(pool)
-			// as application is not found in storage, just return and skip update status
-			if syncErr != nil {
-				am.applicationQueue.AddAfter(applicationKey, DefaultApplicationSyncErrorRecycleDuration)
-				return nil
-			}
-		}
-	} else if application != nil {
-		if application.DeletionTimestamp == nil {
-			// 1, assign pending session to idle pods firstly and cleanup timedout and deleting sessions
-			syncErr = am.deployApplicationSessions(pool, application)
+	if syncErr == nil {
+		if application != nil {
+			if application.DeletionTimestamp == nil {
+				// 1, assign pending session to idle pods firstly and cleanup timedout and deleting sessions
+				syncErr = am.deployApplicationSessions(pool, application)
 
-			// 2, find how many more pods required for remaining pending sessions
-			if syncErr == nil {
-				numOfDesiredPod, addition, syncErr = am.deployApplicationPods(pool, application)
+				// 2, find how many more pods required for remaining pending sessions
+				if syncErr == nil {
+					numOfDesiredPod, addition, syncErr = am.deployApplicationPods(pool, application)
+				}
+			} else {
+				numOfDesiredPod = 0
+				addition, syncErr = am.cleanupDeletedApplication(pool)
+				addition = -1 * addition
 			}
+			// take care of timeout and deleting pods
+			am.pruneDeadPods(pool)
+			newStatus := am.calculateStatus(pool, application, numOfDesiredPod, addition, syncErr)
+			am.applicationStatusManager.UpdateApplicationStatus(application, newStatus)
 		} else {
-			numOfDesiredPod = 0
-			addition, syncErr = am.cleanupDeletedApplication(pool)
-			addition = -1 * addition
+			_, syncErr = am.cleanupDeletedApplication(pool)
 		}
 	}
-
-	// take care of timeout and deleting pods
-	am.pruneDeadPods(pool)
-	newStatus := am.calculateStatus(pool, application, numOfDesiredPod, addition, syncErr)
-	am.applicationStatusManager.UpdateApplicationStatus(application, newStatus)
 
 	// Requeue the Application if there is error, if no error but total pods number does not meet desired number,
 	// when event of pods created/deleted in this sync come back from nodes will trigger next sync, finally meet desired state

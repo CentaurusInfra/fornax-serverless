@@ -19,6 +19,7 @@ package main
 import (
 	"context"
 	"os"
+	"runtime/debug"
 	"time"
 
 	"k8s.io/apimachinery/pkg/runtime"
@@ -39,6 +40,7 @@ import (
 	"centaurusinfra.io/fornax-serverless/pkg/fornaxcore/session"
 	"centaurusinfra.io/fornax-serverless/pkg/store"
 	"centaurusinfra.io/fornax-serverless/pkg/store/factory"
+	// "github.com/pkg/profile"
 )
 
 var (
@@ -50,6 +52,8 @@ func init() {
 }
 
 func main() {
+	// defer profile.Start().Stop()
+	debug.SetGCPercent(300)
 	// initialize fornax resource memory store
 	ctx := context.Background()
 	nodeStore := factory.NewFornaxNodeStorage(ctx)

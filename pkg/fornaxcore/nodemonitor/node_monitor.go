@@ -162,10 +162,9 @@ func (nm *nodeMonitor) OnNodeConnect(nodeId string) error {
 	nodeWRev := nm.staleNodes.get(nodeId)
 	if nodeWRev != nil {
 		nm.staleNodes.delete(nodeId)
-		// ask node to full sync since this node was disconnected before
-		return nodeagent.NodeRevisionOutOfOrderError
 	}
-	return nil
+	// ask node to full sync since this node was disconnected before
+	return nodeagent.NodeRevisionOutOfOrderError
 }
 
 // OnNodeDisconnect add node to staled list and call node manager to update node state

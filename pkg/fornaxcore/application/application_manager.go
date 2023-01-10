@@ -46,34 +46,8 @@ const (
 	DefaultApplicationSyncErrorRecycleDuration = 10 * time.Second
 
 	// The number of application workers
-	DefaultNumOfApplicationWorkers = 5
+	DefaultNumOfApplicationWorkers = 4
 )
-
-type ApplicationPool struct {
-	appName     string
-	mu          sync.RWMutex
-	podsByState map[ApplicationPodState]map[string]*ApplicationPod
-	sessions    map[ApplicationSessionState]map[string]*ApplicationSession
-}
-
-func NewApplicationPool(appName string) *ApplicationPool {
-	return &ApplicationPool{
-		appName: appName,
-		mu:      sync.RWMutex{},
-		podsByState: map[ApplicationPodState]map[string]*ApplicationPod{
-			PodStatePending:   {},
-			PodStateIdle:      {},
-			PodStateAllocated: {},
-			PodStateDeleting:  {},
-		},
-		sessions: map[ApplicationSessionState]map[string]*ApplicationSession{
-			SessionStatePending:  {},
-			SessionStateStarting: {},
-			SessionStateRunning:  {},
-			SessionStateDeleting: {},
-		},
-	}
-}
 
 // ApplicationManager is responsible for synchronizing Application objects stored
 // in the system with actual running pods.
@@ -190,6 +164,7 @@ func (am *ApplicationManager) Run(ctx context.Context) {
 	am.initApplicationInformer(ctx)
 	go func() {
 		for {
+			defer klog.Info("Shutting down fornaxv1 application event handler")
 			select {
 			case <-ctx.Done():
 				break
@@ -200,34 +175,32 @@ func (am *ApplicationManager) Run(ctx context.Context) {
 	}()
 
 	am.initApplicationSessionInformer(ctx)
+	go func() {
+		defer klog.Info("Shutting down fornaxv1 application session event handler")
+		for {
+			select {
+			case <-ctx.Done():
+				break
+			case we := <-am.sessionUpdateChannel:
+				am.onSessionEventFromStorage(we)
+			}
+		}
+	}()
+
+	go func() {
+		defer klog.Info("Shutting down fornaxv1 application pod event handler")
+		for {
+			select {
+			case <-ctx.Done():
+				break
+			case update := <-am.podUpdateChannel:
+				am.onPodEventFromNode(update)
+			}
+		}
+	}()
 
 	for i := 0; i < DefaultNumOfApplicationWorkers; i++ {
 		go wait.UntilWithContext(ctx, am.worker, time.Second)
-
-		go func() {
-			defer klog.Info("Shutting down fornaxv1 application pod manager")
-			for {
-				select {
-				case <-ctx.Done():
-					break
-				case update := <-am.podUpdateChannel:
-					am.onPodEventFromNode(update)
-				}
-			}
-		}()
-
-		go func() {
-			defer klog.Info("Shutting down fornaxv1 application session manager")
-			for {
-				select {
-				case <-ctx.Done():
-					break
-				case we := <-am.sessionUpdateChannel:
-					am.onSessionEventFromStorage(we)
-				}
-			}
-		}()
-
 	}
 
 	go func() {
@@ -239,7 +212,7 @@ func (am *ApplicationManager) Run(ctx context.Context) {
 			case <-ctx.Done():
 				break
 			case <-ticker.C:
-				am.HouseKeeping()
+				am.houseKeeping()
 			}
 		}
 	}()
@@ -281,8 +254,7 @@ func (am *ApplicationManager) onApplicationDeleteEvent(obj interface{}) {
 	am.applicationQueue.Add(applicationKey)
 }
 
-// worker runs a worker thread that just dequeues items, processes them, and marks them done.
-// It enforces that the syncHandler is never invoked concurrently with the same key.
+// worker runs a worker thread that just dequeues items, processes them, and marks them done, it loop until queue shutdown
 func (am *ApplicationManager) worker(ctx context.Context) {
 	for am.processNextWorkItem(ctx) {
 	}
@@ -307,18 +279,18 @@ func (am *ApplicationManager) processNextWorkItem(ctx context.Context) bool {
 	return true
 }
 
-func (am *ApplicationManager) cleanupDeletedApplication(pool *ApplicationPool) error {
+func (am *ApplicationManager) cleanupDeletedApplication(pool *ApplicationPool) (int, error) {
 	klog.InfoS("Cleanup a deleting Application, close all remaining session then deleting pod", "application", pool.appName)
 	numOfSession := pool.sessionLength()
 	if numOfSession > 0 {
 		err := am.cleanupSessionOfApplication(pool)
 		if err != nil {
-			return err
+			return 0, err
 		}
 	} else {
-		err := am.cleanupPodOfApplication(pool)
+		deletion, err := am.cleanupPodOfApplication(pool)
 		if err != nil {
-			return err
+			return deletion, err
 		}
 	}
 
@@ -327,28 +299,24 @@ func (am *ApplicationManager) cleanupDeletedApplication(pool *ApplicationPool) e
 		klog.InfoS("No remaining pod and session for deleting application, cleanup is done", "application", pool.appName)
 		am.deleteApplicationPool(pool.appName)
 	}
-	return nil
+	return 0, nil
 }
 
 // syncApplication check application sessions and assign session to idle pods,
 // it make sure running pod of application meet desired number according session state
 // if a application is being deleted, it cleanup session and pods of this application
 func (am *ApplicationManager) syncApplication(ctx context.Context, applicationKey string) (syncErr error) {
-	klog.InfoS("Syncing application", "application", applicationKey)
 	st := time.Now().UnixMicro()
 	pool := am.getApplicationPool(applicationKey)
 	if pool == nil {
 		return nil
 	}
 
-	var numOfDesiredPod int
-	var action fornaxv1.DeploymentAction
+	var numOfDesiredPod, addition int
 	application, syncErr := storefactory.GetApplicationCache(am.applicationStore, applicationKey)
 	if syncErr != nil {
 		if apierrors.IsNotFound(syncErr) {
-			numOfDesiredPod = 0
-			action = fornaxv1.DeploymentActionDeleteInstance
-			syncErr = am.cleanupDeletedApplication(pool)
+			_, syncErr = am.cleanupDeletedApplication(pool)
 			// as application is not found in storage, just return and skip update status
 			if syncErr != nil {
 				am.applicationQueue.AddAfter(applicationKey, DefaultApplicationSyncErrorRecycleDuration)
@@ -362,45 +330,29 @@ func (am *ApplicationManager) syncApplication(ctx context.Context, applicationKe
 
 			// 2, find how many more pods required for remaining pending sessions
 			if syncErr == nil {
-				sessionSummary := pool.summarySession()
-				numOfAllocatedPod, numOfPendingPod, numOfIdlePod := pool.activePodNums()
-				numOfUnAllocatedPod := numOfPendingPod + numOfIdlePod
-				numOfPendingSession := sessionSummary.pendingCount
-				numOfDesiredUnAllocatedPod := am.calculateDesiredIdlePods(application, numOfAllocatedPod, numOfUnAllocatedPod, numOfPendingSession)
-				numOfDesiredPod = numOfAllocatedPod + numOfDesiredUnAllocatedPod
-				if numOfDesiredUnAllocatedPod > numOfUnAllocatedPod {
-					klog.InfoS("Creating application pod", "application", applicationKey, "pending-sessions", numOfPendingSession, "active-pods", numOfAllocatedPod+numOfUnAllocatedPod, "pending-pods", numOfPendingPod, "idle-pods", numOfIdlePod, "desired-pending+idle-pods", numOfDesiredUnAllocatedPod)
-					action = fornaxv1.DeploymentActionCreateInstance
-				} else if numOfDesiredUnAllocatedPod < numOfUnAllocatedPod {
-					klog.InfoS("Deleting application pod", "application", applicationKey, "pending-sessions", numOfPendingSession, "active-pods", numOfAllocatedPod+numOfUnAllocatedPod, "pending-pods", numOfPendingPod, "idle-pods", numOfIdlePod, "desired-pending+idle-pods", numOfDesiredUnAllocatedPod)
-					action = fornaxv1.DeploymentActionDeleteInstance
-				}
-				// pending session will need pods immediately, the rest of pods can be created as a standby pod
-				desiredAddition := numOfDesiredUnAllocatedPod - numOfUnAllocatedPod
-				syncErr = am.deployApplicationPods(pool, application, desiredAddition)
+				numOfDesiredPod, addition, syncErr = am.deployApplicationPods(pool, application)
 			}
 		} else {
 			numOfDesiredPod = 0
-			action = fornaxv1.DeploymentActionDeleteInstance
-			syncErr = am.cleanupDeletedApplication(pool)
+			addition, syncErr = am.cleanupDeletedApplication(pool)
+			addition = -1 * addition
 		}
-
-		// take care of timeout and deleting pods
-		am.pruneDeadPods(pool)
-		newStatus := am.calculateStatus(pool, application, numOfDesiredPod, action, syncErr)
-		am.applicationStatusManager.UpdateApplicationStatus(application, newStatus)
 	}
+
+	// take care of timeout and deleting pods
+	am.pruneDeadPods(pool)
+	newStatus := am.calculateStatus(pool, application, numOfDesiredPod, addition, syncErr)
+	am.applicationStatusManager.UpdateApplicationStatus(application, newStatus)
 
 	// Requeue the Application if there is error, if no error but total pods number does not meet desired number,
 	// when event of pods created/deleted in this sync come back from nodes will trigger next sync, finally meet desired state
 	if syncErr != nil {
-		klog.ErrorS(syncErr, "Failed to sync application, requeue", "application", applicationKey)
+		klog.ErrorS(syncErr, "Failed to sync application, enqueue again", "application", applicationKey, "desiredInstances", numOfDesiredPod)
 		am.applicationQueue.AddAfter(applicationKey, DefaultApplicationSyncErrorRecycleDuration)
 	}
 
 	et := time.Now().UnixMicro()
 	klog.V(5).InfoS("Done syncing application", "application", applicationKey, "took-micro", et-st)
-	// TODO post metrics
 	return syncErr
 }
 
@@ -480,26 +432,32 @@ func (am *ApplicationManager) calculateDesiredIdlePods(application *fornaxv1.App
 	return desiredCount
 }
 
-func (am *ApplicationManager) calculateStatus(pool *ApplicationPool, application *fornaxv1.Application, desiredCount int, action fornaxv1.DeploymentAction, deploymentErr error) *fornaxv1.ApplicationStatus {
+func (am *ApplicationManager) calculateStatus(pool *ApplicationPool, application *fornaxv1.Application, desiredCount, addition int, deploymentErr error) *fornaxv1.ApplicationStatus {
 	newStatus := application.Status.DeepCopy()
-	poolSummary := pool.summaryPod(am.podManager)
+	_, podSummary := pool.summarySessionAndPods()
 
 	if application.Status.DesiredInstances == int32(desiredCount) &&
-		application.Status.TotalInstances == poolSummary.totalCount &&
-		application.Status.IdleInstances == poolSummary.idleCount &&
-		application.Status.DeletingInstances == poolSummary.deletingCount &&
-		application.Status.PendingInstances == poolSummary.pendingCount &&
-		application.Status.AllocatedInstances == poolSummary.occupiedCount {
+		application.Status.TotalInstances == int32(podSummary.totalCount) &&
+		application.Status.IdleInstances == int32(podSummary.idleCount) &&
+		application.Status.DeletingInstances == int32(podSummary.deletingCount) &&
+		application.Status.PendingInstances == int32(podSummary.pendingCount) &&
+		application.Status.AllocatedInstances == int32(podSummary.occupiedCount) {
 		return newStatus
 	}
 
 	newStatus.DesiredInstances = int32(desiredCount)
-	newStatus.TotalInstances = poolSummary.totalCount
-	newStatus.PendingInstances = poolSummary.pendingCount
-	newStatus.DeletingInstances = poolSummary.deletingCount
-	newStatus.IdleInstances = poolSummary.idleCount
-	newStatus.AllocatedInstances = poolSummary.occupiedCount
+	newStatus.TotalInstances = int32(podSummary.totalCount)
+	newStatus.PendingInstances = int32(podSummary.pendingCount)
+	newStatus.DeletingInstances = int32(podSummary.deletingCount)
+	newStatus.IdleInstances = int32(podSummary.idleCount)
+	newStatus.AllocatedInstances = int32(podSummary.occupiedCount)
 
+	var action fornaxv1.DeploymentAction = ""
+	if addition > 0 {
+		action = fornaxv1.DeploymentActionCreateInstance
+	} else if addition < 0 {
+		action = fornaxv1.DeploymentActionDeleteInstance
+	}
 	if action == fornaxv1.DeploymentActionCreateInstance || action == fornaxv1.DeploymentActionDeleteInstance {
 		message := fmt.Sprintf("deploy application instance, total: %d, desired: %d, pending: %d, deleting: %d, allocated: %d, idle: %d",
 			newStatus.TotalInstances,
@@ -532,12 +490,11 @@ func (am *ApplicationManager) calculateStatus(pool *ApplicationPool, application
 	return newStatus
 }
 
-func (am *ApplicationManager) HouseKeeping() error {
+func (am *ApplicationManager) houseKeeping() error {
 	appPools := am.applicationList()
 	klog.Info("Application house keeping")
 	for appKey, pool := range appPools {
-		podSummary := pool.summaryPod(am.podManager)
-		sessionSummary := pool.summarySession()
+		sessionSummary, podSummary := pool.summarySessionAndPods()
 		klog.InfoS("Application summary", "app", appKey, "pod", podSummary, "session", sessionSummary)
 
 		// starting and pending session could timeout

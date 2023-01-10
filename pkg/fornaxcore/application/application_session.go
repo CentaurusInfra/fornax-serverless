@@ -182,13 +182,15 @@ func (ps PendingSessions) Swap(i, j int) {
 // timedout and closed session are removed from application's session pool
 func (am *ApplicationManager) deployApplicationSessions(pool *ApplicationPool, application *fornaxv1.Application) error {
 	pendingSessions, deletingSessions, timeoutSessions := pool.getNonRunningSessions()
+
+	// 1/ assign pending sessions to idle pod
 	// get 5 more in case some pods assigment failed
-	idlePods := pool.getSomeIdlePods(len(pendingSessions))
+	idlePods := pool.getSomeIdlePods(len(pendingSessions) + 5)
 	klog.V(5).InfoS("Syncing application pending session", "application", pool.appName, "#pending", len(pendingSessions), "#deleting", len(deletingSessions), "#timeout", len(timeoutSessions))
 
+	// sort by creation timestamp to make sure FIFO
 	sort.Sort(PendingSessions(pendingSessions))
 	sessionErrors := []error{}
-	// 1/ assign pending sessions to idle pod
 	si := 0
 	for _, ap := range idlePods {
 		if si == len(pendingSessions) {
@@ -206,7 +208,6 @@ func (am *ApplicationManager) deployApplicationSessions(pool *ApplicationPool, a
 				sessionErrors = append(sessionErrors, err)
 				continue
 			} else {
-				pool.addOrUpdatePod(ap.podName, PodStateAllocated, []string{string(util.Name(as.session))})
 				si += 1
 			}
 		} else {
@@ -288,7 +289,7 @@ func (am *ApplicationManager) deleteApplicationSession(pool *ApplicationPool, s 
 	return nil
 }
 
-// change sessions status to starting and set access point
+// call session manager to open session, change sessions status to starting and set access point, update pod to allocated state
 func (am *ApplicationManager) assignSessionToPod(pool *ApplicationPool, pod *v1.Pod, session *fornaxv1.ApplicationSession) error {
 	newSession := session.DeepCopy()
 	newSession.Status.SessionStatus = fornaxv1.SessionStatusStarting

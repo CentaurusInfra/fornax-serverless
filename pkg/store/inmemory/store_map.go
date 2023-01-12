@@ -26,15 +26,6 @@ import (
 	"k8s.io/apiserver/pkg/storage"
 )
 
-type objEvent struct {
-	key       string
-	obj       runtime.Object
-	oldObj    runtime.Object
-	rev       uint64
-	isDeleted bool
-	isCreated bool
-}
-
 type objWithIndex struct {
 	key     string
 	obj     runtime.Object
@@ -179,18 +170,20 @@ func (mm *objStoreMap) get(keys []string) *objWithIndex {
 
 func (mm *objStoreMap) _putObj(key string, obj *objWithIndex, expectedRV uint64) error {
 	mm.mu.Lock()
-	defer mm.mu.Unlock()
 	if o, f := mm.kvs[key]; f {
 		if o.obj != nil {
 			objRv, err := store.GetObjectResourceVersion(o.obj.obj)
 			if err != nil {
+				mm.mu.Unlock()
 				return err
 			}
 			if objRv > expectedRV {
+				mm.mu.Unlock()
 				return storage.NewTooLargeResourceVersionError(expectedRV, objRv, 0)
 			}
 		} else {
 			// not supposed to happen, for syntax correctness
+			mm.mu.Unlock()
 			return storage.NewInternalErrorf("tree node with final key %s is not nil, but has nil value", key)
 		}
 	}
@@ -199,16 +192,17 @@ func (mm *objStoreMap) _putObj(key string, obj *objWithIndex, expectedRV uint64)
 		obj:    obj,
 		objMap: nil,
 	}
+	mm.mu.Unlock()
 	return nil
 }
 
 func (mm *objStoreMap) _putObjMap(key string, objMap *objStoreMap) {
 	mm.mu.Lock()
-	defer mm.mu.Unlock()
 	mm.kvs[key] = objMapOrObj{
 		obj:    nil,
 		objMap: objMap,
 	}
+	mm.mu.Unlock()
 }
 
 func (mm *objStoreMap) put(keys []string, obj *objWithIndex, expectedRV uint64) error {
@@ -247,6 +241,7 @@ func (mm *objStoreMap) put(keys []string, obj *objWithIndex, expectedRV uint64) 
 			}
 		}
 	}
+
 	return nil
 }
 

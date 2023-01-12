@@ -40,7 +40,7 @@ type FornaxCoreConfiguration struct {
 
 const (
 	DefaultConnTimeout    = 5 * time.Second
-	DefaultCallTimeout    = 5 * time.Second
+	DefaultCallTimeout    = 2 * time.Second
 	DefaultMaxRecvMsgSize = 16 * 1024
 )
 
@@ -81,7 +81,6 @@ func (f *fornaxCoreClient) GetMessage(receiver string, channel chan *fornax.Forn
 func (f *fornaxCoreClient) PutMessage(message *fornax.FornaxCoreMessage) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	// klog.InfoS("Send a message to FornaxCore", "endpoint", f.config.endpoint, "msgType", message.GetMessageType())
 	if f.service == nil {
 		return errors.New("FornaxCore connection is not initialized yet")
 	}
@@ -91,7 +90,6 @@ func (f *fornaxCoreClient) PutMessage(message *fornax.FornaxCoreMessage) error {
 	opts := grpc.EmptyCallOption{}
 	_, err := f.service.PutMessage(ctx, message, opts)
 	if err != nil {
-		klog.ErrorS(err, "Failed to send message to fornax core", "endpoint", f.config.endpoint)
 		return err
 	}
 	return nil
@@ -120,7 +118,6 @@ func (f *fornaxCoreClient) connect() error {
 			grpc.WithUnaryInterceptor(grpc_retry.UnaryClientInterceptor(opts...)),
 		)
 		if err != nil {
-			klog.ErrorS(err, "Connect fornaxCore failed", "endpoint", f.config.endpoint)
 			return err
 		}
 
@@ -135,13 +132,11 @@ func (f *fornaxCoreClient) connect() error {
 
 func (f *fornaxCoreClient) initGetMessageClient(ctx context.Context, identifier *fornax.NodeIdentifier) error {
 	if f.conn == nil {
-		klog.InfoS("Connecting to FornaxCore", "endpoint", f.config.endpoint)
 		err := f.connect()
 		if err != nil {
 			return err
 		}
 	}
-	klog.InfoS("Init fornax core get message client", "endpoint", f.config.endpoint)
 	gclient, err := f.service.GetMessage(ctx, identifier)
 	if err != nil {
 		return err
@@ -153,7 +148,6 @@ func (f *fornaxCoreClient) initGetMessageClient(ctx context.Context, identifier 
 // should exec in a go routine, fornaxCoreClient recvMessage loop forever until it's old stop
 // it receive message and dispatch it to receivers' channel registered by GetMessage
 func (f *fornaxCoreClient) recvMessage() {
-	klog.InfoS("Receiving message from FornaxCore", "endpoint", f.config.endpoint)
 	for {
 		if f.done {
 			break
@@ -182,14 +176,12 @@ func (f *fornaxCoreClient) recvMessage() {
 			continue
 		}
 
-		// klog.InfoS("Received a message from FornaxCore", "msgType", msg.GetMessageType())
 		panicReceivers := []string{}
 		for n, v := range f.receivers {
 			func() {
 				defer func() {
 					if err := recover(); err != nil {
 						klog.Errorf("Send message panic occurred: %v", err)
-						// remember it and remove closed channel after loop
 						panicReceivers = append(panicReceivers, n)
 					}
 				}()

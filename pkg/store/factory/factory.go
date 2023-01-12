@@ -57,7 +57,6 @@ func (f *FornaxRestOptionsFactory) GetRESTOptions(resource schema.GroupResource)
 		options.Decorator = CompositedFornaxApplicationStorageFunc
 	} else {
 		options.Decorator = FornaxInMemoryResourceStorageFunc
-		// return options, fmt.Errorf("unknown resource %v", resource)
 	}
 	if err != nil {
 		return options, err

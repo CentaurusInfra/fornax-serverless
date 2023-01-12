@@ -217,7 +217,7 @@ func PodInGracePeriod(pod *v1.Pod) bool {
 }
 
 func PodHasSession(pod *v1.Pod) (string, bool) {
-	if label, found := pod.GetLabels()[fornaxv1.LabelFornaxCoreApplicationSession]; found {
+	if label, found := pod.GetAnnotations()[fornaxv1.AnnotationFornaxCoreApplicationSession]; found {
 		return label, true
 	}
 	return "", false
@@ -237,15 +237,15 @@ func PodHasSessionServiceAnnotation(pod *v1.Pod) bool {
 	return false
 }
 
-func GetPodSessionNames(pod *v1.Pod) []string {
-	if label, found := pod.GetLabels()[fornaxv1.LabelFornaxCoreApplicationSession]; found {
+func GetPodSessionAnnotation(pod *v1.Pod) []string {
+	if label, found := pod.GetAnnotations()[fornaxv1.AnnotationFornaxCoreApplicationSession]; found {
 		return strings.Split(label, ",")
 	}
 	return []string{}
 }
 
-func GetPodFornaxNodeIdLabel(pod *v1.Pod) string {
-	if label, found := pod.GetLabels()[fornaxv1.LabelFornaxCoreNode]; found {
+func GetPodFornaxNodeIdAnnotation(pod *v1.Pod) string {
+	if label, found := pod.GetAnnotations()[fornaxv1.AnnotationFornaxCoreNode]; found {
 		return label
 	}
 	return ""

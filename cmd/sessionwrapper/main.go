@@ -36,7 +36,7 @@ import (
 )
 
 func main() {
-	endpoint := os.Getenv(fornaxv1.LabelFornaxCoreSessionService)
+	endpoint := os.Getenv(fornaxv1.AnnotationFornaxCoreSessionService)
 	opensession_cmd := os.Getenv("SESSION_WRAPPER_OPEN_SESSION_CMD")
 
 	config := &SessionConfig{
@@ -44,7 +44,7 @@ func main() {
 		openCmd:  opensession_cmd,
 	}
 
-	instanceId := os.Getenv(fornaxv1.LabelFornaxCorePod)
+	instanceId := os.Getenv(fornaxv1.AnnotationFornaxCorePod)
 	client := NewSessionServiceClient(instanceId, config)
 	sigCh := make(chan os.Signal, 1)
 	done := make(chan int, 1)

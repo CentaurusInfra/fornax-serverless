@@ -251,7 +251,7 @@ nodeagent_build(){
     echo "Fornaxcore IP is: $fornaxcoreip"
     sleep 3
 	  # following line command, put nodeagent run at background
-	  nohup sudo ./bin/nodeagent --fornaxcore-url fornaxcoreip:18001 --disable-swap=false >> nodeagent.logs 2>&1 &
+	  nohup sudo ./bin/nodeagent --fornaxcore-url $fornaxcoreip:${CORE_DEFAULT_PORT} --disable-swap=${NODE_DISABLE_SWAP} >> ${NODE_LOG_FILE} 2>&1 &
     echo -e "## DONE\n"
 }
 

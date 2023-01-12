@@ -45,17 +45,22 @@ const (
 	DefaultNotScheduledDeletionGracefulSeconds = int64(5)
 )
 
+// pod manager provide function to create and update pods in store,
+// pod manager is called by node monitor to update pod when receiving messages from node
+// or called by controllers to create a new pod or delete pods
+// pod manager provide watch method to notify pod updates internally,
+// controllers in process do not need to watch store or api server
+// pod manager provide a scheduler to find available node for a pending pod,
+// also, call node to terminate pod when pod is being deleted
 type podManager struct {
-	ctx        context.Context
-	podUpdates chan *ie.PodEvent
-	watchers   []chan<- *ie.PodEvent
-	// podStateMap     *PodStateMap
+	ctx             context.Context
+	podUpdates      chan *ie.PodEvent
+	watchers        []chan<- *ie.PodEvent
 	podStore        fornaxstore.ApiStorageInterface
 	podScheduler    podscheduler.PodScheduler
 	nodeAgentClient nodeagent.NodeAgentClient
 }
 
-// FindPod implements PodManager
 func (pm *podManager) FindPod(podName string) *v1.Pod {
 	if p, err := factory.GetFornaxPodCache(pm.podStore, podName); err != nil || p == nil {
 		return nil
@@ -69,15 +74,13 @@ func (pm *podManager) Watch(watcher chan<- *ie.PodEvent) {
 }
 
 func (pm *podManager) Run(podScheduler podscheduler.PodScheduler) error {
-	klog.Info("starting pod manager")
 	pm.podScheduler = podScheduler
 
-	klog.Info("starting pod updates notification")
+	klog.Info("starting pod updates watcher notification")
 	go func() {
 		for {
 			select {
 			case <-pm.ctx.Done():
-				// TODO, shutdown more gracefully, handoff fornaxcore primary ownership
 				break
 			case update := <-pm.podUpdates:
 				for _, watcher := range pm.watchers {
@@ -155,7 +158,7 @@ func (pm *podManager) TerminatePod(podName string) error {
 	// 2/ pod is scheduled, but have not report back from node,
 	// there could be a race condition when scheduler send a pod to node, but node have not report back,
 	// we decided to just delete this pod, when node report it back and app owner will determine should pod de deleted again
-	nodeId := util.GetPodFornaxNodeIdLabel(podInStore)
+	nodeId := util.GetPodFornaxNodeIdAnnotation(podInStore)
 	if len(nodeId) == 0 {
 		pm.DeletePod(podInStore)
 	}
@@ -190,7 +193,7 @@ func (pm *podManager) HibernatePod(podName string) error {
 		}
 	}
 
-	nodeId := util.GetPodFornaxNodeIdLabel(podInStore)
+	nodeId := util.GetPodFornaxNodeIdAnnotation(podInStore)
 	if len(nodeId) > 0 && util.PodNotTerminated(podInStore) {
 		err := pm.nodeAgentClient.HibernatePod(nodeId, podInStore)
 		if err != nil {
@@ -227,7 +230,7 @@ func (pm *podManager) createPodAndSendEvent(pod *v1.Pod) (*v1.Pod, error) {
 // if pod is terminated, delete it, otherwise add or update it.
 // when pod in cache has delete timestamp, termiante pod reported by node
 func (pm *podManager) AddOrUpdatePod(pod *v1.Pod) (*v1.Pod, error) {
-	nodeId := util.GetPodFornaxNodeIdLabel(pod)
+	nodeId := util.GetPodFornaxNodeIdAnnotation(pod)
 	podInStore, err := factory.GetFornaxPodCache(pm.podStore, util.Name(pod))
 	if err != nil {
 		return nil, err

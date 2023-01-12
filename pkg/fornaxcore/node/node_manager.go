@@ -26,7 +26,7 @@ import (
 
 	fornaxv1 "centaurusinfra.io/fornax-serverless/pkg/apis/core/v1"
 	"centaurusinfra.io/fornax-serverless/pkg/collection"
-	"centaurusinfra.io/fornax-serverless/pkg/fornaxcore/grpc"
+	fornaxgrpc "centaurusinfra.io/fornax-serverless/pkg/fornaxcore/grpc"
 	"centaurusinfra.io/fornax-serverless/pkg/fornaxcore/grpc/nodeagent"
 	ie "centaurusinfra.io/fornax-serverless/pkg/fornaxcore/internal"
 	fornaxpod "centaurusinfra.io/fornax-serverless/pkg/fornaxcore/pod"
@@ -79,10 +79,10 @@ func (nm *nodeManager) List() []*ie.NodeEvent {
 
 // UpdateSessionState implements NodeManagerInterface
 func (nm *nodeManager) UpdateSessionState(nodeId string, session *fornaxv1.ApplicationSession) error {
-	podName := session.Status.PodReference.Name
+	podName := session.Annotations[fornaxv1.AnnotationFornaxCorePod]
 	pod := nm.podManager.FindPod(podName)
 	if pod != nil {
-		nm.sessionManager.OnSessionStatusFromNode(nodeId, pod, session)
+		nm.sessionManager.OnSessionStatusFromNode(pod, session)
 	} else {
 		klog.Warningf("Pod %s does not exist in pod manager, can not update session %s", podName, util.Name(session))
 	}
@@ -92,7 +92,7 @@ func (nm *nodeManager) UpdateSessionState(nodeId string, session *fornaxv1.Appli
 // UpdatePodState check pod revision status and update single pod state
 // even a pod is terminated status, we still keep it in podmanager,
 // it got deleted until next time pod does not report it again in node state event
-func (nm *nodeManager) UpdatePodState(nodeId string, pod *v1.Pod, sessions []*fornaxv1.ApplicationSession) error {
+func (nm *nodeManager) UpdatePodState(nodeId string, pod *v1.Pod, sessionStates []*fornaxgrpc.SessionState) error {
 	podName := util.Name(pod)
 	if nodeWS := nm.nodes.get(nodeId); nodeWS != nil {
 		nodeWS.LastSeen = time.Now()
@@ -106,8 +106,15 @@ func (nm *nodeManager) UpdatePodState(nodeId string, pod *v1.Pod, sessions []*fo
 			return err
 		}
 		nodeWS.Pods.Add(podName)
+		sessions := []*fornaxv1.ApplicationSession{}
+		for _, v := range sessionStates {
+			session := &fornaxv1.ApplicationSession{}
+			if err := json.Unmarshal(v.SessionData, session); err == nil {
+				sessions = append(sessions, session)
+			}
+		}
 		for _, session := range sessions {
-			nm.sessionManager.OnSessionStatusFromNode(nodeId, updatedPod, session)
+			nm.sessionManager.OnSessionStatusFromNode(updatedPod, session)
 		}
 	} else {
 		// not supposed to happend node state is send when node register
@@ -117,7 +124,7 @@ func (nm *nodeManager) UpdatePodState(nodeId string, pod *v1.Pod, sessions []*fo
 	return nil
 }
 
-func (nm *nodeManager) SyncPodStates(nodeId string, podStates []*grpc.PodState) {
+func (nm *nodeManager) SyncPodStates(nodeId string, podStates []*fornaxgrpc.PodState) {
 	var err error
 	nodeWS := nm.nodes.get(nodeId)
 	if nodeWS == nil {
@@ -126,26 +133,19 @@ func (nm *nodeManager) SyncPodStates(nodeId string, podStates []*grpc.PodState) 
 	}
 
 	nodeWS.LastSeen = time.Now()
-	existingPodNames := nodeWS.Pods.GetKeys()
 	reportedPods := map[string]bool{}
 	for _, podState := range podStates {
 		podName := util.Name(podState.GetPod())
 		reportedPods[podName] = true
-		sessions := []*fornaxv1.ApplicationSession{}
-		for _, v := range podState.GetSessionStates() {
-			session := &fornaxv1.ApplicationSession{}
-			if err := json.Unmarshal(v.SessionData, session); err == nil {
-				sessions = append(sessions, session)
-			}
-		}
-		err = nm.UpdatePodState(nodeId, podState.GetPod().DeepCopy(), sessions)
+		err = nm.UpdatePodState(nodeId, podState.GetPod(), podState.GetSessionStates())
 		if err != nil {
 			klog.ErrorS(err, "Failed to update a pod state, wait for next sync", "pod", podName)
 		}
 	}
 
 	// reverse lookup, find deleted pods
-	deletedPods := []string{}
+	existingPodNames := nodeWS.Pods.GetKeys()
+	disappearingPods := []string{}
 	for _, podName := range existingPodNames {
 		// could have a race condition, pod scheduler just send a pod request to node and node was reporting state before it received request
 		// need to check a grace period, creation time stamp is not good one if pod stay in pod scheduler for a while
@@ -161,13 +161,13 @@ func (nm *nodeManager) SyncPodStates(nodeId string, podStates []*grpc.PodState) 
 					klog.ErrorS(err, "Failed to delete a pod, wait for next sync", "pod", podName)
 				}
 			} else {
-				deletedPods = append(deletedPods, podName)
+				disappearingPods = append(disappearingPods, podName)
 			}
 		}
-	}
 
-	for _, v := range deletedPods {
-		nodeWS.Pods.Delete(v)
+		for _, v := range disappearingPods {
+			nodeWS.Pods.Delete(v)
+		}
 	}
 }
 
@@ -278,7 +278,8 @@ func (nm *nodeManager) updateNode(nodeId string, node *v1.Node) (*ie.FornaxNodeW
 	}
 }
 
-// DeleteNode send node event tell node not schedulable, it got removed from list after a graceful period
+// DisconnectNode update node to pending phase and send node event tell node not schedulable,
+// TODO, it got removed from store after a graceful period
 func (nm *nodeManager) DisconnectNode(nodeId string) error {
 	if fornaxNode := nm.nodes.get(nodeId); fornaxNode != nil {
 		fornaxNode.State = ie.NodeWorkingStateDisconnected
@@ -303,7 +304,6 @@ func (nm *nodeManager) Run() error {
 		for {
 			select {
 			case <-nm.ctx.Done():
-				// TODO, shutdown more gracefully, handoff fornaxcore primary ownership
 				break
 			case update := <-nm.nodeUpdates:
 				for _, watcher := range nm.watchers {

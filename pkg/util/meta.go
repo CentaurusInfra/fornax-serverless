@@ -106,12 +106,12 @@ func NodeRevisionLargerThan(newObj, oldObj runtime.Object) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	aRv, _ := strconv.Atoi(aObjAccessor.GetLabels()[v1.LabelFornaxCoreNodeRevision])
+	aRv, _ := strconv.Atoi(aObjAccessor.GetAnnotations()[v1.AnnotationFornaxCoreNodeRevision])
 
 	bObjAccessor, err := meta.Accessor(oldObj)
 	if err != nil {
 		return false, err
 	}
-	bRv, _ := strconv.Atoi(bObjAccessor.GetLabels()[v1.LabelFornaxCoreNodeRevision])
+	bRv, _ := strconv.Atoi(bObjAccessor.GetAnnotations()[v1.AnnotationFornaxCoreNodeRevision])
 	return aRv > bRv, nil
 }

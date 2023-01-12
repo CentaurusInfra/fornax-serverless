@@ -50,7 +50,6 @@ type schedulePriorityQueue struct {
 
 func (pq *schedulePriorityQueue) AddPod(v1pod *v1.Pod, duration time.Duration) {
 	pq.mu.Lock()
-	defer pq.mu.Unlock()
 	if _, item := pq.queue.Get(podutil.Name(v1pod)); item == nil {
 		item := &PodScheduleItem{
 			pod:         v1pod,
@@ -60,36 +59,40 @@ func (pq *schedulePriorityQueue) AddPod(v1pod *v1.Pod, duration time.Duration) {
 	} else {
 		// TODO, need update?
 	}
+	pq.mu.Unlock()
 }
 
 // RemovePod remove pod from qeueue with same name of specified pod reference, and return removed pod
 func (pq *schedulePriorityQueue) RemovePod(v1pod *v1.Pod) *v1.Pod {
 	pq.mu.Lock()
-	defer pq.mu.Unlock()
 	if index, item := pq.queue.Get(podutil.Name(v1pod)); item != nil {
 		heap.Remove(pq.queue, index)
+		pq.mu.Unlock()
 		return item.(*PodScheduleItem).pod
 	}
+	pq.mu.Unlock()
 	return nil
 }
 
 func (pq *schedulePriorityQueue) GetPod(name string) *v1.Pod {
 	pq.mu.RLock()
-	defer pq.mu.RUnlock()
 	if _, item := pq.queue.Get(name); item != nil {
+		pq.mu.RUnlock()
 		return item.(*PodScheduleItem).pod
 	} else {
+		pq.mu.RUnlock()
 		return nil
 	}
 }
 
 func (pq *schedulePriorityQueue) PeakPod() *v1.Pod {
 	pq.mu.RLock()
-	defer pq.mu.RUnlock()
 	ob := pq.queue.Peak()
 	if ob == nil {
+		pq.mu.RUnlock()
 		return nil
 	}
+	pq.mu.RUnlock()
 	return ob.(*PodScheduleItem).pod
 }
 
@@ -103,15 +106,17 @@ func (pq *schedulePriorityQueue) NextPod() *v1.Pod {
 
 func (pq *schedulePriorityQueue) nextItem() *PodScheduleItem {
 	pq.mu.Lock()
-	defer pq.mu.Unlock()
 	ob := pq.queue.Peak()
 	if ob == nil {
+		pq.mu.Unlock()
 		return nil
 	}
 	ob = heap.Pop(pq.queue)
 	if ob == nil {
+		pq.mu.Unlock()
 		return nil
 	}
+	pq.mu.Unlock()
 	return ob.(*PodScheduleItem)
 }
 

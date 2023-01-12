@@ -5,7 +5,7 @@ declare num=0
 source ./hack/fornax_curl.zshrc
 
 # create app
-post_app  fornaxtest  ./hack/test-data/sessionwrapper-echoserver-app-create.yaml
+post_app  fornaxtest  ./hack/test/data/sessionwrapper-echoserver-app-create.yaml
 
 # create app-session
 source ./hack/fornax_curl.zshrc
@@ -20,11 +20,11 @@ do
   sudo echo "$string1"
   sudo echo "$string2"
   # Replace previous session
-  sudo sed -i "s/$string1/$string2/" ./hack/test-data/sessionwrapper-echoserver-session-create.yaml
+  sudo sed -i "s/$string1/$string2/" ./hack/test/data/sessionwrapper-echoserver-session-create.yaml
   # Verify the session number
-  awk '{if(NR==4) print $0}' ./hack/test-data/sessionwrapper-echoserver-session-create.yaml
+  awk '{if(NR==4) print $0}' ./hack/test/data/sessionwrapper-echoserver-session-create.yaml
   #sleep 1
-  post_session fornaxtest  ./hack/test-data/sessionwrapper-echoserver-session-create.yaml
+  post_session fornaxtest  ./hack/test/data/sessionwrapper-echoserver-session-create.yaml
   #sleep 1
 done
 

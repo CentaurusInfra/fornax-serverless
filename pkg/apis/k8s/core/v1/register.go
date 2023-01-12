@@ -22,8 +22,8 @@ import (
 	"k8s.io/apimachinery/pkg/runtime/schema"
 )
 
-// var K8sSchemeGroupVersion = schema.GroupVersion{Group: "core.fornax-serverless.centaurusinfra.io", Version: "v1"}
-var K8sSchemeGroupVersion = schema.GroupVersion{Group: "k8s.io", Version: "v1"}
+// +kubebuilder:scaffold:install
+var K8sSchemeGroupVersion = schema.GroupVersion{Group: "", Version: "v1"}
 
 // Resource takes an unqualified resource and returns a Group qualified GroupResource
 func Resource(resource string) schema.GroupResource {
@@ -31,22 +31,8 @@ func Resource(resource string) schema.GroupResource {
 }
 
 var AddToScheme = func(scheme *runtime.Scheme) error {
-	metav1.AddToGroupVersion(scheme, schema.GroupVersion{
-		Group:   "k8s.io",
-		Version: "v1",
-	})
-	// +kubebuilder:scaffold:install
-
-	scheme.AddKnownTypes(schema.GroupVersion{
-		Group:   "k8s.io",
-		Version: "v1",
-	}, &FornaxNode{})
-
-	scheme.AddKnownTypes(schema.GroupVersion{
-		Group:   "k8s.io",
-		Version: "v1",
-	}, &FornaxPod{})
-	// }, &FornaxPod{}, &FornaxPodList{})
-
+	metav1.AddToGroupVersion(scheme, K8sSchemeGroupVersion)
+	scheme.AddKnownTypes(K8sSchemeGroupVersion, &FornaxNode{})
+	scheme.AddKnownTypes(K8sSchemeGroupVersion, &FornaxPod{})
 	return nil
 }

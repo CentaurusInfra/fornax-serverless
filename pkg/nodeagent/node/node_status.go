@@ -23,6 +23,7 @@ import (
 
 	"centaurusinfra.io/fornax-serverless/pkg/nodeagent/cadvisor"
 	"centaurusinfra.io/fornax-serverless/pkg/nodeagent/config"
+	"centaurusinfra.io/fornax-serverless/pkg/nodeagent/dependency"
 	"centaurusinfra.io/fornax-serverless/pkg/nodeagent/network"
 	"centaurusinfra.io/fornax-serverless/pkg/nodeagent/resource"
 	"centaurusinfra.io/fornax-serverless/pkg/nodeagent/runtime"
@@ -40,41 +41,41 @@ type NodeStatusUpdater interface {
 	UpdateNodeStatus(*v1.Node) error
 }
 
-func SetNodeStatus(node *FornaxNode) error {
+func SetNodeStatus(node *FornaxNode, dependencies *dependency.Dependencies) error {
 	var errs = []error{}
 	var condition *v1.NodeCondition
 	var conditions = map[v1.NodeConditionType]*v1.NodeCondition{}
 	var err error
-	condition, err = UpdateNodeAddress(node.Dependencies.NetworkProvider, node.V1Node)
+	condition, err = UpdateNodeAddress(dependencies.NetworkProvider, node.V1Node)
 	if err != nil {
 		errs = append(errs, errors.New("can not find network provider"))
 	}
 	conditions[condition.Type] = condition
 
-	err = UpdateNodeCapacity(node.Dependencies.CAdvisor, node.NodeConfig, node.V1Node)
+	err = UpdateNodeCapacity(dependencies.CAdvisor, node.NodeConfig, node.V1Node)
 	if err != nil {
 		errs = append(errs, errors.New("can not find cadvisor"))
 	}
 
-	condition, err = UpdateNodeReadyStatus(node.Dependencies.RuntimeService, node.V1Node)
+	condition, err = UpdateNodeReadyStatus(dependencies.RuntimeService, node.V1Node)
 	if err != nil {
 		errs = append(errs, errors.New("cand not find cri runtime"))
 	}
 	conditions[condition.Type] = condition
 
-	condition, err = UpdateNodeMemoryStatus(node.Dependencies.MemoryManager, node.V1Node)
+	condition, err = UpdateNodeMemoryStatus(dependencies.MemoryManager, node.V1Node)
 	if err != nil {
 		errs = append(errs, errors.New("can not update memory resource status"))
 	}
 	conditions[condition.Type] = condition
 
-	condition, err = UpdateNodeCPUStatus(node.Dependencies.CPUManager, node.V1Node)
+	condition, err = UpdateNodeCPUStatus(dependencies.CPUManager, node.V1Node)
 	if err != nil {
 		errs = append(errs, errors.New("can not update cpu resource status"))
 	}
 	conditions[condition.Type] = condition
 
-	condition, err = UpdateNodeVolumeStatus(node.Dependencies.VolumeManager, node.V1Node)
+	condition, err = UpdateNodeVolumeStatus(dependencies.VolumeManager, node.V1Node)
 	if err != nil {
 		errs = append(errs, errors.New("can not update volume resource status"))
 	}

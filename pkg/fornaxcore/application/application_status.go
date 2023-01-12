@@ -165,7 +165,17 @@ func (asm *ApplicationStatusManager) _updateApplicationStatus(applicationKey str
 			return nil
 		}
 
-		klog.Infof(fmt.Sprintf("Updating application status for %s, ", util.Name(application)) +
+		if application.Status.TotalInstances == newStatus.TotalInstances &&
+			application.Status.DesiredInstances == newStatus.DesiredInstances &&
+			application.Status.PendingInstances == newStatus.PendingInstances &&
+			application.Status.DeletingInstances == newStatus.DeletingInstances &&
+			application.Status.AllocatedInstances == newStatus.AllocatedInstances &&
+			application.Status.IdleInstances == newStatus.IdleInstances {
+			// no change
+			return nil
+		}
+
+		klog.V(5).Infof(fmt.Sprintf("Updating application status for %s, ", util.Name(application)) +
 			fmt.Sprintf("totalInstances %d->%d, ", application.Status.TotalInstances, newStatus.TotalInstances) +
 			fmt.Sprintf("desiredInstances %d->%d, ", application.Status.DesiredInstances, newStatus.DesiredInstances) +
 			fmt.Sprintf("pendingInstances %d->%d, ", application.Status.PendingInstances, newStatus.PendingInstances) +

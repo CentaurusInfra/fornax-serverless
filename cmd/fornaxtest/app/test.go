@@ -25,6 +25,7 @@ import (
 
 	"centaurusinfra.io/fornax-serverless/cmd/fornaxtest/config"
 	fornaxv1 "centaurusinfra.io/fornax-serverless/pkg/apis/core/v1"
+	fornaxk8sv1 "centaurusinfra.io/fornax-serverless/pkg/apis/k8s/core/v1"
 	"centaurusinfra.io/fornax-serverless/pkg/client/informers/externalversions"
 	"centaurusinfra.io/fornax-serverless/pkg/util"
 
@@ -32,6 +33,7 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	coreinformers "k8s.io/client-go/informers"
 	"k8s.io/client-go/tools/cache"
 	_ "k8s.io/component-base/logs/json/register"
 	"k8s.io/klog/v2"
@@ -55,11 +57,11 @@ var (
 			Resources: v1.ResourceRequirements{
 				Limits: map[v1.ResourceName]resource.Quantity{
 					"memory": util.ResourceQuantity(50*1024*1024, v1.ResourceMemory),
-					"cpu":    util.ResourceQuantity(0.5*1000, v1.ResourceCPU),
+					"cpu":    util.ResourceQuantity(1*1000, v1.ResourceCPU),
 				},
 				Requests: map[v1.ResourceName]resource.Quantity{
 					"memory": util.ResourceQuantity(50*1024*1024, v1.ResourceMemory),
-					"cpu":    util.ResourceQuantity(0.01*1000, v1.ResourceCPU),
+					"cpu":    util.ResourceQuantity(0.1*1000, v1.ResourceCPU),
 				},
 			},
 		}},
@@ -94,11 +96,11 @@ var (
 			Resources: v1.ResourceRequirements{
 				Limits: map[v1.ResourceName]resource.Quantity{
 					"memory": util.ResourceQuantity(50*1024*1024, v1.ResourceMemory),
-					"cpu":    util.ResourceQuantity(0.5*1000, v1.ResourceCPU),
+					"cpu":    util.ResourceQuantity(1*1000, v1.ResourceCPU),
 				},
 				Requests: map[v1.ResourceName]resource.Quantity{
 					"memory": util.ResourceQuantity(50*1024*1024, v1.ResourceMemory),
-					"cpu":    util.ResourceQuantity(0.01*1000, v1.ResourceCPU),
+					"cpu":    util.ResourceQuantity(0.1*1000, v1.ResourceCPU),
 				},
 			},
 		}},
@@ -124,11 +126,11 @@ var (
 			Resources: v1.ResourceRequirements{
 				Limits: map[v1.ResourceName]resource.Quantity{
 					"memory": util.ResourceQuantity(500*1024*1024, v1.ResourceMemory),
-					"cpu":    util.ResourceQuantity(0.5*1000, v1.ResourceCPU),
+					"cpu":    util.ResourceQuantity(1*1000, v1.ResourceCPU),
 				},
 				Requests: map[v1.ResourceName]resource.Quantity{
 					"memory": util.ResourceQuantity(50*1024*1024, v1.ResourceMemory),
-					"cpu":    util.ResourceQuantity(0.01*1000, v1.ResourceCPU),
+					"cpu":    util.ResourceQuantity(0.1*1000, v1.ResourceCPU),
 				},
 			},
 		}},
@@ -143,6 +145,48 @@ var (
 		},
 	}
 )
+
+func initNodeInformer(ctx context.Context, namespace string) {
+	informerFactory := coreinformers.NewSharedInformerFactoryWithOptions(
+		util.GetFornaxCoreK8sClient(util.GetFornaxCoreKubeConfig()), 0*time.Minute, coreinformers.WithNamespace(namespace),
+	)
+	nodeInformer := informerFactory.Core().V1().Nodes()
+	nodeInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
+		AddFunc:    onNodeAddEvent,
+		UpdateFunc: onNodeUpdateEvent,
+		DeleteFunc: onNodeDeleteEvent,
+	})
+	informerFactory.Start(ctx.Done())
+	synced := nodeInformer.Informer().HasSynced
+	cache.WaitForNamedCacheSync(fornaxk8sv1.FornaxNodeKind.Kind, ctx.Done(), synced)
+}
+
+func onNodeAddEvent(obj interface{}) {
+	atomic.AddInt32(&nodeEventsNum.addevents, 1)
+}
+
+func onNodeUpdateEvent(old, cur interface{}) {
+	atomic.AddInt32(&nodeEventsNum.updevents, 1)
+}
+
+func onNodeDeleteEvent(obj interface{}) {
+	atomic.AddInt32(&nodeEventsNum.delevents, 1)
+}
+
+func initPodInformer(ctx context.Context, namespace string) {
+	informerFactory := coreinformers.NewSharedInformerFactoryWithOptions(
+		util.GetFornaxCoreK8sClient(util.GetFornaxCoreKubeConfig()), 0*time.Minute, coreinformers.WithNamespace(namespace),
+	)
+	podInformer := informerFactory.Core().V1().Pods()
+	podInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
+		AddFunc:    onPodAddEvent,
+		UpdateFunc: onPodUpdateEvent,
+		DeleteFunc: onPodDeleteEvent,
+	})
+	informerFactory.Start(ctx.Done())
+	synced := podInformer.Informer().HasSynced
+	cache.WaitForNamedCacheSync(fornaxk8sv1.FornaxPodKind.Kind, ctx.Done(), synced)
+}
 
 func initApplicationInformer(ctx context.Context, namespace string) {
 	informerFactory := externalversions.NewSharedInformerFactoryWithOptions(
@@ -159,22 +203,57 @@ func initApplicationInformer(ctx context.Context, namespace string) {
 	cache.WaitForNamedCacheSync(fornaxv1.ApplicationKind.Kind, ctx.Done(), synced)
 }
 
+func onPodAddEvent(obj interface{}) {
+	pod := obj.(*v1.Pod)
+	updatePodStatus(pod, time.Now())
+	atomic.AddInt32(&podEventsNum.addevents, 1)
+}
+
+func onPodUpdateEvent(old, cur interface{}) {
+	_ = old.(*v1.Pod)
+	pod := cur.(*v1.Pod)
+	updatePodStatus(pod, time.Now())
+	atomic.AddInt32(&podEventsNum.updevents, 1)
+}
+
+func onPodDeleteEvent(obj interface{}) {
+	_ = obj.(*v1.Pod)
+	atomic.AddInt32(&podEventsNum.delevents, 1)
+}
+
+func updatePodStatus(pod *v1.Pod, revTime time.Time) {
+	appMapLock.Lock()
+	defer appMapLock.Unlock()
+	if tp, f := podMap[util.Name(pod)]; f {
+		tp.watchAvailableTimeMilli = revTime.UnixMilli()
+		tp.status = pod.Status.Phase
+	} else {
+		tp = &TestPod{
+			pod:                     pod,
+			watchCreationTimeMilli:  revTime.UnixMilli(),
+			watchAvailableTimeMilli: 0,
+			status:                  pod.Status.Phase,
+		}
+		podMap[util.Name(pod)] = tp
+	}
+}
+
 func onApplicationAddEvent(obj interface{}) {
 	app := obj.(*fornaxv1.Application)
 	updateApplicationStatus(app, time.Now())
-	atomic.AddInt32(&addevents, 1)
+	atomic.AddInt32(&appEventsNum.addevents, 1)
 }
 
 func onApplicationUpdateEvent(old, cur interface{}) {
 	_ = old.(*fornaxv1.Application)
 	newCopy := cur.(*fornaxv1.Application)
 	updateApplicationStatus(newCopy, time.Now())
-	atomic.AddInt32(&updevents, 1)
+	atomic.AddInt32(&appEventsNum.updevents, 1)
 }
 
 func onApplicationDeleteEvent(obj interface{}) {
 	_ = obj.(*fornaxv1.Application)
-	atomic.AddInt32(&delevents, 1)
+	atomic.AddInt32(&appEventsNum.delevents, 1)
 }
 
 func updateApplicationStatus(app *fornaxv1.Application, revTime time.Time) {
@@ -203,7 +282,7 @@ func initApplicationSessionInformer(ctx context.Context, namespace string) {
 func onApplicationSessionAddEvent(obj interface{}) {
 	newCopy := obj.(*fornaxv1.ApplicationSession)
 	updateSessionStatus(newCopy, time.Now())
-	atomic.AddInt32(&addevents, 1)
+	atomic.AddInt32(&sessionEventsNum.addevents, 1)
 }
 
 // callback from Application informer when ApplicationSession is updated
@@ -215,7 +294,7 @@ func onApplicationSessionUpdateEvent(old, cur interface{}) {
 	_ = old.(*fornaxv1.ApplicationSession)
 	newCopy := cur.(*fornaxv1.ApplicationSession)
 	updateSessionStatus(newCopy, time.Now())
-	atomic.AddInt32(&updevents, 1)
+	atomic.AddInt32(&sessionEventsNum.updevents, 1)
 }
 
 func updateSessionStatus(session *fornaxv1.ApplicationSession, revTime time.Time) {
@@ -241,7 +320,7 @@ func updateSessionStatus(session *fornaxv1.ApplicationSession, revTime time.Time
 
 func onApplicationSessionDeleteEvent(obj interface{}) {
 	_ = obj.(*fornaxv1.ApplicationSession)
-	atomic.AddInt32(&delevents, 1)
+	atomic.AddInt32(&sessionEventsNum.delevents, 1)
 }
 
 func waitForSessionSetup(namespace, appName string, sessions TestSessionArray) {
@@ -347,9 +426,33 @@ func (sn TestApplicationArray) Swap(i, j int) {
 	sn[i], sn[j] = sn[j], sn[i]
 }
 
+type TestPodMap map[string]*TestPod
+
 type TestAppMap map[string]*TestApplication
 
+type TestPod struct {
+	pod                     *v1.Pod
+	watchCreationTimeMilli  int64
+	watchAvailableTimeMilli int64
+	status                  v1.PodPhase
+}
+
 type TestSessionMap map[string]*TestSession
+
+type TestPodArray []*TestPod
+
+func (sn TestPodArray) Len() int {
+	return len(sn)
+}
+
+//so, sort latency from smaller to lager value
+func (sn TestPodArray) Less(i, j int) bool {
+	return sn[i].watchAvailableTimeMilli-sn[i].watchCreationTimeMilli < sn[j].watchAvailableTimeMilli-sn[j].watchCreationTimeMilli
+}
+
+func (sn TestPodArray) Swap(i, j int) {
+	sn[i], sn[j] = sn[j], sn[i]
+}
 
 type TestSessionArray []*TestSession
 

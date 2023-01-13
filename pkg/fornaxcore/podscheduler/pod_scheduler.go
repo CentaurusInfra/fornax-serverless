@@ -42,13 +42,11 @@ type PodScheduler interface {
 
 var _ PodScheduler = &podScheduler{}
 
-var DefaultNumOfNodesPerScheduler = 200
-
 type NodeSortingMethod string
 
 const (
 	DefaultBackoffRetryDuration                    = 5 * time.Second
-	NodeSortingMethodMoreMemory  NodeSortingMethod = "more_memory"   // chose node with more memory
+	NodeSortingMethodMoreMemory  NodeSortingMethod = "more_memory"   // choose node with more memory
 	NodeSortingMethodLessLastUse NodeSortingMethod = "less_last_use" // choose node least used before
 	NodeSortingMethodLessUse     NodeSortingMethod = "less_use"      // choose node with less pods
 )
@@ -96,18 +94,59 @@ type SchedulePolicy struct {
 	NodeSortingMethod   NodeSortingMethod
 }
 
+// pod scheduler group available nodes into multiple groups(100 node a group by default),
+// and do parallel scheduling on node groups, one group work for a pod only at a time,
+// if can not find available node in a group, pod scheduler move this pod to next group
+// node group is rebuild when there are new nodes join or leave
+type nodeGroup struct {
+	name          string
+	mu            sync.Mutex
+	nodes         []*SchedulableNode
+	scheduler     *podScheduler
+	sortingMethod NodeSortingMethod
+}
+
+// use copy on write to build pool.sortedNodes to avoid concurrent map iteration and modification,
+// sorting method are like free memory or pods on node
+// scheduler use this list to find a number nodes from this list to schedule pods,
+// when pods are assigned to nodes or terminated from nodes, pool.sortedNodes are not sorted again,
+// this list need to resort, but do not want to resort every time since cow is expensive,
+// scheduler control when a resort is needed
+func (cps *nodeGroup) sortNodes() {
+	nodes := []*SchedulableNode{}
+	for _, v := range cps.nodes {
+		nodes = append(nodes, v)
+	}
+	sortedNodes := &SortedNodes{
+		nodes:    nodes,
+		lessFunc: BuildNodeSortingFunc(cps.sortingMethod),
+	}
+	sort.Sort(sortedNodes)
+	cps.nodes = sortedNodes.nodes
+}
+
+func (cps *nodeGroup) schedulePod(pod *v1.Pod) error {
+	// lock to avoid overcommit, only one pod can can be scheduled at one time
+	cps.mu.Lock()
+	defer cps.mu.Unlock()
+	return cps.scheduler.schedulePod(pod, cps.nodes)
+}
+
+// pod scheduler provide function to add/remove pending pod into scheduler queue,
+// it watch pod updates and node updates to track node resources, and find and bind available node for a pending pod
 type podScheduler struct {
 	stop                      bool
 	ctx                       context.Context
 	nodeUpdateCh              chan *ie.NodeEvent
 	podUpdateCh               chan *ie.PodEvent
-	nodeInfoP                 ie.NodeInfoProviderInterface
+	nodeInfoLW                ie.NodeInfoLWInterface
+	podInfoLW                 ie.PodInfoLWInterface
 	nodeAgentClient           nodeagent.NodeAgentClient
 	scheduleQueue             *PodScheduleQueue
 	nodePool                  *SchedulableNodePool
 	ScheduleConditionBuilders []ConditionBuildFunc
 	policy                    *SchedulePolicy
-	schedulers                []*nodeChunk
+	nodeGroups                []*nodeGroup
 }
 
 // RemovePod remove a pod from scheduling queue
@@ -140,17 +179,17 @@ func (ps *podScheduler) scoreNode(pod *v1.Pod, nodes []*SchedulableNode) *Schedu
 			bestNode = node
 		}
 	}
-
 	return bestNode
 }
+
 func (ps *podScheduler) selectNode(pod *v1.Pod, nodes []*SchedulableNode) *SchedulableNode {
 	// randomly pickup one
 	no := rand.Intn(len(nodes))
 	return nodes[no]
 }
 
-// add pod into node resource list, and send pod to node via grpc channel, if it channel failed, reschedule
-// it admit resource earlier to avoid duplicate use, if any error, unbindNode should release it
+// bind pod to node via nodeAgentClient, add substract pod requested resource from node resource list,
+// it substract resource earlier to avoid duplicate use, if any error, unbindNode should release it
 func (ps *podScheduler) bindNode(snode *SchedulableNode, pod *v1.Pod) error {
 	podName := util.Name(pod)
 	nodeId := snode.NodeName
@@ -161,7 +200,7 @@ func (ps *podScheduler) bindNode(snode *SchedulableNode, pod *v1.Pod) error {
 	// set pod status
 	pod.Status.StartTime = util.NewCurrentMetaTime()
 	// when pod is scheduled but not returned from node, use it's host ip to help release resource
-	pod.Status.HostIP = snode.NodeName
+	pod.Status.HostIP = snode.Node.Status.Addresses[0].Address
 	pod.Status.Message = "Scheduled"
 	pod.Status.Reason = "Scheduled"
 	pod.Annotations[fornaxv1.AnnotationFornaxCoreNode] = util.Name(snode.Node)
@@ -269,8 +308,6 @@ func (ps *podScheduler) updateNodePool(v1node *v1.Node, updateType ie.NodeEventT
 				}
 				ps.nodePool.AddNode(nodeName, snode)
 			}
-			// TODO, if there are pod in backoff queue with similar resource req, notify to try schedule
-
 			return snode
 		}
 	}
@@ -289,178 +326,150 @@ func (ps *podScheduler) updatePodOccupiedResourceList(snode *SchedulableNode, po
 
 func (ps *podScheduler) printScheduleSummary() {
 	activeNum, retryNum := ps.scheduleQueue.Length()
-	klog.InfoS("Scheduler summary", "active queue length", activeNum, "backoff queue length", retryNum, "available nodes", ps.nodePool.size(), "schedulers", len(ps.schedulers))
+	klog.InfoS("Scheduler summary", "active queue length", activeNum, "backoff queue length", retryNum, "available nodes", ps.nodePool.size(), "node groups", len(ps.nodeGroups))
 	// ps.nodePool.printSummary()
 }
 
-type nodeChunk struct {
-	name          string
-	mu            sync.Mutex
-	nodes         []*SchedulableNode
-	scheduler     *podScheduler
-	sortingMethod NodeSortingMethod
-}
-
-// use copy on write to build pool.sortedNodes to avoid concurrent map iteration and modification,
-// sorting method are like free memory or pods on node
-// scheduler use this list to find a number nodes from this list to schedule pods,
-// when pods are assigned to nodes or terminated from nodes, pool.sortedNodes are not sorted again,
-// this list need to resort, but do not want to resort every time since cow is expensive,
-// scheduler control when a resort is needed
-func (cps *nodeChunk) sortNodes() {
-	nodes := []*SchedulableNode{}
-	for _, v := range cps.nodes {
-		nodes = append(nodes, v)
-	}
-	sortedNodes := &SortedNodes{
-		nodes:    nodes,
-		lessFunc: BuildNodeSortingFunc(cps.sortingMethod),
-	}
-	sort.Sort(sortedNodes)
-	cps.nodes = sortedNodes.nodes
-}
-
-func (cps *nodeChunk) schedulePod(pod *v1.Pod) error {
-	// lock to avoid overcommit, only one pod can can be scheduled at one time
-	cps.mu.Lock()
-	defer cps.mu.Unlock()
-	return cps.scheduler.schedulePod(pod, cps.nodes)
-}
-
-func (ps *podScheduler) initializeNodeChunks() {
+func (ps *podScheduler) initializeNodeGroups() {
 	numOfNodesPerScheduler := ps.policy.NumOfEvaluatedNodes
-	chunkSchedulers := []*nodeChunk{}
-	allNodes := ps.nodePool.GetNodes()
+	nodeGroups := []*nodeGroup{}
+	allNodes := ps.nodePool.GetNodes() // maybe shuffle
 	numOfSchedulers := int(math.Ceil(float64(len(allNodes)) / float64(numOfNodesPerScheduler)))
 	for i := 0; i < numOfSchedulers; i++ {
 		nodes := allNodes[i*numOfNodesPerScheduler : int(math.Min(float64((i+1)*numOfNodesPerScheduler), float64(len(allNodes))))]
-		cs := &nodeChunk{
-			name:          fmt.Sprintf("chunk_scheduler_%d", i),
+		cs := &nodeGroup{
+			name:          fmt.Sprintf("node_group_%d", i),
 			mu:            sync.Mutex{},
 			nodes:         nodes,
 			scheduler:     ps,
 			sortingMethod: ps.policy.NodeSortingMethod,
 		}
-		cs.sortNodes()
-		chunkSchedulers = append(chunkSchedulers, cs)
+		nodeGroups = append(nodeGroups, cs)
 	}
-	ps.schedulers = chunkSchedulers
+	ps.nodeGroups = nodeGroups
+}
+
+// scheduleLoop poll pods from scheduler queue and loop node groups to find a available node for pods
+// scheduleLoop poll multiple pods according num of node groups and assign a pod to a node group and schedule pod in parallel using  goroutines.
+// and if a pod can not find node in a group for a pod, go to next node group until all groups are tried
+// if pod is not scheduled, put it back to queue for backoff retry
+func (ps *podScheduler) scheduleLoop() {
+	for {
+		if ps.stop {
+			break
+		} else {
+			if len(ps.nodeGroups) == 0 {
+				ps.initializeNodeGroups()
+			}
+
+			nodeGroups := ps.nodeGroups
+			if len(nodeGroups) == 0 {
+				// no nodes, do not poll pods
+				time.Sleep(100 * time.Millisecond)
+				continue
+			}
+			// poll at most num of scheduler of pods, schdule them in parallel
+			pods := []*v1.Pod{}
+			numOfScheduler := len(nodeGroups)
+			for i := 0; i < numOfScheduler; i++ {
+				pod := ps.scheduleQueue.NextPod()
+				pods = append(pods, pod)
+				if !ps.scheduleQueue.HasMore() {
+					break
+				}
+			}
+			wg := sync.WaitGroup{}
+			for _, pod := range pods {
+				rand.Seed(time.Now().UnixNano())
+				i := rand.Intn(len(nodeGroups))
+				wg.Add(1)
+				go func(pod *v1.Pod, index int) {
+					var schedErr error
+					for i := 0; i < numOfScheduler; i++ {
+						nodeGroup := nodeGroups[(index+i)%numOfScheduler]
+						schedErr = nodeGroup.schedulePod(pod)
+						if schedErr == nil {
+							break
+						}
+					}
+					if schedErr != nil {
+						klog.ErrorS(schedErr, "Can not find node for pod, come back later", "pod", util.Name(pod), "required resource", util.GetPodResourceList(pod))
+						ps.scheduleQueue.BackoffPod(pod, ps.policy.BackoffDuration)
+					}
+					wg.Done()
+				}(pod, i)
+			}
+			wg.Wait()
+		}
+	}
+}
+
+func (ps *podScheduler) handleNodeAndPodUpdates() {
+	ticker := time.NewTicker(DefaultBackoffRetryDuration)
+	defer func() {
+		ps.stop = true
+		close(ps.nodeUpdateCh)
+		close(ps.podUpdateCh)
+		ticker.Stop()
+	}()
+
+	// listen pod and node updates
+	for {
+		select {
+		case <-ps.ctx.Done():
+			ps.stop = true
+			return
+		case update := <-ps.podUpdateCh:
+			nodeId := util.GetPodFornaxNodeIdAnnotation(update.Pod)
+			if len(nodeId) != 0 {
+				snode := ps.nodePool.GetNode(nodeId)
+				if snode != nil {
+					// update resource list only if pod event is from node
+					ps.updatePodOccupiedResourceList(snode, update.Pod, update.Type)
+				}
+			}
+		case update := <-ps.nodeUpdateCh:
+			oldSize := ps.nodePool.size()
+			ps.updateNodePool(update.Node.DeepCopy(), update.Type)
+			newSize := ps.nodePool.size()
+			if oldSize != newSize {
+				// reinitialization is expensive, but it's ok for now since it only happen when node pool size changed
+				ps.initializeNodeGroups()
+			}
+		case <-ticker.C:
+			ps.printScheduleSummary()
+			// move item from backoff queue to active queue if item exceed cool down time
+			if ps.scheduleQueue.backoffRetryQueue.queue.Len() > 0 {
+				ps.scheduleQueue.ReviveBackoffItem()
+			}
+		}
+	}
 }
 
 func (ps *podScheduler) Run() {
 	klog.Info("starting pod scheduler")
-	go func() {
-		for {
-			if ps.stop {
-				break
-			} else {
-				if len(ps.schedulers) == 0 {
-					ps.initializeNodeChunks()
-				}
-
-				schedulers := ps.schedulers
-				if len(schedulers) == 0 {
-					// no scheduler, do not poll pods
-					time.Sleep(100 * time.Millisecond)
-					continue
-				}
-				// poll at most num of scheduler of pods, schdule them in parallel
-				pods := []*v1.Pod{}
-				numOfScheduler := len(schedulers)
-				for i := 0; i < numOfScheduler; i++ {
-					pod := ps.scheduleQueue.NextPod()
-					pods = append(pods, pod)
-					if !ps.scheduleQueue.HasMore() {
-						break
-					}
-				}
-				wg := sync.WaitGroup{}
-				for _, pod := range pods {
-					rand.Seed(time.Now().UnixNano())
-					i := rand.Intn(len(schedulers))
-					wg.Add(1)
-					// every pod use a routine to schedule, it loop chunk schedulers from a specified position, if it's scheduled, then return, otherwise use next chunk scheduler
-					go func(pod *v1.Pod, index int) {
-						var schedErr error
-						for i := 0; i < numOfScheduler; i++ {
-							scheduler := schedulers[(index+i)%numOfScheduler]
-							schedErr = scheduler.schedulePod(pod)
-							if schedErr == nil {
-								break
-							}
-						}
-						if schedErr != nil {
-							klog.ErrorS(schedErr, "Can not find node for pod, come back later", "pod", util.Name(pod), "required resource", util.GetPodResourceList(pod))
-							ps.scheduleQueue.BackoffPod(pod, ps.policy.BackoffDuration)
-						}
-						wg.Done()
-					}(pod, i)
-				}
-				wg.Wait()
-			}
-		}
-	}()
+	// get initial nodes
+	nodes := ps.nodeInfoLW.List()
+	for _, n := range nodes {
+		ps.updateNodePool(n.Node, ie.NodeEventTypeCreate)
+	}
+	ps.initializeNodeGroups()
 
 	// receive pod and node update to update scheduleable node resource and condition
-	go func() {
-		ticker := time.NewTicker(DefaultBackoffRetryDuration)
-		defer func() {
-			ps.stop = true
-			close(ps.nodeUpdateCh)
-			close(ps.podUpdateCh)
-			ticker.Stop()
-		}()
+	go ps.handleNodeAndPodUpdates()
 
-		// get initial nodes
-		nodes := ps.nodeInfoP.List()
-		for _, n := range nodes {
-			ps.updateNodePool(n.Node, ie.NodeEventTypeCreate)
-		}
-
-		// listen pod and node updates
-		for {
-			select {
-			case <-ps.ctx.Done():
-				ps.stop = true
-				return
-			case update := <-ps.podUpdateCh:
-				nodeId := util.GetPodFornaxNodeIdAnnotation(update.Pod)
-				if len(nodeId) == 0 {
-					nodeId = update.Pod.Status.HostIP
-				}
-				if len(nodeId) != 0 {
-					snode := ps.nodePool.GetNode(nodeId)
-					if snode != nil {
-						// update resource list only if pod event is from node
-						ps.updatePodOccupiedResourceList(snode, update.Pod, update.Type)
-					}
-				}
-			case update := <-ps.nodeUpdateCh:
-				oldSize := ps.nodePool.size()
-				ps.updateNodePool(update.Node.DeepCopy(), update.Type)
-				newSize := ps.nodePool.size()
-				if oldSize != newSize {
-					// reinitialization is expensive, but it's ok for now since it only happen when node pool size changed
-					ps.initializeNodeChunks()
-				}
-			case <-ticker.C:
-				ps.printScheduleSummary()
-				// move item from backoff queue to active queue if item exceed cool down time
-				if ps.scheduleQueue.backoffRetryQueue.queue.Len() > 0 {
-					ps.scheduleQueue.ReviveBackoffItem()
-				}
-			}
-		}
-	}()
+	// schedule loop
+	go ps.scheduleLoop()
 }
 
-func NewPodScheduler(ctx context.Context, nodeAgent nodeagent.NodeAgentClient, nodeInfoP ie.NodeInfoProviderInterface, podInfoP ie.PodInfoProviderInterface, policy *SchedulePolicy) *podScheduler {
+func NewPodScheduler(ctx context.Context, nodeAgent nodeagent.NodeAgentClient, nodeInfoP ie.NodeInfoLWInterface, podInfoP ie.PodInfoLWInterface, policy *SchedulePolicy) *podScheduler {
 	ps := &podScheduler{
 		ctx:             ctx,
 		stop:            false,
 		nodeUpdateCh:    make(chan *ie.NodeEvent, 100),
 		podUpdateCh:     make(chan *ie.PodEvent, 1000),
-		nodeInfoP:       nodeInfoP,
+		nodeInfoLW:      nodeInfoP,
+		podInfoLW:       podInfoP,
 		nodeAgentClient: nodeAgent,
 		scheduleQueue:   NewScheduleQueue(),
 		nodePool: &SchedulableNodePool{
@@ -472,7 +481,7 @@ func NewPodScheduler(ctx context.Context, nodeAgent nodeagent.NodeAgentClient, n
 			NewPodMemoryCondition,
 		},
 		policy:     policy,
-		schedulers: []*nodeChunk{},
+		nodeGroups: []*nodeGroup{},
 	}
 	nodeInfoP.Watch(ps.nodeUpdateCh)
 	podInfoP.Watch(ps.podUpdateCh)

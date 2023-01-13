@@ -29,34 +29,35 @@ type ConcurrentStringSet struct {
 
 func (pool *ConcurrentStringSet) Add(identifier string) {
 	pool.mu.Lock()
-	defer pool.mu.Unlock()
 	pool.items[identifier] = sets.Empty{}
+	pool.mu.Unlock()
 }
 
 func (pool *ConcurrentStringSet) Delete(identifier string) {
 	pool.mu.Lock()
-	defer pool.mu.Unlock()
 	delete(pool.items, identifier)
+	pool.mu.Unlock()
 }
 
 func (pool *ConcurrentStringSet) Has(identifier string) bool {
 	pool.mu.RLock()
-	defer pool.mu.RUnlock()
 	_, found := pool.items[identifier]
+	pool.mu.RUnlock()
 	return found
 }
 
 func (pool *ConcurrentStringSet) GetKeys() []string {
 	pool.mu.RLock()
-	defer pool.mu.RUnlock()
-	return pool.items.List()
+	list := pool.items.List()
+	pool.mu.RUnlock()
+	return list
 }
 
 func (pool *ConcurrentStringSet) Len() int {
 	pool.mu.RLock()
-	defer pool.mu.RUnlock()
-
-	return pool.items.Len()
+	l := pool.items.Len()
+	pool.mu.RUnlock()
+	return l
 }
 
 func NewConcurrentSet() *ConcurrentStringSet {

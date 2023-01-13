@@ -184,7 +184,7 @@ func (c *CompositeStore) GetList(ctx context.Context, key string, opts storage.L
 func (c *CompositeStore) GuaranteedUpdate(ctx context.Context, key string, out runtime.Object, ignoreNotFound bool, preconditions *storage.Preconditions, tryUpdate storage.UpdateFunc, cachedExistingObject runtime.Object) error {
 	specOut := out.DeepCopyObject()
 
-	// ugly because we have to update etcd object's finalizer to make sure does not delete object with empty finalizer in persit store's GuaranteedUpdate method
+	// we have to update object's finalizer to delete object with empty finalizer in following persit store's GuaranteedUpdate method
 	c.ensureFinalizerUpdated(ctx, key)
 	err := c.specPersistStore.GuaranteedUpdate(ctx, key, specOut, ignoreNotFound, preconditions, tryUpdate, cachedExistingObject)
 	if err != nil {

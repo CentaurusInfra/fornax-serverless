@@ -163,6 +163,7 @@ func (n *SimulationNodeActor) processFornaxCoreMessage(msg *fornaxgrpc.FornaxCor
 
 // initialize node with node spec provided by fornaxcore, especially pod cidr
 func (n *SimulationNodeActor) onNodeFullSyncCommand(msg *fornaxgrpc.NodeFullSync) error {
+	klog.InfoS("Resend node full state", "node", n.node.V1Node.Name)
 	n.notify(n.fornoxCoreRef, node.BuildFornaxGrpcNodeState(n.node, n.node.Revision))
 	return nil
 }
@@ -204,7 +205,7 @@ func (n *SimulationNodeActor) onNodeConfigurationCommand(msg *fornaxgrpc.NodeCon
 					n.notify(n.fornoxCoreRef, node.BuildFornaxGrpcNodeReady(n.node, revision))
 				}()
 				n.state = node.NodeStateReady
-				n.startStateReport()
+				// n.startStateReport()
 			} else {
 				time.Sleep(1 * time.Second)
 			}

@@ -36,7 +36,7 @@ type SimulationNodeConfiguration struct {
 func AddConfigFlags(flagSet *pflag.FlagSet, nodeConfig *SimulationNodeConfiguration) {
 	flagSet.StringVar(&nodeConfig.NodeIP, "node-ip", nodeConfig.NodeIP, "IPv4 addresses of the node. If unset, use the node's default IPv4 address")
 
-	flagSet.StringVar(&nodeConfig.NodeIP, "node-name-prefix", nodeConfig.NodeNamePrefix, "Simulation node's name prefix")
+	flagSet.StringVar(&nodeConfig.NodeNamePrefix, "node-name-prefix", nodeConfig.NodeNamePrefix, "Simulation node's name prefix")
 
 	flagSet.StringArrayVar(&nodeConfig.FornaxCoreUrls, "fornaxcore-ip", nodeConfig.FornaxCoreUrls, "IPv4 addresses of the fornaxcores. must provided")
 

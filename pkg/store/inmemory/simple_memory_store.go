@@ -47,6 +47,7 @@ type MemoryStore struct {
 	revmu              sync.RWMutex
 	stopChannel        chan interface{}
 	kvStore            *objStoreMap
+	kvStoreObjCount    int64
 	revSortedObjList   *objList
 	revSortedObjListMu sync.RWMutex
 	groupResource      schema.GroupResource
@@ -66,13 +67,12 @@ var (
 	_MemoryRev = uint64(2<<61) + uint64(time.Now().UnixNano())
 )
 
-// DefaultObjRevListInitSize must lager than DefaultObjRevListGrowThread, when revSortedObjList is filled up with empty slot less than DefaultObjRevListGrowThreashold, grow it DefaultObjRevListGrowThreashold
+// DefaultObjRevListInitSize must lager than DefaultObjRevListGrowSize, when revSortedObjList is filled up with empty slot less than DefaultObjRevListGrowSize, grow it DefaultObjRevListInitSize
 const (
-	DefaultObjRevListInitSize       = 20000
-	DefaultObjRevListGrowThreashold = 10000
-	NilSlotShrinkLowThrehold        = 10000
-	NilSlotShrinkHighThrehold       = 100000
-	DefaultHouseKeepingInterval     = 60 * time.Second
+	DefaultObjRevListInitSize   = 1000000
+	DefaultObjRevListGrowSize   = 100000
+	DefaultObjRevListShrinkSize = 100000
+	DefaultHouseKeepingInterval = 60 * time.Second
 )
 
 // NewMemoryStore return a singleton storage.Interface for a groupResource
@@ -102,13 +102,13 @@ func NewMemoryStore(ctx context.Context, groupResource schema.GroupResource, grv
 			case <-ctx.Done():
 				return
 			case <-pruneTicker.C:
-				c := si.kvStore.estimateCount()
+				c := atomic.LoadInt64(&si.kvStoreObjCount)
 				if c > 0 {
-					if si.revSortedObjList.lastObjIndex > uint64(c+NilSlotShrinkHighThrehold) {
+					if si.revSortedObjList.lastObjIndex > uint64(c+DefaultObjRevListShrinkSize) {
 						func() {
 							si.revSortedObjListMu.Lock()
-							defer si.revSortedObjListMu.Unlock()
-							si.revSortedObjList.shrink(uint64(c + NilSlotShrinkLowThrehold))
+							si.revSortedObjList.shrink(uint64(c + DefaultObjRevListShrinkSize))
+							si.revSortedObjListMu.Unlock()
 						}()
 					}
 				}
@@ -209,6 +209,7 @@ func (ms *MemoryStore) Create(ctx context.Context, key string, obj runtime.Objec
 			isCreated: true,
 		}
 		ms.sendEvent(event)
+		atomic.AddInt64(&ms.kvStoreObjCount, 1)
 	}
 	return nil
 }
@@ -289,6 +290,7 @@ func (ms *MemoryStore) Delete(ctx context.Context, key string, out runtime.Objec
 			isCreated: false,
 		}
 		ms.sendEvent(event)
+		atomic.AddInt64(&ms.kvStoreObjCount, -1)
 	}
 	return nil
 }
@@ -832,14 +834,14 @@ func (ms *MemoryStore) sendEvent(event *objEvent) {
 // the equation to find how many nil elements is last obj index in list - num of objs in kvStore
 func (ms *MemoryStore) reserveRevAndSlot() (uint64, uint64, error) {
 	ms.revmu.Lock()
-	defer ms.revmu.Unlock()
 	uindex := atomic.LoadUint64(&ms.revSortedObjList.lastObjIndex)
-	if uint64(ms.revSortedObjList.Len()) < uindex+DefaultObjRevListGrowThreashold {
-		ms.revSortedObjList.grow(DefaultObjRevListGrowThreashold)
+	if uint64(ms.revSortedObjList.Len()) < uindex+DefaultObjRevListGrowSize {
+		ms.revSortedObjList.grow(DefaultObjRevListInitSize)
 	}
 	rev := atomic.AddUint64(&_MemoryRev, 1)
 	uindex = atomic.AddUint64(&ms.revSortedObjList.lastObjIndex, 1)
 
+	ms.revmu.Unlock()
 	return rev, uindex, nil
 }
 
@@ -886,7 +888,6 @@ func (ms *MemoryStore) getSingleObjectAsList(ctx context.Context, key string, op
 				}
 			case "":
 				if rv > *fromRV {
-					// append
 					store.AppendListItem(listRetVal, obj.obj, rv, pred)
 				}
 			default:

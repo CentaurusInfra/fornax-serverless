@@ -19,6 +19,7 @@ package main
 import (
 	"context"
 	"os"
+	"runtime/debug"
 	"time"
 
 	"k8s.io/apimachinery/pkg/runtime"
@@ -39,6 +40,7 @@ import (
 	"centaurusinfra.io/fornax-serverless/pkg/fornaxcore/session"
 	"centaurusinfra.io/fornax-serverless/pkg/store"
 	"centaurusinfra.io/fornax-serverless/pkg/store/factory"
+	// "github.com/pkg/profile"
 )
 
 var (
@@ -50,6 +52,8 @@ func init() {
 }
 
 func main() {
+	// defer profile.Start().Stop()
+	debug.SetGCPercent(300)
 	// initialize fornax resource memory store
 	ctx := context.Background()
 	nodeStore := factory.NewFornaxNodeStorage(ctx)
@@ -57,14 +61,14 @@ func main() {
 	appStatusStore := factory.NewFornaxApplicationStatusStorage(ctx)
 	appSessionStore := factory.NewFornaxApplicationSessionStorage(ctx)
 
-	// new fornaxcore grpc grpcServer which implement node agent proxy
-	grpcServer := grpc_server.NewGrpcServer()
+	// new fornaxcore grpc server which talk with node agent
+	nodeAgentServer := grpc_server.NewGrpcServer()
 
 	// start internal managers and pod scheduler
-	podManager := pod.NewPodManager(ctx, podStore, grpcServer)
-	sessionManager := session.NewSessionManager(ctx, grpcServer, appSessionStore)
-	nodeManager := node.NewNodeManager(ctx, nodeStore, grpcServer, podManager, sessionManager)
-	podScheduler := podscheduler.NewPodScheduler(ctx, grpcServer, nodeManager, podManager,
+	podManager := pod.NewPodManager(ctx, podStore, nodeAgentServer)
+	sessionManager := session.NewSessionManager(ctx, appSessionStore, nodeAgentServer)
+	nodeManager := node.NewNodeManager(ctx, nodeStore, nodeAgentServer, podManager, sessionManager)
+	podScheduler := podscheduler.NewPodScheduler(ctx, nodeAgentServer, nodeManager, podManager,
 		&podscheduler.SchedulePolicy{
 			NumOfEvaluatedNodes: 100,
 			BackoffDuration:     10 * time.Second,
@@ -79,20 +83,18 @@ func main() {
 	appManager := application.NewApplicationManager(ctx, podManager, sessionManager, appStatusStore)
 	appManager.Run(ctx)
 
-	// start fornaxcore grpc server to listen nodes
+	// start fornaxcore grpc nodeagnet server to listen node agents
 	klog.Info("starting fornaxcore grpc node agent server")
 	port := 18001
 	// we are using k8s api server, command line flags are only parsed when apiserver started
 	// TODO, parse flags before start api server and get certificates from command line flags,
 	certFile := ""
 	keyFile := ""
-	err := grpcServer.RunGrpcServer(ctx, nodemonitor.NewNodeMonitor(nodeManager), port, certFile, keyFile)
+	err := nodeAgentServer.RunGrpcServer(ctx, nodemonitor.NewNodeMonitor(nodeManager), port, certFile, keyFile)
 	if err != nil {
 		klog.Fatal(err)
 	}
 	klog.Info("Fornaxcore grpc server started")
-
-	// TODO, wait for all known nodes are registered
 
 	// start api server to listen to clients
 	klog.Info("starting fornaxcore rest api server")

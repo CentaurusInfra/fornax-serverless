@@ -28,6 +28,15 @@ import (
 	"k8s.io/klog/v2"
 )
 
+type objEvent struct {
+	key       string
+	obj       runtime.Object
+	oldObj    runtime.Object
+	rev       uint64
+	isDeleted bool
+	isCreated bool
+}
+
 type memoryStoreWatcher struct {
 	ctx                    context.Context
 	stopped                bool
@@ -51,9 +60,9 @@ func NewMemoryStoreWatcher(ctx context.Context, key string, opts storage.ListOpt
 		recursive:              opts.Recursive,
 		predicate:              opts.Predicate,
 		stopChannel:            make(chan bool, 1),
-		incomingChan:           make(chan *objEvent, 500),
-		outgoingChan:           make(chan watch.Event, 500),
-		outgoingChanWithOldObj: make(chan store.WatchEventWithOldObj, 500),
+		incomingChan:           make(chan *objEvent, 1000),
+		outgoingChan:           make(chan watch.Event, 100),
+		outgoingChanWithOldObj: make(chan store.WatchEventWithOldObj, 100),
 	}
 	// if predicate.Empty() {
 	//  // The filter doesn't filter out any object.

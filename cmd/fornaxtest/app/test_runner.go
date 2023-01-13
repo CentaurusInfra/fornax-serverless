@@ -121,7 +121,7 @@ func Run(ctx context.Context, testConfig config.TestConfiguration) {
 	logs.InitLogs()
 
 	ns := "fornaxtest"
-	initNodeInformer(ctx, ns)
+	// initNodeInformer(ctx, ns)
 	// initPodInformer(ctx, ns)
 	initApplicationInformer(ctx, ns)
 	initApplicationSessionInformer(ctx, ns)

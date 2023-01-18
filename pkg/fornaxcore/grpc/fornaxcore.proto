@@ -45,9 +45,8 @@ enum MessageType {
 }
  
 message FornaxCoreMessage {
-  string messageIdentifier = 1;
-  NodeIdentifier nodeIdentifier = 2;
-  MessageType messageType = 3;
+  NodeIdentifier nodeIdentifier = 1;
+  MessageType messageType = 2;
   oneof MessageBody {
     FornaxCoreConfiguration fornaxCoreConfiguration = 100;
     NodeConfiguration nodeConfiguration = 200;

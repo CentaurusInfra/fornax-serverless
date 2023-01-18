@@ -23,7 +23,6 @@ import (
 	"math/rand"
 	"net"
 	"sync"
-	"time"
 
 	fornaxv1 "centaurusinfra.io/fornax-serverless/pkg/apis/core/v1"
 	fornaxcore_grpc "centaurusinfra.io/fornax-serverless/pkg/fornaxcore/grpc"
@@ -132,7 +131,6 @@ func (g *grpcServer) delistNode(node string) {
 }
 
 func (g *grpcServer) GetMessage(identifier *fornaxcore_grpc.NodeIdentifier, server fornaxcore_grpc.FornaxCoreService_GetMessageServer) error {
-	var messageSeq int64 = 0
 	ch := make(chan *fornaxcore_grpc.FornaxCoreMessage, NodeOutgoingChanBufferSize)
 	if err := g.enlistNode(identifier.GetIdentifier(), ch); err != nil {
 		close(ch)
@@ -146,9 +144,6 @@ func (g *grpcServer) GetMessage(identifier *fornaxcore_grpc.NodeIdentifier, serv
 			g.delistNode(identifier.GetIdentifier())
 			return nil
 		case msg := <-ch:
-			messageSeq += 1
-			seq := fmt.Sprintf("%d", messageSeq)
-			msg.MessageIdentifier = seq
 			msg.NodeIdentifier = identifier
 			if err := server.Send(msg); err != nil {
 				klog.ErrorS(err, "Failed to send message via GetMessage stream connection", "node", identifier)
@@ -185,7 +180,6 @@ func (g *grpcServer) PutMessage(ctx context.Context, message *fornaxcore_grpc.Fo
 }
 
 func (g *grpcServer) handleMessages(message *fornaxcore_grpc.FornaxCoreMessage) {
-	st := time.Now().UnixMicro()
 	var err error
 	var reply *fornaxcore_grpc.FornaxCoreMessage
 	switch message.GetMessageType() {
@@ -211,8 +205,6 @@ func (g *grpcServer) handleMessages(message *fornaxcore_grpc.FornaxCoreMessage) 
 	if reply != nil {
 		g.DispatchNodeMessage(message.GetNodeIdentifier().GetIdentifier(), reply)
 	}
-	et := time.Now().UnixMicro()
-	klog.V(5).InfoS("Done processing a node message", "node", message.GetNodeIdentifier().Identifier, "type", message.GetMessageType(), "took-micro", et-st)
 }
 
 func (g *grpcServer) mustEmbedUnimplementedFornaxCoreServiceServer() {

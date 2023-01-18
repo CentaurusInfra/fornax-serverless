@@ -19,7 +19,6 @@ package fornaxcore
 import (
 	"errors"
 	"fmt"
-	"time"
 
 	fornax "centaurusinfra.io/fornax-serverless/pkg/fornaxcore/grpc"
 	"centaurusinfra.io/fornax-serverless/pkg/message"
@@ -39,7 +38,6 @@ type FornaxCoreActor struct {
 	fornaxcores   map[string]FornaxCoreClient
 	fornaxChannel chan *fornax.FornaxCoreMessage
 	nodeActor     message.ActorRef
-	messageSeq    int64
 }
 
 func (n *FornaxCoreActor) Start(nodeActor message.ActorRef) error {
@@ -68,7 +66,7 @@ func (n *FornaxCoreActor) Start(nodeActor message.ActorRef) error {
 			case msg, ok := <-n.fornaxChannel:
 				if ok {
 					if msg.GetNodeIdentifier().GetIdentifier() != n.nodeName {
-						klog.Warningf("Received a message meant to send to different node %s, skip it", msg.GetMessageIdentifier)
+						klog.Warningf("Received a message meant to send to different node %s, skip it", msg.GetNodeIdentifier().GetIdentifier())
 					}
 
 					// fornaxcore actor is message broker, all fornaxcore message is sent to node actor to handle execept fornaxcore configuration
@@ -106,11 +104,8 @@ func (n *FornaxCoreActor) Stop() error {
 // when fornaxcore actor received another actor's message, it meant to send to fornaxcore a grpc message
 // do not return error as it works as proxy, node/pod/session actors are supposed to resend new state
 func (n *FornaxCoreActor) actorMessageProcess(msg message.ActorMessage) (interface{}, error) {
-	n.messageSeq += 1
-	messageSeq := fmt.Sprintf("%d", n.messageSeq)
 	for _, v := range n.fornaxcores {
 		msgBody := msg.Body.(*fornax.FornaxCoreMessage)
-		msgBody.MessageIdentifier = messageSeq
 		msgBody.NodeIdentifier = &fornax.NodeIdentifier{
 			Ip:         n.nodeIP,
 			Identifier: n.nodeName,
@@ -198,7 +193,6 @@ func NewFornaxCoreActor(nodeIP, nodeName string, fornaxCoreIps []string) *Fornax
 		stop:          false,
 		fornaxcores:   fornaxcores,
 		fornaxChannel: make(chan *fornax.FornaxCoreMessage, 30),
-		messageSeq:    time.Now().Unix() + 1, // use current epeco for starting message seq, so, it will be different everytime when nodeagent start
 	}
 
 	actor.innerActor = message.NewLocalChannelActor(nodeName, actor.actorMessageProcess)

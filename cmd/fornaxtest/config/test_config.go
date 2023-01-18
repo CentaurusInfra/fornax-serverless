@@ -28,6 +28,7 @@ type TestConfiguration struct {
 	NumOfSessionPerApp   int
 	AppNamePrefix        string
 	NoNodeSessionService bool
+	LWOnly               bool
 }
 
 type TestCase string
@@ -47,6 +48,7 @@ func AddConfigFlags(flagSet *pflag.FlagSet, simuConfig *TestConfiguration) {
 	flagSet.IntVar(&simuConfig.NumOfTestCycle, "num-of-test-cycle", simuConfig.NumOfTestCycle, "how many test run before exit")
 	flagSet.StringVar(&simuConfig.AppNamePrefix, "app-name-prefix", simuConfig.AppNamePrefix, "app name prefix")
 	flagSet.BoolVar(&simuConfig.NoNodeSessionService, "no-session-service", simuConfig.NoNodeSessionService, "do not use node session service to open session if has this flag")
+	flagSet.BoolVar(&simuConfig.LWOnly, "lw-only", simuConfig.LWOnly, "only list watch resources")
 }
 
 func DefaultConfiguration() *TestConfiguration {
@@ -59,5 +61,6 @@ func DefaultConfiguration() *TestConfiguration {
 		NumOfTestCycle:       1,
 		AppNamePrefix:        "echo",
 		NoNodeSessionService: false,
+		LWOnly:               false,
 	}
 }

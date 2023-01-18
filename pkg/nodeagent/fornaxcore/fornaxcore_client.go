@@ -20,7 +20,6 @@ import (
 	"context"
 	"errors"
 	"io"
-	"sync"
 	"time"
 
 	fornax "centaurusinfra.io/fornax-serverless/pkg/fornaxcore/grpc"
@@ -61,7 +60,6 @@ type FornaxCoreClient interface {
 }
 
 type fornaxCoreClient struct {
-	mu               sync.Mutex
 	identifier       *fornax.NodeIdentifier
 	done             bool
 	config           *FornaxCoreConfiguration
@@ -79,8 +77,6 @@ func (f *fornaxCoreClient) GetMessage(receiver string, channel chan *fornax.Forn
 
 // PutMessage implements FornaxCore
 func (f *fornaxCoreClient) PutMessage(message *fornax.FornaxCoreMessage) error {
-	f.mu.Lock()
-	defer f.mu.Unlock()
 	if f.service == nil {
 		return errors.New("FornaxCore connection is not initialized yet")
 	}
@@ -89,10 +85,7 @@ func (f *fornaxCoreClient) PutMessage(message *fornax.FornaxCoreMessage) error {
 	defer cancel()
 	opts := grpc.EmptyCallOption{}
 	_, err := f.service.PutMessage(ctx, message, opts)
-	if err != nil {
-		return err
-	}
-	return nil
+	return err
 }
 
 func (f *fornaxCoreClient) disconnect() error {
@@ -210,7 +203,6 @@ var _ FornaxCoreClient = &fornaxCoreClient{}
 
 func NewFornaxCoreClient(identifier *fornax.NodeIdentifier, config *FornaxCoreConfiguration) *fornaxCoreClient {
 	f := &fornaxCoreClient{
-		mu:               sync.Mutex{},
 		identifier:       identifier,
 		done:             false,
 		config:           config,

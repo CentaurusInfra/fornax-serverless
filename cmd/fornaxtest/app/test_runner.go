@@ -128,6 +128,23 @@ func Run(ctx context.Context, testConfig config.TestConfiguration) {
 
 	done := false
 	st := time.Now().UnixMilli()
+	if testConfig.LWOnly {
+		go func() {
+			for {
+				time.Sleep(1 * time.Second)
+				printWatchEvent()
+				if done {
+					break
+				}
+			}
+		}()
+		select {
+		case <-ctx.Done():
+			done = true
+			return
+		}
+	}
+
 	go func() {
 		for {
 			time.Sleep(1 * time.Second)
@@ -179,19 +196,15 @@ func Run(ctx context.Context, testConfig config.TestConfiguration) {
 
 	et := time.Now().UnixMilli()
 	klog.Infof("--------Test summary ----------\n")
-	fmt.Printf("Received %d app add watch events\n", appEventsNum.addevents)
-	fmt.Printf("Received %d app upd watch events\n", appEventsNum.updevents)
-	fmt.Printf("Received %d app del watch events\n", appEventsNum.delevents)
-	fmt.Printf("Received %d session add watch events\n", sessionEventsNum.addevents)
-	fmt.Printf("Received %d session upd watch events\n", sessionEventsNum.updevents)
-	fmt.Printf("Received %d session del watch events\n", sessionEventsNum.delevents)
-	fmt.Printf("Received %d pod add watch events\n", podEventsNum.addevents)
-	fmt.Printf("Received %d pod upd watch events\n", podEventsNum.updevents)
-	fmt.Printf("Received %d pod del watch events\n", podEventsNum.delevents)
-	fmt.Printf("Received %d node add watch events\n", nodeEventsNum.addevents)
-	fmt.Printf("Received %d node upd watch events\n", nodeEventsNum.updevents)
-	fmt.Printf("Received %d node del watch events\n", nodeEventsNum.delevents)
+	printWatchEvent()
 	summaryAppTestResult(allTestApps, st, et)
 	summarySessionTestResult(allTestSessions, st, et)
 	os.Exit(0)
+}
+
+func printWatchEvent() {
+	// fmt.Printf("Received %d add, %d upd, %d del node watch events\n", nodeEventsNum.addevents, nodeEventsNum.updevents, nodeEventsNum.delevents)
+	// fmt.Printf("Received %d add, %d upd, %d del pod watch events\n", podEventsNum.addevents, podEventsNum.updevents, sessionEventsNum.delevents)
+	fmt.Printf("Received %d add, %d upd, %d del app watch events\n", appEventsNum.addevents, appEventsNum.updevents, appEventsNum.delevents)
+	fmt.Printf("Received %d add, %d upd, %d del session watch events\n", sessionEventsNum.addevents, sessionEventsNum.updevents, sessionEventsNum.delevents)
 }

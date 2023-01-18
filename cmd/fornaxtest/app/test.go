@@ -61,7 +61,7 @@ var (
 				},
 				Requests: map[v1.ResourceName]resource.Quantity{
 					"memory": util.ResourceQuantity(50*1024*1024, v1.ResourceMemory),
-					"cpu":    util.ResourceQuantity(0.1*1000, v1.ResourceCPU),
+					"cpu":    util.ResourceQuantity(0.01*1000, v1.ResourceCPU),
 				},
 			},
 		}},
@@ -100,7 +100,7 @@ var (
 				},
 				Requests: map[v1.ResourceName]resource.Quantity{
 					"memory": util.ResourceQuantity(50*1024*1024, v1.ResourceMemory),
-					"cpu":    util.ResourceQuantity(0.1*1000, v1.ResourceCPU),
+					"cpu":    util.ResourceQuantity(0.01*1000, v1.ResourceCPU),
 				},
 			},
 		}},
@@ -130,7 +130,7 @@ var (
 				},
 				Requests: map[v1.ResourceName]resource.Quantity{
 					"memory": util.ResourceQuantity(50*1024*1024, v1.ResourceMemory),
-					"cpu":    util.ResourceQuantity(0.1*1000, v1.ResourceCPU),
+					"cpu":    util.ResourceQuantity(0.01*1000, v1.ResourceCPU),
 				},
 			},
 		}},
@@ -326,7 +326,7 @@ func onApplicationSessionDeleteEvent(obj interface{}) {
 func waitForSessionSetup(namespace, appName string, sessions TestSessionArray) {
 	if len(sessions) > 0 {
 		for {
-			time.Sleep(1 * time.Millisecond)
+			time.Sleep(2 * time.Millisecond)
 			allSetup := true
 			for _, ts := range sessions {
 				if ts.status == fornaxv1.SessionStatusPending {
@@ -500,7 +500,7 @@ func waitForAppSetup(ta *TestApplication) {
 				ta.availableTimeMilli = at
 				break
 			}
-			time.Sleep(100 * time.Millisecond)
+			time.Sleep(500 * time.Millisecond)
 			continue
 		}
 	}

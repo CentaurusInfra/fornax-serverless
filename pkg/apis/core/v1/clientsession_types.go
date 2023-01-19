@@ -27,10 +27,9 @@ import (
 	"sigs.k8s.io/apiserver-runtime/pkg/builder/resource/resourcestrategy"
 )
 
+// ClientSession
 // +genclient
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
-
-// ClientSession
 // +k8s:openapi-gen=true
 type ClientSession struct {
 	metav1.TypeMeta   `json:",inline"`
@@ -41,6 +40,7 @@ type ClientSession struct {
 }
 
 // ClientSessionList
+// +k8s:openapi-gen=true
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
 type ClientSessionList struct {
 	metav1.TypeMeta `json:",inline"`

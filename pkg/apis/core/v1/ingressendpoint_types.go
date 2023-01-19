@@ -27,10 +27,9 @@ import (
 	"sigs.k8s.io/apiserver-runtime/pkg/builder/resource/resourcestrategy"
 )
 
+// IngressEndpoint
 // +genclient
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
-
-// IngressEndpoint
 // +k8s:openapi-gen=true
 type IngressEndpoint struct {
 	metav1.TypeMeta   `json:",inline"`
@@ -42,6 +41,7 @@ type IngressEndpoint struct {
 
 // IngressEndpointList
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
+// +k8s:openapi-gen=true
 type IngressEndpointList struct {
 	metav1.TypeMeta `json:",inline"`
 	metav1.ListMeta `json:"metadata,omitempty"`

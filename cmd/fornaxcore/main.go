@@ -25,12 +25,15 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apiserver/pkg/server"
 	"k8s.io/klog/v2"
+	"k8s.io/kube-openapi/pkg/common"
+	k8sopenapi "k8s.io/kubernetes/pkg/generated/openapi"
 	"sigs.k8s.io/apiserver-runtime/pkg/builder"
 
 	// +kubebuilder:scaffold:resource-imports
 
 	fornaxv1 "centaurusinfra.io/fornax-serverless/pkg/apis/core/v1"
 	fornaxk8sv1 "centaurusinfra.io/fornax-serverless/pkg/apis/k8s/core/v1"
+	"centaurusinfra.io/fornax-serverless/pkg/apis/openapi"
 	"centaurusinfra.io/fornax-serverless/pkg/fornaxcore/application"
 	grpc_server "centaurusinfra.io/fornax-serverless/pkg/fornaxcore/grpc/server"
 	"centaurusinfra.io/fornax-serverless/pkg/fornaxcore/node"
@@ -101,6 +104,7 @@ func main() {
 	// +kubebuilder:scaffold:resource-register
 	apiserver := builder.APIServer.
 		WithLocalDebugExtension().
+		WithOpenAPIDefinitions("FornaxCore", "centaurusinfra.io/fornax-serverless/pkg/apis/core/v1", getOpenAPIDefinitions).
 		WithConfigFns(func(config *server.RecommendedConfig) *server.RecommendedConfig {
 			optionsGetter := config.RESTOptionsGetter
 			config.RESTOptionsGetter = &factory.FornaxRestOptionsFactory{
@@ -124,4 +128,12 @@ func main() {
 		os.Exit(-1)
 	}
 
+}
+
+func getOpenAPIDefinitions(ref common.ReferenceCallback) map[string]common.OpenAPIDefinition {
+	definitions := k8sopenapi.GetOpenAPIDefinitions(ref)
+	for k, v := range openapi.GetOpenAPIDefinitions(ref) {
+		definitions[k] = v
+	}
+	return definitions
 }

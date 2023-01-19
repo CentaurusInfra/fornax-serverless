@@ -386,25 +386,25 @@ func (am *ApplicationManager) calculateDesiredIdlePods(application *fornaxv1.App
 	idleSessionNum := int(sessionSupported) - sessionNum
 
 	if application.Spec.ScalingPolicy.ScalingPolicyType == fornaxv1.ScalingPolicyTypeIdleSessionNum {
-		lowThresholdNum := int(application.Spec.ScalingPolicy.IdleSessionNumThreshold.LowWaterMark)
+		lowThresholdNum := int(application.Spec.ScalingPolicy.IdleSessionNumThreshold.Low)
 		if idleSessionNum < lowThresholdNum {
 			desiredCount = idlePodNum + int(math.Ceil(float64(lowThresholdNum-idleSessionNum)))
 		}
 
-		highThresholdNum := int(application.Spec.ScalingPolicy.IdleSessionNumThreshold.HighWaterMark)
+		highThresholdNum := int(application.Spec.ScalingPolicy.IdleSessionNumThreshold.High)
 		if idleSessionNum > highThresholdNum {
 			desiredCount = idlePodNum - int(math.Floor(float64(idleSessionNum-highThresholdNum)))
 		}
 	}
 
 	if application.Spec.ScalingPolicy.ScalingPolicyType == fornaxv1.ScalingPolicyTypeIdleSessionPercent {
-		lowThreshold := int(application.Spec.ScalingPolicy.IdleSessionPercentThreshold.LowWaterMark)
+		lowThreshold := int(application.Spec.ScalingPolicy.IdleSessionPercentThreshold.Low)
 		lowThresholdNum := sessionSupported * lowThreshold / 100
 		if idleSessionNum < lowThreshold {
 			desiredCount = idlePodNum + int(math.Ceil(float64(lowThresholdNum-idleSessionNum)))
 		}
 
-		highThreshold := int(application.Spec.ScalingPolicy.IdleSessionPercentThreshold.HighWaterMark)
+		highThreshold := int(application.Spec.ScalingPolicy.IdleSessionPercentThreshold.High)
 		highThresholdNum := sessionSupported * highThreshold / 100
 		if idleSessionNum > highThreshold {
 			desiredCount = idlePodNum - int(math.Floor(float64(idleSessionNum-highThresholdNum)))

@@ -29,10 +29,9 @@ import (
 	"sigs.k8s.io/apiserver-runtime/pkg/builder/resource/resourcestrategy"
 )
 
+// Application
 // +genclient
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
-
-// Application
 // +k8s:openapi-gen=true
 type Application struct {
 	metav1.TypeMeta   `json:",inline"`
@@ -44,6 +43,7 @@ type Application struct {
 
 // ApplicationList
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
+// +k8s:openapi-gen=true
 type ApplicationList struct {
 	metav1.TypeMeta `json:",inline"`
 	metav1.ListMeta `json:"metadata,omitempty"`
@@ -57,6 +57,7 @@ type ApplicationSpec struct {
 	// Important: Run "make" to regenerate code after modifying this file
 
 	// runtime image and resource requirement of a application container
+	// +listType=atomic
 	Containers []corev1.Container `json:"containers,omitempty"`
 
 	// container will use grpc session service on node agent to start application session
@@ -102,11 +103,11 @@ type ScalingPolicy struct {
 type IdelSessionNumThreshold struct {
 	// scaling down when idle session more than this number
 	// +optional, default 0
-	HighWaterMark uint32 `json:"highWaterMark,omitempty"`
+	High uint32 `json:"high,omitempty"`
 
 	// scaling up when idle session less than this number
 	// +optional, default 0
-	LowWaterMark uint32 `json:"lowWaterMark,omitempty"`
+	Low uint32 `json:"low,omitempty"`
 }
 
 // high watermark should > low watermark, if both are 0, then no auto scaling for idle buffer,
@@ -114,11 +115,11 @@ type IdelSessionNumThreshold struct {
 type IdelSessionPercentThreshold struct {
 	// scaling down when idle session percent more than this number
 	// +optional, default 0, must less than 100
-	HighWaterMark uint32 `json:"idleSessionNumThresholdHighWaterMark,omitempty"`
+	High uint32 `json:"high,omitempty"`
 
 	// scaling up when idle session percent less than this number
 	// +optional, default 0, must less than 100
-	LowWaterMark uint32 `json:"idleSessionNumThresholdLowWaterMark,omitempty"`
+	Low uint32 `json:"low,omitempty"`
 }
 
 type DeploymentAction string
@@ -285,7 +286,7 @@ func (in *Application) Validate(ctx context.Context) field.ErrorList {
 	}
 
 	if in.Spec.ScalingPolicy.IdleSessionPercentThreshold != nil &&
-		in.Spec.ScalingPolicy.IdleSessionPercentThreshold.HighWaterMark < in.Spec.ScalingPolicy.IdleSessionPercentThreshold.LowWaterMark {
+		in.Spec.ScalingPolicy.IdleSessionPercentThreshold.High < in.Spec.ScalingPolicy.IdleSessionPercentThreshold.Low {
 		err := field.Error{
 			Type:   field.ErrorTypeInvalid,
 			Field:  "Spec.IdleSessionPercentThreshold",
@@ -295,7 +296,7 @@ func (in *Application) Validate(ctx context.Context) field.ErrorList {
 	}
 
 	if in.Spec.ScalingPolicy.IdleSessionPercentThreshold != nil &&
-		in.Spec.ScalingPolicy.IdleSessionPercentThreshold.HighWaterMark > 100 {
+		in.Spec.ScalingPolicy.IdleSessionPercentThreshold.High > 100 {
 		err := field.Error{
 			Type:   field.ErrorTypeInvalid,
 			Field:  "Spec.IdleSessionPercentThreshold",
@@ -305,7 +306,7 @@ func (in *Application) Validate(ctx context.Context) field.ErrorList {
 	}
 
 	if in.Spec.ScalingPolicy.IdleSessionNumThreshold != nil &&
-		in.Spec.ScalingPolicy.IdleSessionNumThreshold.HighWaterMark < in.Spec.ScalingPolicy.IdleSessionNumThreshold.LowWaterMark {
+		in.Spec.ScalingPolicy.IdleSessionNumThreshold.High < in.Spec.ScalingPolicy.IdleSessionNumThreshold.Low {
 		err := field.Error{
 			Type:   field.ErrorTypeInvalid,
 			Field:  "Spec.IdleSessionNumThreshold",

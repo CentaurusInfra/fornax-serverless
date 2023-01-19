@@ -35,19 +35,27 @@ help: ## Display this help.
 	@awk 'BEGIN {FS = ":.*##"; printf "\nUsage:\n  make \033[36m<target>\033[0m\n"} /^[a-zA-Z_0-9-]+:.*?##/ { printf "  \033[36m%-15s\033[0m %s\n", $$1, $$2 } /^##@/ { printf "\n\033[1m%s\033[0m\n", substr($$0, 5) } ' $(MAKEFILE_LIST)
 
 .PHONY: manifests
-manifests: controller-gen ## Generate WebhookConfiguration, ClusterRole and CustomResourceDefinition objects.
+manifests: controller-gen-tool ## Generate WebhookConfiguration, ClusterRole and CustomResourceDefinition objects.
 	$(CONTROLLER_GEN) rbac:roleName=manager-role crd webhook paths="./pkg/apis/..." output:crd:artifacts:config=config/crd/bases
 
-## Generate code for rest api resource model, containing DeepCopy, DeepCopyInto, and DeepCopyObject method implementations.
+## Generate code for resources
 .PHONY: generate
-generate: controller-gen openapi-gen client-gen
+generate: controller-gen openapi-gen
+
+## Generate code for rest api resource model, containing DeepCopy, DeepCopyInto, and DeepCopyObject method implementations.
+.PHONY: controller-gen
+controller-gen: controller-gen-tool
 	$(CONTROLLER_GEN) object:headerFile="hack/boilerplate.go.txt" paths="./pkg/apis/core/..."
-	# $(OPENAPI_GEN) --go-header-file="hack/boilerplate.go.txt" --input-dirs="./pkg/apis/core/..." --output-package="centaurusinfra.io/fornax-serverless/pkg/apis/openapi"
+
+## Generate openapi spec for api resource model
+.PHONY: openapi-gen
+openapi-gen: openapi-gen-tool
+	$(OPENAPI_GEN) --go-header-file="hack/boilerplate.go.txt" --input-dirs="./pkg/apis/core/..." --output-package="centaurusinfra.io/fornax-serverless/pkg/apis/openapi"
 
  ## Generate client-go sdk containing clientset, lister, and informer method implementations.
 GENERATE_GROUPS = $(shell pwd)/hack/generate-groups.sh
-.PHONY: generate-client
-generate-client-gen: client-gen
+.PHONY: client-gen
+client-gen: client-gen-tool
 	$(GENERATE_GROUPS) "client, lister, informer"  centaurusinfra.io/fornax-serverless/pkg/client "centaurusinfra.io/fornax-serverless/pkg/apis" "core:v1" \
 	--go-header-file hack/boilerplate.go.txt \
 
@@ -181,21 +189,21 @@ install-certs:
 uninstall: ## Uninstall CRDs from the K8s cluster specified in ~/.kube/config. Call with ignore-not-found=true to ignore resource not found errors during deletion.
 
 CONTROLLER_GEN = $(shell pwd)/bin/controller-gen
-.PHONY: controller-gen
-controller-gen: ## Download controller-gen locally if necessary.
+.PHONY: controller-gen-tool
+controller-gen-tool: ## Download controller-gen-tool locally if necessary.
 	$(call go-get-tool,$(CONTROLLER_GEN),sigs.k8s.io/controller-tools/cmd/controller-gen@v0.9.0)
 
 OPENAPI_GEN = $(shell pwd)/bin/openapi-gen
-.PHONY: openapi-gen
-openapi-gen: ## Download openapi-gen locally if necessary.
+.PHONY: openapi-gen-tool
+openapi-gen-tool: ## Download openapi-gen-tool locally if necessary.
 	$(call go-get-tool,$(OPENAPI_GEN),k8s.io/kube-openapi/cmd/openapi-gen@v0.0.0-20211115234752-e816edb12b65)
 
 CLIENT_GEN = $(shell pwd)/bin/client-gen		## use it to generate clientset
 LISTER_GEN = $(shell pwd)/bin/lister-gen		## use it to generate lister watch 
 INFORMER_GEN = $(shell pwd)/bin/informer-gen    ## use it to generate informer info
-.PHONY: client-gen
-client-gen: ## Download client-gen, lister-gen and informer-gen locally if necessary.
-	$(call go-get-tool,$(CLIENT_GEN),k8s.io/code-generator/cmd/client-gen@v0.23.1)
+.PHONY: client-gen-tool
+client-gen-tool: ## Download client-genl, lister-gen and informer-gen locally if necessary.
+	$(call go-get-tool,$(CLIENT_GEN),k8s.io/code-generator/cmd/client-gen-tool@v0.23.1)
 	$(call go-get-tool,$(LISTER_GEN),k8s.io/code-generator/cmd/lister-gen@v0.23.1)
 	$(call go-get-tool,$(INFORMER_GEN),k8s.io/code-generator/cmd/informer-gen@v0.23.1)
 

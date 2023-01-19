@@ -30,10 +30,9 @@ import (
 	"sigs.k8s.io/apiserver-runtime/pkg/builder/resource/resourcestrategy"
 )
 
+// ApplicationSession
 // +genclient
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
-
-// ApplicationSession
 // +k8s:openapi-gen=true
 type ApplicationSession struct {
 	metav1.TypeMeta   `json:",inline"`
@@ -45,6 +44,7 @@ type ApplicationSession struct {
 
 // ApplicationSessionList
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
+// +k8s:openapi-gen=true
 type ApplicationSessionList struct {
 	metav1.TypeMeta `json:",inline"`
 	metav1.ListMeta `json:"metadata,omitempty"`
@@ -116,6 +116,7 @@ type AccessEndPoint struct {
 type ApplicationSessionStatus struct {
 	// Endpoint this session is using
 	// +optional
+	// +listType=atomic
 	AccessEndPoints []AccessEndPoint `json:"accessEndPoints,omitempty"`
 
 	// Session status, is Starting, Available or Closed.
@@ -123,9 +124,8 @@ type ApplicationSessionStatus struct {
 	SessionStatus SessionStatus `json:"sessionStatus,omitempty"`
 
 	// +optional
-	// +patchStrategy=merge
 	// +listType=set
-	ClientSessions []corev1.LocalObjectReference `json:"clientSessions,omitempty" patchStrategy:"merge" patchMergeKey:"name"`
+	ClientSessions []corev1.LocalObjectReference `json:"clientSessions,omitempty"`
 
 	// +optional
 	AvailableTime *metav1.Time `json:"availableTime,omitempty"`

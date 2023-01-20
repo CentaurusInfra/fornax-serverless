@@ -72,7 +72,7 @@ var (
 			MaximumInstance:         500000,
 			Burst:                   1,
 			ScalingPolicyType:       "idle_session_number",
-			IdleSessionNumThreshold: &fornaxv1.IdelSessionNumThreshold{HighWaterMark: 0, LowWaterMark: 0},
+			IdleSessionNumThreshold: &fornaxv1.IdelSessionNumThreshold{High: 0, Low: 0},
 		},
 	}
 
@@ -111,7 +111,7 @@ var (
 			MaximumInstance:         500000,
 			Burst:                   1,
 			ScalingPolicyType:       "idle_session_number",
-			IdleSessionNumThreshold: &fornaxv1.IdelSessionNumThreshold{HighWaterMark: 0, LowWaterMark: 0},
+			IdleSessionNumThreshold: &fornaxv1.IdelSessionNumThreshold{High: 0, Low: 0},
 		},
 	}
 
@@ -141,7 +141,7 @@ var (
 			MaximumInstance:         500000,
 			Burst:                   1,
 			ScalingPolicyType:       "idle_session_number",
-			IdleSessionNumThreshold: &fornaxv1.IdelSessionNumThreshold{HighWaterMark: 0, LowWaterMark: 0},
+			IdleSessionNumThreshold: &fornaxv1.IdelSessionNumThreshold{High: 0, Low: 0},
 		},
 	}
 )

@@ -2609,11 +2609,6 @@
                 {
                     "group": "core.fornax-serverless.centaurusinfra.io",
                     "kind": "Application",
-                    "version": "__internal"
-                },
-                {
-                    "group": "core.fornax-serverless.centaurusinfra.io",
-                    "kind": "Application",
                     "version": "v1"
                 }
             ]
@@ -2647,11 +2642,6 @@
                 {
                     "group": "core.fornax-serverless.centaurusinfra.io",
                     "kind": "ApplicationList",
-                    "version": "__internal"
-                },
-                {
-                    "group": "core.fornax-serverless.centaurusinfra.io",
-                    "kind": "ApplicationList",
                     "version": "v1"
                 }
             ]
@@ -2679,11 +2669,6 @@
                 }
             },
             "x-kubernetes-group-version-kind": [
-                {
-                    "group": "core.fornax-serverless.centaurusinfra.io",
-                    "kind": "ApplicationSession",
-                    "version": "__internal"
-                },
                 {
                     "group": "core.fornax-serverless.centaurusinfra.io",
                     "kind": "ApplicationSession",
@@ -2717,11 +2702,6 @@
                 }
             },
             "x-kubernetes-group-version-kind": [
-                {
-                    "group": "core.fornax-serverless.centaurusinfra.io",
-                    "kind": "ApplicationSessionList",
-                    "version": "__internal"
-                },
                 {
                     "group": "core.fornax-serverless.centaurusinfra.io",
                     "kind": "ApplicationSessionList",

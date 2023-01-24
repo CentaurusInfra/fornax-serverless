@@ -76,7 +76,7 @@ var (
 		},
 	}
 
-	CloseGracePeriodSeconds             = uint16(10)
+	CloseGracePeriodSeconds             = uint32(10)
 	SessionWrapperEchoServerSessionSpec = &fornaxv1.ApplicationSessionSpec{
 		ApplicationName:               "",
 		SessionData:                   "session-data",

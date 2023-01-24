@@ -229,7 +229,7 @@ func (g *GrpcSessionService) PutMessage(ctx context.Context, message *SessionMes
 }
 
 // CloseSession dispatch a SessionClose event to pod
-func (g *GrpcSessionService) CloseSession(pod *types.FornaxPod, session *types.FornaxSession, gracePeriodSeconds uint16) error {
+func (g *GrpcSessionService) CloseSession(pod *types.FornaxPod, session *types.FornaxSession, gracePeriodSeconds uint32) error {
 	podId := pod.Identifier
 	sessionId := session.Identifier
 	sessHeartbeat := g.getSessionHeartbeat(sessionId)

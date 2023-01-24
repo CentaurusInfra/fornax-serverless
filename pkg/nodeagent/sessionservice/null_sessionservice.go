@@ -28,7 +28,7 @@ type NullSessionService struct {
 }
 
 // CloseSession implements SessionService
-func (f *NullSessionService) CloseSession(pod *types.FornaxPod, session *types.FornaxSession, graceseconds uint16) error {
+func (f *NullSessionService) CloseSession(pod *types.FornaxPod, session *types.FornaxSession, graceseconds uint32) error {
 	if c, found := f.stateCallbackFuncs[session.Identifier]; found {
 		c(internal.SessionState{
 			SessionId:      session.Identifier,

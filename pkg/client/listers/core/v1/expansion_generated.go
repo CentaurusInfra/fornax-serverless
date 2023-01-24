@@ -25,14 +25,6 @@ type ApplicationListerExpansion interface{}
 // ApplicationNamespaceLister.
 type ApplicationNamespaceListerExpansion interface{}
 
-// ApplicationInstanceListerExpansion allows custom methods to be added to
-// ApplicationInstanceLister.
-type ApplicationInstanceListerExpansion interface{}
-
-// ApplicationInstanceNamespaceListerExpansion allows custom methods to be added to
-// ApplicationInstanceNamespaceLister.
-type ApplicationInstanceNamespaceListerExpansion interface{}
-
 // ApplicationSessionListerExpansion allows custom methods to be added to
 // ApplicationSessionLister.
 type ApplicationSessionListerExpansion interface{}
@@ -40,19 +32,3 @@ type ApplicationSessionListerExpansion interface{}
 // ApplicationSessionNamespaceListerExpansion allows custom methods to be added to
 // ApplicationSessionNamespaceLister.
 type ApplicationSessionNamespaceListerExpansion interface{}
-
-// ClientSessionListerExpansion allows custom methods to be added to
-// ClientSessionLister.
-type ClientSessionListerExpansion interface{}
-
-// ClientSessionNamespaceListerExpansion allows custom methods to be added to
-// ClientSessionNamespaceLister.
-type ClientSessionNamespaceListerExpansion interface{}
-
-// IngressEndpointListerExpansion allows custom methods to be added to
-// IngressEndpointLister.
-type IngressEndpointListerExpansion interface{}
-
-// IngressEndpointNamespaceListerExpansion allows custom methods to be added to
-// IngressEndpointNamespaceLister.
-type IngressEndpointNamespaceListerExpansion interface{}

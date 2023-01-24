@@ -32,6 +32,6 @@ var (
 
 type SessionService interface {
 	OpenSession(pod *types.FornaxPod, session *types.FornaxSession, stateCallbackFunc func(internal.SessionState)) error
-	CloseSession(pod *types.FornaxPod, session *types.FornaxSession, graceSeconds uint16) error
+	CloseSession(pod *types.FornaxPod, session *types.FornaxSession, graceSeconds uint32) error
 	PingSession(pod *types.FornaxPod, session *types.FornaxSession, stateCallbackFunc func(internal.SessionState)) error
 }

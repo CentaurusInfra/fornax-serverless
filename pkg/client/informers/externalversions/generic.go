@@ -54,14 +54,8 @@ func (f *sharedInformerFactory) ForResource(resource schema.GroupVersionResource
 	// Group=core.fornax-serverless.centaurusinfra.io, Version=v1
 	case v1.SchemeGroupVersion.WithResource("applications"):
 		return &genericInformer{resource: resource.GroupResource(), informer: f.Core().V1().Applications().Informer()}, nil
-	case v1.SchemeGroupVersion.WithResource("applicationinstances"):
-		return &genericInformer{resource: resource.GroupResource(), informer: f.Core().V1().ApplicationInstances().Informer()}, nil
 	case v1.SchemeGroupVersion.WithResource("applicationsessions"):
 		return &genericInformer{resource: resource.GroupResource(), informer: f.Core().V1().ApplicationSessions().Informer()}, nil
-	case v1.SchemeGroupVersion.WithResource("clientsessions"):
-		return &genericInformer{resource: resource.GroupResource(), informer: f.Core().V1().ClientSessions().Informer()}, nil
-	case v1.SchemeGroupVersion.WithResource("ingressendpoints"):
-		return &genericInformer{resource: resource.GroupResource(), informer: f.Core().V1().IngressEndpoints().Informer()}, nil
 
 	}
 

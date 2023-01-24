@@ -19,10 +19,4 @@ package v1
 
 type ApplicationExpansion interface{}
 
-type ApplicationInstanceExpansion interface{}
-
 type ApplicationSessionExpansion interface{}
-
-type ClientSessionExpansion interface{}
-
-type IngressEndpointExpansion interface{}

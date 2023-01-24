@@ -31,7 +31,7 @@ type sessionServer struct {
 }
 
 // CloseSession implements sessionservice.SessionService
-func (*sessionServer) CloseSession(pod *types.FornaxPod, session *types.FornaxSession, graceSeconds uint16) error {
+func (*sessionServer) CloseSession(pod *types.FornaxPod, session *types.FornaxSession, graceSeconds uint32) error {
 	panic("unimplemented")
 }
 

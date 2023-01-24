@@ -35,7 +35,7 @@ type SessionActor struct {
 }
 
 const (
-	DefaultCloseSessionGraceSeconds = uint16(120)
+	DefaultCloseSessionGraceSeconds = uint32(120)
 )
 
 func NewSessionActor(pod *types.FornaxPod, session *types.FornaxSession, sessionService sessionservice.SessionService, supervisor message.ActorRef) *SessionActor {

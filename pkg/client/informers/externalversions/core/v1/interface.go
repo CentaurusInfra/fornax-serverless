@@ -25,14 +25,8 @@ import (
 type Interface interface {
 	// Applications returns a ApplicationInformer.
 	Applications() ApplicationInformer
-	// ApplicationInstances returns a ApplicationInstanceInformer.
-	ApplicationInstances() ApplicationInstanceInformer
 	// ApplicationSessions returns a ApplicationSessionInformer.
 	ApplicationSessions() ApplicationSessionInformer
-	// ClientSessions returns a ClientSessionInformer.
-	ClientSessions() ClientSessionInformer
-	// IngressEndpoints returns a IngressEndpointInformer.
-	IngressEndpoints() IngressEndpointInformer
 }
 
 type version struct {
@@ -51,22 +45,7 @@ func (v *version) Applications() ApplicationInformer {
 	return &applicationInformer{factory: v.factory, namespace: v.namespace, tweakListOptions: v.tweakListOptions}
 }
 
-// ApplicationInstances returns a ApplicationInstanceInformer.
-func (v *version) ApplicationInstances() ApplicationInstanceInformer {
-	return &applicationInstanceInformer{factory: v.factory, namespace: v.namespace, tweakListOptions: v.tweakListOptions}
-}
-
 // ApplicationSessions returns a ApplicationSessionInformer.
 func (v *version) ApplicationSessions() ApplicationSessionInformer {
 	return &applicationSessionInformer{factory: v.factory, namespace: v.namespace, tweakListOptions: v.tweakListOptions}
-}
-
-// ClientSessions returns a ClientSessionInformer.
-func (v *version) ClientSessions() ClientSessionInformer {
-	return &clientSessionInformer{factory: v.factory, namespace: v.namespace, tweakListOptions: v.tweakListOptions}
-}
-
-// IngressEndpoints returns a IngressEndpointInformer.
-func (v *version) IngressEndpoints() IngressEndpointInformer {
-	return &ingressEndpointInformer{factory: v.factory, namespace: v.namespace, tweakListOptions: v.tweakListOptions}
 }

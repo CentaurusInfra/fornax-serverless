@@ -31,20 +31,8 @@ func (c *FakeCoreV1) Applications(namespace string) v1.ApplicationInterface {
 	return &FakeApplications{c, namespace}
 }
 
-func (c *FakeCoreV1) ApplicationInstances(namespace string) v1.ApplicationInstanceInterface {
-	return &FakeApplicationInstances{c, namespace}
-}
-
 func (c *FakeCoreV1) ApplicationSessions(namespace string) v1.ApplicationSessionInterface {
 	return &FakeApplicationSessions{c, namespace}
-}
-
-func (c *FakeCoreV1) ClientSessions(namespace string) v1.ClientSessionInterface {
-	return &FakeClientSessions{c, namespace}
-}
-
-func (c *FakeCoreV1) IngressEndpoints(namespace string) v1.IngressEndpointInterface {
-	return &FakeIngressEndpoints{c, namespace}
 }
 
 // RESTClient returns a RESTClient that is used to communicate

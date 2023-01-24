@@ -44,30 +44,7 @@ var AddToScheme = func(scheme *runtime.Scheme) error {
 	scheme.AddKnownTypes(schema.GroupVersion{
 		Group:   "core.fornax-serverless.centaurusinfra.io",
 		Version: "v1",
-	}, &ClientSession{}, &ClientSessionList{})
-
-	scheme.AddKnownTypes(schema.GroupVersion{
-		Group:   "core.fornax-serverless.centaurusinfra.io",
-		Version: "v1",
 	}, &ApplicationSession{}, &ApplicationSessionList{})
 
-	scheme.AddKnownTypes(schema.GroupVersion{
-		Group:   "core.fornax-serverless.centaurusinfra.io",
-		Version: "v1",
-	}, &ApplicationInstance{}, &ApplicationInstanceList{})
-
-	scheme.AddKnownTypes(schema.GroupVersion{
-		Group:   "core.fornax-serverless.centaurusinfra.io",
-		Version: "v1",
-	}, &IngressEndpoint{}, &IngressEndpointList{})
-
-	scheme.AddKnownTypes(schema.GroupVersion{
-		Group:   "core.fornax-serverless.centaurusinfra.io",
-		Version: "v1",
-	}, &Application{}, &ApplicationList{})
-	scheme.AddKnownTypes(schema.GroupVersion{
-		Group:   "core.fornax-serverless.centaurusinfra.io",
-		Version: "v1",
-	}, &ApplicationInstance{}, &ApplicationInstanceList{})
 	return nil
 }

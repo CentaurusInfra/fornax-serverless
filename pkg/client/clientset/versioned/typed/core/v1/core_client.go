@@ -28,10 +28,7 @@ import (
 type CoreV1Interface interface {
 	RESTClient() rest.Interface
 	ApplicationsGetter
-	ApplicationInstancesGetter
 	ApplicationSessionsGetter
-	ClientSessionsGetter
-	IngressEndpointsGetter
 }
 
 // CoreV1Client is used to interact with features provided by the core.fornax-serverless.centaurusinfra.io group.
@@ -43,20 +40,8 @@ func (c *CoreV1Client) Applications(namespace string) ApplicationInterface {
 	return newApplications(c, namespace)
 }
 
-func (c *CoreV1Client) ApplicationInstances(namespace string) ApplicationInstanceInterface {
-	return newApplicationInstances(c, namespace)
-}
-
 func (c *CoreV1Client) ApplicationSessions(namespace string) ApplicationSessionInterface {
 	return newApplicationSessions(c, namespace)
-}
-
-func (c *CoreV1Client) ClientSessions(namespace string) ClientSessionInterface {
-	return newClientSessions(c, namespace)
-}
-
-func (c *CoreV1Client) IngressEndpoints(namespace string) IngressEndpointInterface {
-	return newIngressEndpoints(c, namespace)
 }
 
 // NewForConfig creates a new CoreV1Client for the given config.

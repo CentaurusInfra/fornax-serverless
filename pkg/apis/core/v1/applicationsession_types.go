@@ -66,10 +66,10 @@ type ApplicationSessionSpec struct {
 	KillInstanceWhenSessionClosed bool `json:"killInstanceWhenSessionClosed,omitempty"`
 
 	// how long to wait for before close session, default 60
-	CloseGracePeriodSeconds *uint16 `json:"closeGracePeriodSeconds,omitempty"`
+	CloseGracePeriodSeconds *uint32 `json:"closeGracePeriodSeconds,omitempty"`
 
 	// how long to wait for session status from Starting to Available
-	OpenTimeoutSeconds uint16 `json:"openTimeoutSeconds,omitempty"`
+	OpenTimeoutSeconds uint32 `json:"openTimeoutSeconds,omitempty"`
 }
 
 // +enum

@@ -12,8 +12,8 @@ spec:
     burst: 1
     scalingPolicyType: idle_session_number
     idleSessionNumThreshold:
-      highWaterMark: 3
-      lowWaterMark: 0
+      high: 3
+      low: 0
   containers:
     - image: centaurusinfra.io/fornax-serverless/nodejs-hw:v0.1.0
       name: nodejs-hw

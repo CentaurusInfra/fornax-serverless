@@ -12,8 +12,8 @@ spec:
     burst: 5
     scalingPolicyType: idle_session_number
     idleSessionNumThreshold:
-      highWaterMark: 3
-      lowWaterMark: 1
+      high: 3
+      low: 1
   containers:
     - image: 512811/sessionwrapper:latest
       name: echoserver

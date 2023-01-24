@@ -12,8 +12,8 @@ spec:
     burst: 1
     scalingPolicyType: idle_session_number
     idleSessionNumThreshold:
-      highWaterMark: 1
-      lowWaterMark: 0
+      high: 1
+      low: 0
   containers:
     - image: nginx:latest
       name: nginx

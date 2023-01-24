@@ -5,5 +5,5 @@ spec:
     burst: 1
     scalingPolicyType: idle_session_number
     idleSessionNumThreshold:
-      highWaterMark: 5
-      lowWaterMark: 1
+      high: 5
+      low: 1

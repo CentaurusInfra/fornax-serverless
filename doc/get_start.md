@@ -154,8 +154,8 @@ spec:
     burst: 1
     scalingPolicyType: idle_session_number
     idleSessionNumThreshold:
-      highWaterMark: 3
-      lowWaterMark: 0
+      high: 3
+      low: 0
   containers:
     - image: centaurusinfra.io/fornax-serverless/nodejs-hw:v0.1.0
       name: nodejs-hw
@@ -173,7 +173,7 @@ EOF
 ```
 
 ```sh
-kubectl apply --kubeconfig kubeconfig --validate=false  -f ./nodejs-hw-app-create.yaml --namespace game1
+kubectl apply --kubeconfig kubeconfig -f ./nodejs-hw-app-create.yaml --namespace game1
 ```
 
 create application session using created yaml file

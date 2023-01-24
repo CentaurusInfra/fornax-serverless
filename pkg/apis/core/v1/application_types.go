@@ -290,7 +290,7 @@ func (in *Application) Validate(ctx context.Context) field.ErrorList {
 		err := field.Error{
 			Type:   field.ErrorTypeInvalid,
 			Field:  "Spec.IdleSessionPercentThreshold",
-			Detail: "HighWaterMark must be greater than LowWaterMark",
+			Detail: "High threshold must be greater than Low threshold",
 		}
 		errorList = append(errorList, &err)
 	}
@@ -300,7 +300,7 @@ func (in *Application) Validate(ctx context.Context) field.ErrorList {
 		err := field.Error{
 			Type:   field.ErrorTypeInvalid,
 			Field:  "Spec.IdleSessionPercentThreshold",
-			Detail: "HighWaterMark must be less than 100",
+			Detail: "High threshold must be less than 100",
 		}
 		errorList = append(errorList, &err)
 	}
@@ -310,7 +310,7 @@ func (in *Application) Validate(ctx context.Context) field.ErrorList {
 		err := field.Error{
 			Type:   field.ErrorTypeInvalid,
 			Field:  "Spec.IdleSessionNumThreshold",
-			Detail: "HighWaterMark must be greater than LowWaterMark",
+			Detail: "High threshold must be greater than Low threshold",
 		}
 		errorList = append(errorList, &err)
 	}

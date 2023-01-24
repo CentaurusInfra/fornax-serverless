@@ -5,8 +5,8 @@ spec:
     burst: 10
     scalingPolicyType: idle_session_number
     idleSessionNumThreshold:
-      highWaterMark: 30
-      lowWaterMark: 0
+      high: 30
+      low: 0
   containers:
     - image: centaurusinfra.io/fornax-serverless/session-wrapper:v0.1.0
       name: echoserver

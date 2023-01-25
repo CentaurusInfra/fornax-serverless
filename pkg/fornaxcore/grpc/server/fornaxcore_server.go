@@ -328,7 +328,7 @@ func (g *grpcServer) OpenSession(nodeIdentifier string, pod *v1.Pod, session *fo
 		SessionOpen: &fornaxcore_grpc.SessionOpen{
 			SessionIdentifier: sessionIdentifier,
 			PodIdentifier:     podIdentifier,
-			SessionData:       session.DeepCopy(),
+			Session:           session.DeepCopy(),
 		},
 	}
 	m := &fornaxcore_grpc.FornaxCoreMessage{

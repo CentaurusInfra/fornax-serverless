@@ -389,7 +389,7 @@ func (n *SimulationNodeActor) onSessionOpenCommand(msg *fornaxgrpc.SessionOpen) 
 		return fmt.Errorf("node is not in ready state to open a session")
 	}
 
-	sess := msg.GetSessionData()
+	sess := msg.GetSession()
 	fpod := n.node.Pods.Get(msg.GetPodIdentifier())
 	if fpod == nil {
 		return fmt.Errorf("Pod: %s does not exist, can not open session", msg.GetPodIdentifier())

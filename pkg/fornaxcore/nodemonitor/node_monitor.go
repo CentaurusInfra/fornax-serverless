@@ -79,7 +79,7 @@ func (nm *nodeMonitor) OnSessionUpdate(message *grpc.FornaxCoreMessage) (*grpc.F
 	sessionState := message.GetSessionState()
 	revision := sessionState.GetNodeRevision()
 	nodeId := message.GetNodeIdentifier().GetIdentifier()
-	session := sessionState.GetSessionData()
+	session := sessionState.GetSession()
 	nodeWRev := nm.nodes.get(nodeId)
 	if nodeWRev == nil {
 		return nil, nodeagent.NodeRevisionOutOfOrderError

@@ -107,7 +107,7 @@ func (nm *nodeManager) UpdatePodState(nodeId string, pod *v1.Pod, sessionStates 
 		nodeWS.Pods.Add(podName)
 		sessions := []*fornaxv1.ApplicationSession{}
 		for _, v := range sessionStates {
-			session := v.GetSessionData()
+			session := v.GetSession()
 			sessions = append(sessions, session)
 		}
 		for _, session := range sessions {

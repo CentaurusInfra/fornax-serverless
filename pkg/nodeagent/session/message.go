@@ -34,7 +34,7 @@ type ClientSessionJoin struct{}
 type ClientSessionExit struct{}
 
 func BuildFornaxcoreGrpcSessionState(revision int64, session *types.FornaxSession) *grpc.FornaxCoreMessage {
-	sessionData := session.Session.DeepCopy()
+	sessionCopy := session.Session.DeepCopy()
 
 	clientSessionData := [][]byte{}
 	for _, v := range session.ClientSessions {
@@ -49,7 +49,7 @@ func BuildFornaxcoreGrpcSessionState(revision int64, session *types.FornaxSessio
 
 	ns := grpc.SessionState{
 		NodeRevision: revision,
-		SessionData:  sessionData,
+		Session:      sessionCopy,
 	}
 
 	messageType := grpc.MessageType_SESSION_STATE

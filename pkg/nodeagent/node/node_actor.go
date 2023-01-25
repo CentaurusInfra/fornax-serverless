@@ -506,7 +506,7 @@ func (n *FornaxNodeActor) onPodHibernateCommand(msg *fornaxgrpc.PodHibernate) er
 
 // build a session actor to start session and monitor session state
 func (n *FornaxNodeActor) onSessionOpenCommand(msg *fornaxgrpc.SessionOpen) error {
-	s := msg.GetSessionData().DeepCopy()
+	s := msg.GetSession().DeepCopy()
 	podActor := n.podActors.Get(msg.GetPodIdentifier())
 	if podActor == nil || n.state != NodeStateReady {
 		return fmt.Errorf("Pod: %s does not exist, can not open session, or node not ready", msg.GetPodIdentifier())

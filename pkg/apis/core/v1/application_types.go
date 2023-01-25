@@ -35,10 +35,10 @@ import (
 // +k8s:openapi-gen=true
 type Application struct {
 	metav1.TypeMeta   `json:",inline"`
-	metav1.ObjectMeta `json:"metadata,omitempty"`
+	metav1.ObjectMeta `json:"metadata,omitempty" protobuf:"bytes,1,opt,name=metadata"`
 
-	Spec   ApplicationSpec   `json:"spec,omitempty"`
-	Status ApplicationStatus `json:"status,omitempty"`
+	Spec   ApplicationSpec   `json:"spec,omitempty" protobuf:"bytes,2,opt,name=spec"`
+	Status ApplicationStatus `json:"status,omitempty" protobuf:"bytes,3,opt,name=status"`
 }
 
 // ApplicationList
@@ -46,9 +46,9 @@ type Application struct {
 // +k8s:openapi-gen=true
 type ApplicationList struct {
 	metav1.TypeMeta `json:",inline"`
-	metav1.ListMeta `json:"metadata,omitempty"`
+	metav1.ListMeta `json:"metadata,omitempty" protobuf:"bytes,1,opt,name=metadata"`
 
-	Items []Application `json:"items"`
+	Items []Application `json:"items" protobuf:"bytes,2,rep,name=items"`
 }
 
 // ApplicationSpec defines the desired state of Application
@@ -58,19 +58,19 @@ type ApplicationSpec struct {
 
 	// runtime image and resource requirement of a application container
 	// +listType=atomic
-	Containers []corev1.Container `json:"containers,omitempty"`
+	Containers []corev1.Container `json:"containers,omitempty" protobuf:"bytes,1,rep,name=containers"`
 
 	// container will use grpc session service on node agent to start application session
-	UsingNodeSessionService bool `json:"usingNodeSessionService,omitempty"`
+	UsingNodeSessionService bool `json:"usingNodeSessionService,omitempty" protobuf:"varint,2,opt,name=usingNodeSessionService"`
 
 	// Data contains the configuration data.
 	// Each key must consist of alphanumeric characters, '-', '_' or '.'.
 	// Values with non-UTF-8 base64 string of byte sequences
 	// +optional
-	ConfigData map[string]string `json:"configData,omitempty"`
+	ConfigData map[string]string `json:"configData,omitempty" protobuf:"bytes,3,rep,name=configData"`
 
 	// application scaling policy
-	ScalingPolicy ScalingPolicy `json:"scalingPolicy,omitempty"`
+	ScalingPolicy ScalingPolicy `json:"scalingPolicy,omitempty" protobuf:"bytes,4,opt,name=scalingPolicy"`
 }
 
 type ScalingPolicyType string
@@ -84,18 +84,18 @@ const (
 )
 
 type ScalingPolicy struct {
-	MinimumInstance uint32 `json:"minimumInstance,omitempty"`
-	MaximumInstance uint32 `json:"maximumInstance,omitempty"`
-	Burst           uint32 `json:"burst,omitempty"`
+	MinimumInstance uint32 `json:"minimumInstance,omitempty" protobuf:"varint,1,opt,name=minimumInstance"`
+	MaximumInstance uint32 `json:"maximumInstance,omitempty" protobuf:"varint,2,opt,name=maximumInstance"`
+	Burst           uint32 `json:"burst,omitempty" protobuf:"varint,3,opt,name=burst"`
 
 	// what session scaling policy to use, absolute num or percent
-	ScalingPolicyType ScalingPolicyType `json:"scalingPolicyType,omitempty"`
+	ScalingPolicyType ScalingPolicyType `json:"scalingPolicyType,omitempty" protobuf:"bytes,4,opt,name=scalingPolicyType,casttype=ScalingPolicyType"`
 
 	// +optional, must set if ScalingPolicyType == "idle_session_number"
-	IdleSessionNumThreshold *IdelSessionNumThreshold `json:"idleSessionNumThreshold,omitempty"`
+	IdleSessionNumThreshold *IdelSessionNumThreshold `json:"idleSessionNumThreshold,omitempty" protobuf:"bytes,5,opt,name=idleSessionNumThreshold"`
 
 	// +optional, must set if ScalingPolicyType == "idle_session_percent"
-	IdleSessionPercentThreshold *IdelSessionPercentThreshold `json:"idleSessionPercentThreshold,omitempty"`
+	IdleSessionPercentThreshold *IdelSessionPercentThreshold `json:"idleSessionPercentThreshold,omitempty" protobuf:"bytes,6,opt,name=idleSessionPercentThreshold"`
 }
 
 // high watermark should > low watermark, if both are 0, then no auto scaling for idle buffer,
@@ -103,11 +103,11 @@ type ScalingPolicy struct {
 type IdelSessionNumThreshold struct {
 	// scaling down when idle session more than this number
 	// +optional, default 0
-	High uint32 `json:"high,omitempty"`
+	High uint32 `json:"high,omitempty" protobuf:"varint,1,opt,name=high"`
 
 	// scaling up when idle session less than this number
 	// +optional, default 0
-	Low uint32 `json:"low,omitempty"`
+	Low uint32 `json:"low,omitempty" protobuf:"varint,2,opt,name=low"`
 }
 
 // high watermark should > low watermark, if both are 0, then no auto scaling for idle buffer,
@@ -115,11 +115,11 @@ type IdelSessionNumThreshold struct {
 type IdelSessionPercentThreshold struct {
 	// scaling down when idle session percent more than this number
 	// +optional, default 0, must less than 100
-	High uint32 `json:"high,omitempty"`
+	High uint32 `json:"high,omitempty" protobuf:"varint,1,opt,name=high"`
 
 	// scaling up when idle session percent less than this number
 	// +optional, default 0, must less than 100
-	Low uint32 `json:"low,omitempty"`
+	Low uint32 `json:"low,omitempty" protobuf:"varint,2,opt,name=low"`
 }
 
 type DeploymentAction string
@@ -149,57 +149,57 @@ const (
 
 type DeploymentHistory struct {
 	// Type of deployment condition.
-	Action DeploymentAction `json:"action,omitempty"`
+	Action DeploymentAction `json:"action,omitempty" protobuf:"bytes,1,opt,name=action,casttype=DeploymentAction"`
 
 	// The last time this deployment was updated.
-	UpdateTime metav1.Time `json:"updateTime,omitempty"`
+	UpdateTime metav1.Time `json:"updateTime,omitempty" protobuf:"bytes,2,opt,name=updateTime"`
 
 	// The reason for the last transition.
-	Reason string `json:"reason,omitempty"`
+	Reason string `json:"reason,omitempty" protobuf:"bytes,3,opt,name=reason"`
 
 	// A human readable message indicating details about the transition.
-	Message string `json:"message,omitempty"`
+	Message string `json:"message,omitempty" protobuf:"bytes,4,opt,name=message"`
 
-	DeploymentStatus DeploymentStatus `json:"deploymentStatus,omitempty"`
+	DeploymentStatus DeploymentStatus `json:"deploymentStatus,omitempty" protobuf:"bytes,5,opt,name=deploymentStatus,casttype=DeploymentStatus"`
 }
 
 // ApplicationStatus defines the observed state of Application
 type ApplicationStatus struct {
 	// Total number of non-terminated pods targeted
-	DesiredInstances int32 `json:"desiredInstances,omitempty"`
+	DesiredInstances int32 `json:"desiredInstances,omitempty" protobuf:"varint,1,opt,name=desiredInstances"`
 
 	// Total number of available instances, including pod not scheduled yet
 	// +optional
-	TotalInstances int32 `json:"totalInstances,omitempty"`
+	TotalInstances int32 `json:"totalInstances,omitempty" protobuf:"varint,2,opt,name=totalInstances"`
 
 	// Total number of instances pending schedule and implement
 	// +optional
-	PendingInstances int32 `json:"pendingInstances,omitempty"`
+	PendingInstances int32 `json:"pendingInstances,omitempty" protobuf:"varint,3,opt,name=pendingInstances"`
 
 	// Total number of instances pending delete and cleanup
 	// +optional
-	DeletingInstances int32 `json:"deletingInstances,omitempty"`
+	DeletingInstances int32 `json:"deletingInstances,omitempty" protobuf:"varint,4,opt,name=deletingInstances"`
 
 	// Total number of instances which have been started by node
 	// +optional
-	AllocatedInstances int32 `json:"allocatedInstances,omitempty"`
+	AllocatedInstances int32 `json:"allocatedInstances,omitempty" protobuf:"varint,5,opt,name=allocatedInstances"`
 
 	// Total number of pods which do not have session on it
 	// +optional
-	IdleInstances int32 `json:"idleInstances,omitempty"`
+	IdleInstances int32 `json:"idleInstances,omitempty" protobuf:"varint,6,opt,name=idleInstances"`
 
 	// DeploymentStatus of Last History
 	// +optional
 
 	// The latest deploy history of this app.
-	LatestHistory DeploymentHistory `json:"latestHistory,omitempty"`
+	LatestHistory DeploymentHistory `json:"latestHistory,omitempty" protobuf:"bytes,7,opt,name=latestHistory"`
 
 	// Represents the latest available observations of a deployment's current state.
 	// +optional
 	// +patchMergeKey=updateTime
 	// +patchStrategy=merge
 	// +listType=set
-	History []DeploymentHistory `json:"history,omitempty" patchStrategy:"merge" patchMergeKey:"updateTime"`
+	History []DeploymentHistory `json:"history,omitempty" patchStrategy:"merge" patchMergeKey:"updateTime" protobuf:"bytes,8,rep,name=history"`
 }
 
 var _ resource.Object = &Application{}

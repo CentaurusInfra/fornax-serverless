@@ -18,7 +18,6 @@ package node
 
 import (
 	"context"
-	"encoding/json"
 	"sync"
 
 	// "sync"
@@ -108,10 +107,8 @@ func (nm *nodeManager) UpdatePodState(nodeId string, pod *v1.Pod, sessionStates 
 		nodeWS.Pods.Add(podName)
 		sessions := []*fornaxv1.ApplicationSession{}
 		for _, v := range sessionStates {
-			session := &fornaxv1.ApplicationSession{}
-			if err := json.Unmarshal(v.SessionData, session); err == nil {
-				sessions = append(sessions, session)
-			}
+			session := v.GetSessionData()
+			sessions = append(sessions, session)
 		}
 		for _, session := range sessions {
 			nm.sessionManager.OnSessionStatusFromNode(updatedPod, session)

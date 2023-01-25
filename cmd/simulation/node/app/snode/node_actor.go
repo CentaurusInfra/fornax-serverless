@@ -18,7 +18,6 @@ package snode
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"sync"
 	"sync/atomic"
@@ -389,10 +388,8 @@ func (n *SimulationNodeActor) onSessionOpenCommand(msg *fornaxgrpc.SessionOpen) 
 	if n.state != node.NodeStateReady {
 		return fmt.Errorf("node is not in ready state to open a session")
 	}
-	sess := &fornaxv1.ApplicationSession{}
-	if err := json.Unmarshal(msg.GetSessionData(), sess); err != nil {
-		return err
-	}
+
+	sess := msg.GetSessionData()
 	fpod := n.node.Pods.Get(msg.GetPodIdentifier())
 	if fpod == nil {
 		return fmt.Errorf("Pod: %s does not exist, can not open session", msg.GetPodIdentifier())

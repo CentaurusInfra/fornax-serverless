@@ -36,10 +36,10 @@ import (
 // +k8s:openapi-gen=true
 type ApplicationSession struct {
 	metav1.TypeMeta   `json:",inline"`
-	metav1.ObjectMeta `json:"metadata,omitempty"`
+	metav1.ObjectMeta `json:"metadata,omitempty" protobuf:"bytes,1,opt,name=metadata"`
 
-	Spec   ApplicationSessionSpec   `json:"spec,omitempty"`
-	Status ApplicationSessionStatus `json:"status,omitempty"`
+	Spec   ApplicationSessionSpec   `json:"spec,omitempty" protobuf:"bytes,2,opt,name=spec"`
+	Status ApplicationSessionStatus `json:"status,omitempty" protobuf:"bytes,3,opt,name=status"`
 }
 
 // ApplicationSessionList
@@ -47,29 +47,29 @@ type ApplicationSession struct {
 // +k8s:openapi-gen=true
 type ApplicationSessionList struct {
 	metav1.TypeMeta `json:",inline"`
-	metav1.ListMeta `json:"metadata,omitempty"`
+	metav1.ListMeta `json:"metadata,omitempty" protobuf:"bytes,1,opt,name=metadata"`
 
-	Items []ApplicationSession `json:"items"`
+	Items []ApplicationSession `json:"items" protobuf:"bytes,2,rep,name=items"`
 }
 
 // ApplicationSessionSpec defines the desired state of ApplicationSession
 type ApplicationSessionSpec struct {
 
 	// ApplicationName, client provided application
-	ApplicationName string `json:"applicationName,omitempty"`
+	ApplicationName string `json:"applicationName,omitempty" protobuf:"bytes,1,opt,name=applicationName"`
 
 	// Session data is a base64 string pass through into application instances when session started
 	// +optional
-	SessionData string `json:"sessionData,omitempty"`
+	SessionData string `json:"sessionData,omitempty" protobuf:"bytes,2,opt,name=sessionData"`
 
 	// if a application instance evacuated all session, kill it, default true
-	KillInstanceWhenSessionClosed bool `json:"killInstanceWhenSessionClosed,omitempty"`
+	KillInstanceWhenSessionClosed bool `json:"killInstanceWhenSessionClosed,omitempty" protobuf:"varint,3,opt,name=killInstanceWhenSessionClosed"`
 
 	// how long to wait for before close session, default 60
-	CloseGracePeriodSeconds *uint32 `json:"closeGracePeriodSeconds,omitempty"`
+	CloseGracePeriodSeconds *uint32 `json:"closeGracePeriodSeconds,omitempty" protobuf:"varint,4,opt,name=closeGracePeriodSeconds"`
 
 	// how long to wait for session status from Starting to Available
-	OpenTimeoutSeconds uint32 `json:"openTimeoutSeconds,omitempty"`
+	OpenTimeoutSeconds uint32 `json:"openTimeoutSeconds,omitempty" protobuf:"varint,5,opt,name=openTimeoutSeconds"`
 }
 
 // +enum
@@ -103,13 +103,13 @@ const (
 
 type AccessEndPoint struct {
 	// TCP/UDP
-	Protocol v1.Protocol `json:"protocol,omitempty"`
+	Protocol v1.Protocol `json:"protocol,omitempty" protobuf:"bytes,1,opt,name=protocol,casttype=k8s.io/api/core/v1.Protocol"`
 
 	// IPaddress
-	IPAddress string `json:"ipAddress,omitempty"`
+	IPAddress string `json:"ipAddress,omitempty" protobuf:"bytes,2,opt,name=ipAddress"`
 
 	// Port
-	Port int32 `json:"port,omitempty"`
+	Port int32 `json:"port,omitempty" protobuf:"varint,3,opt,name=port"`
 }
 
 // ApplicationSessionStatus defines the observed state of ApplicationSession
@@ -117,24 +117,24 @@ type ApplicationSessionStatus struct {
 	// Endpoint this session is using
 	// +optional
 	// +listType=atomic
-	AccessEndPoints []AccessEndPoint `json:"accessEndPoints,omitempty"`
+	AccessEndPoints []AccessEndPoint `json:"accessEndPoints,omitempty" protobuf:"bytes,1,rep,name=accessEndPoints"`
 
 	// Session status, is Starting, Available or Closed.
 	// +optional
-	SessionStatus SessionStatus `json:"sessionStatus,omitempty"`
+	SessionStatus SessionStatus `json:"sessionStatus,omitempty" protobuf:"bytes,2,opt,name=sessionStatus,casttype=SessionStatus"`
 
 	// +optional
 	// +listType=set
-	ClientSessions []corev1.LocalObjectReference `json:"clientSessions,omitempty"`
+	ClientSessions []corev1.LocalObjectReference `json:"clientSessions,omitempty" protobuf:"bytes,3,rep,name=clientSessions"`
 
 	// +optional
-	AvailableTime *metav1.Time `json:"availableTime,omitempty"`
+	AvailableTime *metav1.Time `json:"availableTime,omitempty" protobuf:"bytes,4,opt,name=availableTime"`
 
 	// +optional
-	CloseTime *metav1.Time `json:"closeTime,omitempty"`
+	CloseTime *metav1.Time `json:"closeTime,omitempty" protobuf:"bytes,5,opt,name=closeTime"`
 
 	// +optional, for metrics test
-	AvailableTimeMicro int64 `json:"availableTimeMicro,omitempty"`
+	AvailableTimeMicro int64 `json:"availableTimeMicro,omitempty" protobuf:"varint,6,opt,name=availableTimeMicro"`
 }
 
 var _ resource.Object = &ApplicationSession{}

@@ -34,12 +34,7 @@ type ClientSessionJoin struct{}
 type ClientSessionExit struct{}
 
 func BuildFornaxcoreGrpcSessionState(revision int64, session *types.FornaxSession) *grpc.FornaxCoreMessage {
-	sessionData, err := json.Marshal(session.Session)
-	if err != nil {
-		// not supposed to happen, mostly is program OOM, session data should be good, ignore
-		klog.ErrorS(err, "Failed to marshar session object", "session", session.Identifier)
-		return nil
-	}
+	sessionData := session.Session.DeepCopy()
 
 	clientSessionData := [][]byte{}
 	for _, v := range session.ClientSessions {
@@ -53,9 +48,8 @@ func BuildFornaxcoreGrpcSessionState(revision int64, session *types.FornaxSessio
 	}
 
 	ns := grpc.SessionState{
-		NodeRevision:      revision,
-		SessionData:       sessionData,
-		ClientSessionData: clientSessionData,
+		NodeRevision: revision,
+		SessionData:  sessionData,
 	}
 
 	messageType := grpc.MessageType_SESSION_STATE

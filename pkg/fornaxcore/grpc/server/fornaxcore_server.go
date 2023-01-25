@@ -18,7 +18,6 @@ package server
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"math/rand"
 	"net"
@@ -321,10 +320,6 @@ func (g *grpcServer) CloseSession(nodeIdentifier string, pod *v1.Pod, session *f
 
 // OpenSession implements FornaxCoreServer
 func (g *grpcServer) OpenSession(nodeIdentifier string, pod *v1.Pod, session *fornaxv1.ApplicationSession) error {
-	sessionData, err := json.Marshal(session)
-	if err != nil {
-		return err
-	}
 	// OpenSession dispatch a SessionOpen event to node agent
 	sessionIdentifier := util.Name(session)
 	podIdentifier := util.Name(pod)
@@ -333,7 +328,7 @@ func (g *grpcServer) OpenSession(nodeIdentifier string, pod *v1.Pod, session *fo
 		SessionOpen: &fornaxcore_grpc.SessionOpen{
 			SessionIdentifier: sessionIdentifier,
 			PodIdentifier:     podIdentifier,
-			SessionData:       sessionData,
+			SessionData:       session.DeepCopy(),
 		},
 	}
 	m := &fornaxcore_grpc.FornaxCoreMessage{
@@ -341,7 +336,7 @@ func (g *grpcServer) OpenSession(nodeIdentifier string, pod *v1.Pod, session *fo
 		MessageBody: &body,
 	}
 
-	err = g.DispatchNodeMessage(nodeIdentifier, m)
+	err := g.DispatchNodeMessage(nodeIdentifier, m)
 	if err != nil {
 		klog.ErrorS(err, "Failed to dispatch message to node", "node", nodeIdentifier, "session", sessionIdentifier)
 		return err

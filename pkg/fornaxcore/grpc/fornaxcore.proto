@@ -21,6 +21,7 @@ option go_package = "centaurusinfra.io/fornax-serverless/pkg/fornaxcore/grpc";
 
 import "google/protobuf/empty.proto";
 import "k8s.io/api/core/v1/generated.proto";
+import "pkg/apis/core/v1/generated.proto";
 
 service FornaxCoreService {
   rpc getMessage(NodeIdentifier) returns (stream FornaxCoreMessage);
@@ -148,14 +149,13 @@ message  PodHibernate {
 
 message SessionState {
   int64 nodeRevision = 1;
-  bytes sessionData = 2;
-  repeated bytes clientSessionData = 3;
+  centaurusinfra.io.fornax_serverless.pkg.apis.core.v1.ApplicationSession session = 2;
 }
 
 message SessionOpen {
   string sessionIdentifier = 1;
   string podIdentifier = 2;
-  bytes sessionData = 3;
+  centaurusinfra.io.fornax_serverless.pkg.apis.core.v1.ApplicationSession session = 3;
 }
 
 message SessionClose {

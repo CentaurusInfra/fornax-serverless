@@ -17,7 +17,6 @@ limitations under the License.
 package nodemonitor
 
 import (
-	"encoding/json"
 	"fmt"
 	"sync"
 
@@ -80,11 +79,7 @@ func (nm *nodeMonitor) OnSessionUpdate(message *grpc.FornaxCoreMessage) (*grpc.F
 	sessionState := message.GetSessionState()
 	revision := sessionState.GetNodeRevision()
 	nodeId := message.GetNodeIdentifier().GetIdentifier()
-	session := &fornaxv1.ApplicationSession{}
-	if err := json.Unmarshal(sessionState.GetSessionData(), session); err != nil {
-		klog.ErrorS(err, "Malformed SessionData, is not a valid fornaxv1.ApplicationSession object")
-		return nil, err
-	}
+	session := sessionState.GetSession()
 	nodeWRev := nm.nodes.get(nodeId)
 	if nodeWRev == nil {
 		return nil, nodeagent.NodeRevisionOutOfOrderError

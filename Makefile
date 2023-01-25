@@ -3,9 +3,9 @@ VERSION ?= v0.1.0
 
 # Get the currently used golang install path (in GOPATH/bin, unless GOBIN is set)
 ifeq (,$(shell go env GOBIN))
-GOBIN=$(shell go env GOPATH)/bin
+	GOBIN=$(shell go env GOPATH)/bin
 else
-GOBIN=$(shell go env GOBIN)
+	GOBIN=$(shell go env GOBIN)
 endif
 
 # Setting SHELL to bash allows bash commands to be executed by recipes.
@@ -40,24 +40,34 @@ manifests: controller-gen-tool ## Generate WebhookConfiguration, ClusterRole and
 
 ## Generate code for resources
 .PHONY: generate
-generate: controller-gen openapi-gen
+generate: controller-gen openapi-gen protobuf-gen
 
 ## Generate code for rest api resource model, containing DeepCopy, DeepCopyInto, and DeepCopyObject method implementations.
 .PHONY: controller-gen
-controller-gen: controller-gen-tool
+controller-gen: code-gen-tool
 	$(CONTROLLER_GEN) object:headerFile="hack/boilerplate.go.txt" paths="./pkg/apis/core/..."
 
 ## Generate openapi spec for api resource model
+PROTOC_GEN_GOGO = $(shell pwd)/bin/protoc-gen-gogo
+.PHONY: protobuf-gen
+protobuf-gen: code-gen-tool
+	$(call go-get-tool,$(PROTOC_GEN_GOGO),github.com/gogo/protobuf/protoc-gen-gogo@v1.3.2)
+	# $(GO_TO_PROTOBUF) --go-header-file="./hack/boilerplate.go.txt" --packages="centaurusinfra.io/fornax-serverless/pkg/apis/core/v1" --output-base="protobuf" --proto-import="./vendor" --vendor-output-base="./vendor" --only-idl
+	$(GO_TO_PROTOBUF) --go-header-file="./hack/boilerplate.go.txt" \
+		--packages="centaurusinfra.io/fornax-serverless/pkg/apis/core/v1" \
+		--proto-import="./vendor" --vendor-output-base="./vendor" \
+		--apimachinery-packages="+k8s.io/apimachinery/pkg/util/intstr,+k8s.io/apimachinery/pkg/api/resource,+k8s.io/apimachinery/pkg/runtime/schema,+k8s.io/apimachinery/pkg/runtime,k8s.io/apimachinery/pkg/apis/meta/v1,k8s.io/apimachinery/pkg/apis/meta/v1beta1,k8s.io/apimachinery/pkg/apis/testapigroup/v1,k8s.io/api/core/v1"
+
+## Generate openapi spec for api resource model
 .PHONY: openapi-gen
-openapi-gen: openapi-gen-tool
+openapi-gen: code-gen-tool
 	$(OPENAPI_GEN) --go-header-file="hack/boilerplate.go.txt" --input-dirs="./pkg/apis/core/..." --output-package="centaurusinfra.io/fornax-serverless/pkg/apis/openapi"
 
- ## Generate client-go sdk containing clientset, lister, and informer method implementations.
+## Generate client-go sdk containing clientset, lister, and informer method implementations.
 GENERATE_GROUPS = $(shell pwd)/hack/generate-groups.sh
 .PHONY: client-gen
-client-gen: client-gen-tool
-	$(GENERATE_GROUPS) "client, lister, informer"  centaurusinfra.io/fornax-serverless/pkg/client "centaurusinfra.io/fornax-serverless/pkg/apis" "core:v1" \
-	--go-header-file hack/boilerplate.go.txt \
+client-gen: code-gen-tool
+	$(GENERATE_GROUPS) "client, lister, informer"  centaurusinfra.io/fornax-serverless/pkg/client "centaurusinfra.io/fornax-serverless/pkg/apis" "core:v1" --go-header-file hack/boilerplate.go.txt
 
 .PHONY: fmt
 fmt: ## Run go fmt against code.
@@ -68,13 +78,13 @@ vet: ## Run go vet against code.
 	go vet ./...
 
 .PHONY: test
-test: generate fmt vet envtest ## Run tests.
+test: fmt vet envtest ## Run tests.
 	go test ./... -coverprofile cover.out
 
 ##@ Build
 LDFLAGS=-w -s
 .PHONY: build
-build: generate fmt vet ## Build binary.
+build: fmt vet ## Build binary.
 	go build ./...
 	go build -ldflags "$(LDFLAGS)" -o bin/integtestgrpcserver cmd/integtestgrpcserver/main.go
 	go build -ldflags "$(LDFLAGS)" -o bin/fornaxcore cmd/fornaxcore/main.go
@@ -99,11 +109,11 @@ run: generate fmt vet ## Run from your host.
 APISERVER-BOOT = $(shell pwd)/bin/apiserver-boot
 .PHONY: run-fornaxcore-local
 run-fornaxcore-local: ## Download apiserver-boot cmd locally if necessary.
-	 # export KUBERNETES_SERVICE_HOST=192.168.0.45
-   # export KUBERNETES_SERVICE_PORT=9443
-   # export KUBERNETES_MASTER=192.168.0.45
-	 # @nohup bin/fornaxcore --etcd-servers=http://127.0.0.1:2379 --secure-port=9443 --kubeconfig ./kubeconfig.server --authentication-kubeconfig ./kubeconfig.server --requestheader-client-ca-file /var/lib/fornaxcore/certs/fornax-client.crt --tls-cert-file /var/lib/fornaxcore/certs/fornaxcore-server.crt --tls-private-key-file /var/lib/fornaxcore/certs/fornaxcore-server.key --client-ca-file /var/lib/fornaxcore/certs/fornaxcore.crt > fornax-core.log 2
-	 @nohup bin/fornaxcore --etcd-servers=http://127.0.0.1:2379 --secure-port=9443 --standalone-debug-mode --bind-address=127.0.0.1 --feature-gates=APIPriorityAndFairness=false > fornax-core.log 2
+	# export KUBERNETES_SERVICE_HOST=192.168.0.45
+	# export KUBERNETES_SERVICE_PORT=9443
+	# export KUBERNETES_MASTER=192.168.0.45
+	# @nohup bin/fornaxcore --etcd-servers=http://127.0.0.1:2379 --secure-port=9443 --kubeconfig ./kubeconfig.server --authentication-kubeconfig ./kubeconfig.server --requestheader-client-ca-file /var/lib/fornaxcore/certs/fornax-client.crt --tls-cert-file /var/lib/fornaxcore/certs/fornaxcore-server.crt --tls-private-key-file /var/lib/fornaxcore/certs/fornaxcore-server.key --client-ca-file /var/lib/fornaxcore/certs/fornaxcore.crt > fornax-core.log 2
+	@nohup bin/fornaxcore --etcd-servers=http://127.0.0.1:2379 --secure-port=9443 --standalone-debug-mode --bind-address=127.0.0.1 --feature-gates=APIPriorityAndFairness=false > fornax-core.log 2
 
 .PHONY: docker-build
 docker-build: test ## Build docker image
@@ -151,19 +161,12 @@ check:
 
 .PHONY: clean
 clean:
-	@rm -rf config/
 	@rm -f cover.out
 	@rm -f bin/fornaxcore
 	@rm -f bin/nodeagent
 	@rm -f bin/simulatenode
 	@rm -f bin/integtestgrpcserver
 	@rm -f bin/fornaxtest
-
-##@ Deployment
-
-ifndef ignore-not-found
-  ignore-not-found = false
-endif
 
 .PHONY: install
 install: install-certs ## Install CRDs into the K8s cluster specified in ~/.kube/config.
@@ -176,8 +179,8 @@ install-certs:
 	@sudo openssl genrsa -out /tmp/server.key 2048
 	@sudo openssl req -new -key /tmp/server.key -out /tmp/server.csr -config ./config/csr.conf
 	@sudo openssl x509 -req -in /tmp/server.csr -CA /tmp/ca.crt -CAkey /tmp/ca.key \
-     -CAcreateserial -out /tmp/server.crt -days 10000 \
-     -extensions v3_ext -extfile ./config/csr.conf
+		-CAcreateserial -out /tmp/server.crt -days 10000 \
+		-extensions v3_ext -extfile ./config/csr.conf
 	# @sudo openssl req  -noout -text -in /tmp/server.csr
 	@sudo mv /tmp/ca.key /var/lib/fornaxcore/certs/fornaxcore.key
 	@sudo mv /tmp/ca.crt /var/lib/fornaxcore/certs/fornaxcore.crt
@@ -189,32 +192,28 @@ install-certs:
 uninstall: ## Uninstall CRDs from the K8s cluster specified in ~/.kube/config. Call with ignore-not-found=true to ignore resource not found errors during deletion.
 
 CONTROLLER_GEN = $(shell pwd)/bin/controller-gen
-.PHONY: controller-gen-tool
-controller-gen-tool: ## Download controller-gen-tool locally if necessary.
-	$(call go-get-tool,$(CONTROLLER_GEN),sigs.k8s.io/controller-tools/cmd/controller-gen@v0.9.0)
-
 OPENAPI_GEN = $(shell pwd)/bin/openapi-gen
-.PHONY: openapi-gen-tool
-openapi-gen-tool: ## Download openapi-gen-tool locally if necessary.
-	$(call go-get-tool,$(OPENAPI_GEN),k8s.io/kube-openapi/cmd/openapi-gen@v0.0.0-20211115234752-e816edb12b65)
-
 CLIENT_GEN = $(shell pwd)/bin/client-gen		## use it to generate clientset
-LISTER_GEN = $(shell pwd)/bin/lister-gen		## use it to generate lister watch 
+LISTER_GEN = $(shell pwd)/bin/lister-gen		## use it to generate lister watch
 INFORMER_GEN = $(shell pwd)/bin/informer-gen    ## use it to generate informer info
-.PHONY: client-gen-tool
-client-gen-tool: ## Download client-genl, lister-gen and informer-gen locally if necessary.
-	$(call go-get-tool,$(CLIENT_GEN),k8s.io/code-generator/cmd/client-gen-tool@v0.23.1)
+GO_TO_PROTOBUF = $(shell pwd)/bin/go-to-protobuf
+.PHONY: code-gen-tool
+code-gen-tool: ## Download client-genl, lister-gen and informer-gen locally if necessary.
+	$(call go-get-tool,$(CONTROLLER_GEN),sigs.k8s.io/controller-tools/cmd/controller-gen@v0.9.0)
+	$(call go-get-tool,$(CLIENT_GEN),k8s.io/code-generator/cmd/client-gen@v0.23.1)
 	$(call go-get-tool,$(LISTER_GEN),k8s.io/code-generator/cmd/lister-gen@v0.23.1)
 	$(call go-get-tool,$(INFORMER_GEN),k8s.io/code-generator/cmd/informer-gen@v0.23.1)
+	$(call go-get-tool,$(GO_TO_PROTOBUF),k8s.io/code-generator/cmd/go-to-protobuf@v0.23.1)
+	$(call go-get-tool,$(OPENAPI_GEN),k8s.io/kube-openapi/cmd/openapi-gen@v0.0.0-20211115234752-e816edb12b65)
 
 # generate fornaxcore grpc code
-PROTOC_GEN = $(shell pwd)/bin/protoc-gen-go
-PROTOC_GEN_GRPC = $(shell pwd)/bin/protoc-gen-go-grpc
+PROTOC_GEN_GO = $(shell pwd)/bin/protoc-gen-go
+PROTOC_GEN_GO_GRPC = $(shell pwd)/bin/protoc-gen-go-grpc
 PROTOC = $(HOME)/.local/bin/protoc
 .PHONY: protoc-gen
 protoc-gen: ## Download protc-gen locally if necessary.
-	$(call go-get-tool,$(PROTOC_GEN),google.golang.org/protobuf/cmd/protoc-gen-go@v1.28)
-	$(call go-get-tool,$(PROTOC_GEN_GRPC),google.golang.org/grpc/cmd/protoc-gen-go-grpc@v1.2)
+	$(call go-get-tool,$(PROTOC_GEN_GO),google.golang.org/protobuf/cmd/protoc-gen-go@v1.28)
+	$(call go-get-tool,$(PROTOC_GEN_GO_GRPC),google.golang.org/grpc/cmd/protoc-gen-go-grpc@v1.2)
 	$(call get-protoc,$(PROTOC))
 	go mod vendor
 	$(PROTOC) -I=./ -I=./vendor \
@@ -226,6 +225,7 @@ protoc-gen: ## Download protc-gen locally if necessary.
 		--go_opt=Mk8s.io/apimachinery/pkg/runtime/generated.proto=k8s.io/apimachinery/pkg/runtime \
 		--go_opt=Mk8s.io/apimachinery/pkg/runtime/schema/generated.proto=k8s.io/apimachinery/pkg/runtime/schema \
 		--go_opt=Mk8s.io/apimachinery/pkg/util/intstr/generated.proto=k8s.io/apimachinery/pkg/util/intstr \
+		--go_opt=Mpkg/apis/core/v1/generated.proto=centaurusinfra.io/fornax-serverless/pkg/apis/core/v1 \
 		pkg/fornaxcore/grpc/fornaxcore.proto
 	$(PROTOC) -I=./ -I=./vendor \
 		--go_out=../.. \

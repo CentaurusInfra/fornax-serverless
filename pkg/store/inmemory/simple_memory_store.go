@@ -803,14 +803,21 @@ func (ms *MemoryStore) getObjEventsAfterRev(key string, rev uint64, opts apistor
 
 func (ms *MemoryStore) binarySearchInObjList(rv uint64) uint64 {
 	f := func(i int) bool {
-		obj := ms.revSortedObjList.objs[(i)%ms.revSortedObjList.Len()]
+		obj := ms.revSortedObjList.objs[i]
 		if obj == nil {
+			for j := i; j > 0; j-- {
+				// if this obj is nil, use nearest prev non nil obj
+				if ms.revSortedObjList.objs[j] != nil {
+					objRV, _ := store.GetObjectResourceVersion(ms.revSortedObjList.objs[j].obj)
+					return objRV >= rv
+				}
+			}
 			return false
 		}
 		objRV, _ := store.GetObjectResourceVersion(obj.obj)
 		return objRV >= rv
 	}
-	index := uint64(sort.Search(ms.revSortedObjList.Len(), f))
+	index := uint64(sort.Search(int(ms.revSortedObjList.lastObjIndex)+1, f))
 	return index
 }
 

@@ -202,8 +202,7 @@ func (nm *nodeManager) createOrUpdateNodeInStore(node *v1.Node) (*v1.Node, error
 		return nil, err
 	}
 	if nodeInStore == nil {
-		nodeInStore = node.DeepCopy()
-		nodeInStore, err = factory.CreateFornaxNode(nm.ctx, nm.nodeStore, nodeInStore)
+		nodeInStore, err = factory.CreateFornaxNode(nm.ctx, nm.nodeStore, node)
 		if err != nil {
 			return nil, err
 		}
@@ -266,7 +265,7 @@ func (nm *nodeManager) updateNode(nodeId string, node *v1.Node) (*ie.FornaxNodeW
 		}
 		fornaxNode.Node = nodeInStore
 		nm.nodeUpdates <- &ie.NodeEvent{
-			Node: fornaxNode.Node.DeepCopy(),
+			Node: nodeInStore.DeepCopy(),
 			Type: ie.NodeEventTypeUpdate,
 		}
 		return fornaxNode, nil
@@ -288,7 +287,7 @@ func (nm *nodeManager) DisconnectNode(nodeId string) error {
 		}
 		fornaxNode.Node = nodeInStore
 		nm.nodeUpdates <- &ie.NodeEvent{
-			Node: fornaxNode.Node.DeepCopy(),
+			Node: nodeInStore.DeepCopy(),
 			Type: ie.NodeEventTypeUpdate,
 		}
 	}

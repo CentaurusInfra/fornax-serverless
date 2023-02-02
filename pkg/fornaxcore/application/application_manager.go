@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"math"
 	"reflect"
+	"runtime"
 	"sync"
 	"time"
 
@@ -198,7 +199,8 @@ func (am *ApplicationManager) Run(ctx context.Context) {
 		}
 	}()
 
-	for i := 0; i < DefaultNumOfApplicationWorkers; i++ {
+	numOfWorkers := runtime.NumCPU() / 2
+	for i := 0; i < numOfWorkers; i++ {
 		go wait.UntilWithContext(ctx, am.worker, time.Second)
 	}
 

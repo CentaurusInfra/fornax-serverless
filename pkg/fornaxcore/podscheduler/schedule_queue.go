@@ -22,7 +22,6 @@ import (
 
 	"container/heap"
 
-	fornaxv1 "centaurusinfra.io/fornax-serverless/pkg/apis/core/v1"
 	"centaurusinfra.io/fornax-serverless/pkg/collection"
 	podutil "centaurusinfra.io/fornax-serverless/pkg/util"
 	v1 "k8s.io/api/core/v1"
@@ -30,7 +29,6 @@ import (
 
 type PodScheduleItem struct {
 	pod         *v1.Pod
-	app         *fornaxv1.Application
 	requestTime time.Time
 }
 

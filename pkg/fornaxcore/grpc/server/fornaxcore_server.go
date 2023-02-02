@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"math/rand"
 	"net"
+	"runtime"
 	"sync"
 
 	fornaxv1 "centaurusinfra.io/fornax-serverless/pkg/apis/core/v1"
@@ -211,7 +212,8 @@ func (g *grpcServer) mustEmbedUnimplementedFornaxCoreServiceServer() {
 
 func NewGrpcServer() *grpcServer {
 	handlerChans := []chan *fornaxcore_grpc.FornaxCoreMessage{}
-	for i := 0; i < DefaultNodeIncomingHandlerNum; i++ {
+	numOfWorkers := runtime.NumCPU() / 2
+	for i := 0; i < numOfWorkers; i++ {
 		handlerChans = append(handlerChans, make(chan *fornaxcore_grpc.FornaxCoreMessage, 1000))
 	}
 

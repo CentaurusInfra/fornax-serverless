@@ -212,11 +212,10 @@ func (pm *podManager) createPodAndSendEvent(pod *v1.Pod) (*v1.Pod, error) {
 	default:
 		eType = ie.PodEventTypeCreate
 	}
-	p, err := factory.CreateFornaxPod(pm.ctx, pm.podStore, pod)
+	newPod, err := factory.CreateFornaxPod(pm.ctx, pm.podStore, pod)
 	if err != nil {
 		return nil, err
 	}
-	newPod := p.DeepCopy()
 	pm.podUpdates <- &ie.PodEvent{
 		Pod:  newPod.DeepCopy(),
 		Type: eType,

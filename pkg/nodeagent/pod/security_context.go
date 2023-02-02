@@ -22,64 +22,64 @@ import (
 
 	v1 "k8s.io/api/core/v1"
 	criv1 "k8s.io/cri-api/pkg/apis/runtime/v1"
-	"k8s.io/kubernetes/pkg/security/apparmor"
-	"k8s.io/kubernetes/pkg/securitycontext"
+	// "k8s.io/kubernetes/pkg/security/apparmor"
+	// "k8s.io/kubernetes/pkg/securitycontext"
 )
 
 // determineEffectiveSecurityContext gets container's security context from v1.Pod and v1.Container.
-func determineEffectiveSecurityContext(pod *v1.Pod, container *v1.Container, uid *int64, username string, seccompDefault bool, seccompProfileRoot string) *criv1.LinuxContainerSecurityContext {
-	effectiveSc := securitycontext.DetermineEffectiveSecurityContext(pod, container)
-	synthesized := convertToRuntimeSecurityContext(effectiveSc)
-	if synthesized == nil {
-		synthesized = &criv1.LinuxContainerSecurityContext{
-			MaskedPaths:   securitycontext.ConvertToRuntimeMaskedPaths(effectiveSc.ProcMount),
-			ReadonlyPaths: securitycontext.ConvertToRuntimeReadonlyPaths(effectiveSc.ProcMount),
-		}
-	}
-
-	// TODO: Deprecated, remove after we switch to Seccomp field
-	// set SeccompProfilePath.
-	synthesized.SeccompProfilePath = getSeccompProfilePath(pod.Annotations, container.Name, pod.Spec.SecurityContext, container.SecurityContext, seccompDefault, seccompProfileRoot)
-
-	synthesized.Seccomp = getSeccompProfile(seccompProfileRoot, pod.Annotations, container.Name, pod.Spec.SecurityContext, container.SecurityContext, seccompDefault)
-
-	// set ApparmorProfile.
-	synthesized.ApparmorProfile = apparmor.GetProfileNameFromPodAnnotations(pod.Annotations, container.Name)
-
-	// set RunAsUser.
-	if synthesized.RunAsUser == nil {
-		if uid != nil {
-			synthesized.RunAsUser = &criv1.Int64Value{Value: *uid}
-		}
-		synthesized.RunAsUsername = username
-	}
-
-	// set namespace options and supplemental groups.
-	synthesized.NamespaceOptions = namespacesForPod(pod)
-	podSc := pod.Spec.SecurityContext
-	if podSc != nil {
-		if podSc.FSGroup != nil {
-			synthesized.SupplementalGroups = append(synthesized.SupplementalGroups, int64(*podSc.FSGroup))
-		}
-
-		if podSc.SupplementalGroups != nil {
-			for _, sg := range podSc.SupplementalGroups {
-				synthesized.SupplementalGroups = append(synthesized.SupplementalGroups, int64(sg))
-			}
-		}
-	}
-
-	// if groups := m.runtimeHelper.GetExtraSupplementalGroupsForPod(pod); len(groups) > 0 {
-	// 	synthesized.SupplementalGroups = append(synthesized.SupplementalGroups, groups...)
-	// }
-
-	synthesized.NoNewPrivs = securitycontext.AddNoNewPrivileges(effectiveSc)
-
-	synthesized.MaskedPaths = securitycontext.ConvertToRuntimeMaskedPaths(effectiveSc.ProcMount)
-	synthesized.ReadonlyPaths = securitycontext.ConvertToRuntimeReadonlyPaths(effectiveSc.ProcMount)
-
-	return synthesized
-}
+// func determineEffectiveSecurityContext(pod *v1.Pod, container *v1.Container, uid *int64, username string, seccompDefault bool, seccompProfileRoot string) *criv1.LinuxContainerSecurityContext {
+// 	effectiveSc := securitycontext.DetermineEffectiveSecurityContext(pod, container)
+// 	synthesized := convertToRuntimeSecurityContext(effectiveSc)
+// 	if synthesized == nil {
+// 		synthesized = &criv1.LinuxContainerSecurityContext{
+// 			MaskedPaths:   securitycontext.ConvertToRuntimeMaskedPaths(effectiveSc.ProcMount),
+// 			ReadonlyPaths: securitycontext.ConvertToRuntimeReadonlyPaths(effectiveSc.ProcMount),
+// 		}
+// 	}
+//
+// 	// TODO: Deprecated, remove after we switch to Seccomp field
+// 	// set SeccompProfilePath.
+// 	synthesized.SeccompProfilePath = getSeccompProfilePath(pod.Annotations, container.Name, pod.Spec.SecurityContext, container.SecurityContext, seccompDefault, seccompProfileRoot)
+//
+// 	synthesized.Seccomp = getSeccompProfile(seccompProfileRoot, pod.Annotations, container.Name, pod.Spec.SecurityContext, container.SecurityContext, seccompDefault)
+//
+// 	// set ApparmorProfile.
+// 	// synthesized.ApparmorProfile = apparmor.GetProfileNameFromPodAnnotations(pod.Annotations, container.Name)
+//
+// 	// set RunAsUser.
+// 	if synthesized.RunAsUser == nil {
+// 		if uid != nil {
+// 			synthesized.RunAsUser = &criv1.Int64Value{Value: *uid}
+// 		}
+// 		synthesized.RunAsUsername = username
+// 	}
+//
+// 	// set namespace options and supplemental groups.
+// 	synthesized.NamespaceOptions = namespacesForPod(pod)
+// 	podSc := pod.Spec.SecurityContext
+// 	if podSc != nil {
+// 		if podSc.FSGroup != nil {
+// 			synthesized.SupplementalGroups = append(synthesized.SupplementalGroups, int64(*podSc.FSGroup))
+// 		}
+//
+// 		if podSc.SupplementalGroups != nil {
+// 			for _, sg := range podSc.SupplementalGroups {
+// 				synthesized.SupplementalGroups = append(synthesized.SupplementalGroups, int64(sg))
+// 			}
+// 		}
+// 	}
+//
+// 	// if groups := m.runtimeHelper.GetExtraSupplementalGroupsForPod(pod); len(groups) > 0 {
+// 	// 	synthesized.SupplementalGroups = append(synthesized.SupplementalGroups, groups...)
+// 	// }
+//
+// 	synthesized.NoNewPrivs = securitycontext.AddNoNewPrivileges(effectiveSc)
+//
+// 	synthesized.MaskedPaths = securitycontext.ConvertToRuntimeMaskedPaths(effectiveSc.ProcMount)
+// 	synthesized.ReadonlyPaths = securitycontext.ConvertToRuntimeReadonlyPaths(effectiveSc.ProcMount)
+//
+// 	return synthesized
+// }
 
 // convertToRuntimeSecurityContext converts v1.SecurityContext to criv1.SecurityContext.
 func convertToRuntimeSecurityContext(securityContext *v1.SecurityContext) *criv1.LinuxContainerSecurityContext {

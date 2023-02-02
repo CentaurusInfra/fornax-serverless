@@ -5,7 +5,7 @@ Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
 You may obtain a copy of the License at
 
-    http://www.apache.org/licenses/LICENSE-2.0
+http://www.apache.org/licenses/LICENSE-2.0
 
 Unless required by applicable law or agreed to in writing, software
 distributed under the License is distributed on an "AS IS" BASIS,
@@ -30,10 +30,9 @@ import (
 
 	units "github.com/docker/go-units"
 	libcontainercgroups "github.com/opencontainers/runc/libcontainer/cgroups"
-	utilfeature "k8s.io/apiserver/pkg/util/feature"
 	"k8s.io/kubernetes/pkg/api/v1/resource"
 	v1qos "k8s.io/kubernetes/pkg/apis/core/v1/helper/qos"
-	kubefeatures "k8s.io/kubernetes/pkg/features"
+	// kubefeatures "k8s.io/kubernetes/pkg/features"
 )
 
 const (
@@ -332,41 +331,41 @@ func (m *qosContainerManagerImpl) UpdateCgroups() error {
 	}
 
 	// update the qos level cgrougs v2 settings of memory qos if feature enabled
-	if utilfeature.DefaultFeatureGate.Enabled(kubefeatures.MemoryQoS) &&
-		libcontainercgroups.IsCgroup2UnifiedMode() {
-		m.setMemoryQoS(qosConfigs)
+	// if utilfeature.DefaultFeatureGate.Enabled(kubefeatures.MemoryQoS) &&
+	// libcontainercgroups.IsCgroup2UnifiedMode() {
+	m.setMemoryQoS(qosConfigs)
+	// }
+
+	// if utilfeature.DefaultFeatureGate.Enabled(kubefeatures.QOSReserved) {
+	for resource, percentReserve := range m.qosReserved {
+		switch resource {
+		case v1.ResourceMemory:
+			m.setMemoryReserve(qosConfigs, percentReserve)
+		}
 	}
 
-	if utilfeature.DefaultFeatureGate.Enabled(kubefeatures.QOSReserved) {
-		for resource, percentReserve := range m.qosReserved {
-			switch resource {
-			case v1.ResourceMemory:
-				m.setMemoryReserve(qosConfigs, percentReserve)
-			}
-		}
-
-		updateSuccess := true
-		for _, config := range qosConfigs {
-			err := m.cgroupManager.Update(config)
-			if err != nil {
-				updateSuccess = false
-			}
-		}
-		if updateSuccess {
-			klog.V(4).InfoS("Updated QoS cgroup configuration")
-			return nil
-		}
-
-		// If the resource can adjust the ResourceConfig to increase likelihood of
-		// success, call the adjustment function here.  Otherwise, the Update() will
-		// be called again with the same values.
-		for resource, percentReserve := range m.qosReserved {
-			switch resource {
-			case v1.ResourceMemory:
-				m.retrySetMemoryReserve(qosConfigs, percentReserve)
-			}
+	updateSuccess := true
+	for _, config := range qosConfigs {
+		err := m.cgroupManager.Update(config)
+		if err != nil {
+			updateSuccess = false
 		}
 	}
+	if updateSuccess {
+		klog.V(4).InfoS("Updated QoS cgroup configuration")
+		return nil
+	}
+
+	// If the resource can adjust the ResourceConfig to increase likelihood of
+	// success, call the adjustment function here.  Otherwise, the Update() will
+	// be called again with the same values.
+	for resource, percentReserve := range m.qosReserved {
+		switch resource {
+		case v1.ResourceMemory:
+			m.retrySetMemoryReserve(qosConfigs, percentReserve)
+		}
+	}
+	// }
 
 	for _, config := range qosConfigs {
 		err := m.cgroupManager.Update(config)

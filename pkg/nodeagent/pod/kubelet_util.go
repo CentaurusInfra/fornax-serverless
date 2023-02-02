@@ -281,8 +281,8 @@ func milliCPUToQuota(milliCPU int64, period int64) (quota int64) {
 // generateLinuxContainerConfig generates linux container config for kubelet runtime v1.
 func generateLinuxContainerConfig(nodeConfig *config.NodeConfiguration, container *v1.Container, pod *v1.Pod, uid *int64, username string, enforceMemoryQoS bool) *criv1.LinuxContainerConfig {
 	lc := &criv1.LinuxContainerConfig{
-		Resources:       &criv1.LinuxContainerResources{},
-		SecurityContext: determineEffectiveSecurityContext(pod, container, uid, username, nodeConfig.SeccompDefault, nodeConfig.SeccompProfileRoot),
+		Resources: &criv1.LinuxContainerResources{},
+		// SecurityContext: determineEffectiveSecurityContext(pod, container, uid, username, nodeConfig.SeccompDefault, nodeConfig.SeccompProfileRoot),
 	}
 
 	// if nsTarget != nil && lc.SecurityContext.NamespaceOptions.Pid == criv1.NamespaceMode_CONTAINER {

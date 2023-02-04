@@ -41,7 +41,7 @@ const (
 var _ RuntimeService = &remoteRuntimeManager{}
 
 type remoteRuntimeManager struct {
-	runtimeService    criapi.RuntimeService
+	criService        criapi.RuntimeService
 	containerdService *containerd.Client
 	podConcurrency    *semaphore.Weighted
 }
@@ -49,7 +49,7 @@ type remoteRuntimeManager struct {
 // GetPodSandbox implements RuntimeService
 func (r *remoteRuntimeManager) GetPodSandbox(podSandboxID string) (*criv1.PodSandbox, error) {
 	klog.InfoS("Get pod sandbox", "PodSandboxID", podSandboxID)
-	sandboxes, err := r.runtimeService.ListPodSandbox(&criv1.PodSandboxFilter{
+	sandboxes, err := r.criService.ListPodSandbox(&criv1.PodSandboxFilter{
 		Id: podSandboxID,
 	})
 
@@ -62,8 +62,7 @@ func (r *remoteRuntimeManager) GetPodSandbox(podSandboxID string) (*criv1.PodSan
 
 // Status implements cri.RuntimeService
 func (r *remoteRuntimeManager) GetRuntimeStatus() (*criv1.RuntimeStatus, error) {
-
-	resp, err := r.runtimeService.Status(false)
+	resp, err := r.criService.Status(false)
 	if err != nil {
 		klog.ErrorS(err, "Failed to get runtime status")
 		return nil, err
@@ -86,7 +85,7 @@ func (r *remoteRuntimeManager) CreateContainer(podSandboxID string, containerCon
 
 	var containerId string
 	var err error
-	containerId, err = r.runtimeService.CreateContainer(podSandboxID, containerConfig, podSandboxConfig)
+	containerId, err = r.criService.CreateContainer(podSandboxID, containerConfig, podSandboxConfig)
 	if err != nil {
 		return nil, err
 	}
@@ -97,7 +96,7 @@ func (r *remoteRuntimeManager) CreateContainer(podSandboxID string, containerCon
 	}
 
 	var containers []*criv1.Container
-	containers, err = r.runtimeService.ListContainers(&criv1.ContainerFilter{
+	containers, err = r.criService.ListContainers(&criv1.ContainerFilter{
 		Id:           containerId,
 		PodSandboxId: podSandboxID,
 	})
@@ -120,7 +119,7 @@ func (r *remoteRuntimeManager) CreateSandbox(sandboxConfig *criv1.PodSandboxConf
 	r.podConcurrency.Acquire(context.Background(), 1)
 	defer r.podConcurrency.Release(1)
 	klog.InfoS("Run pod sandbox", "SandboxConfig", sandboxConfig)
-	podSandBoxID, err := r.runtimeService.RunPodSandbox(sandboxConfig, runtimeClassName)
+	podSandBoxID, err := r.criService.RunPodSandbox(sandboxConfig, runtimeClassName)
 	if err != nil {
 		klog.ErrorS(err, "Failed to create pod sandbox", "PodSandboxConfig", sandboxConfig)
 		return nil, err
@@ -135,7 +134,7 @@ func (r *remoteRuntimeManager) CreateSandbox(sandboxConfig *criv1.PodSandboxConf
 	}
 
 	// get sandbox obj
-	sandboxes, err := r.runtimeService.ListPodSandbox(&criv1.PodSandboxFilter{
+	sandboxes, err := r.criService.ListPodSandbox(&criv1.PodSandboxFilter{
 		Id: podSandBoxID,
 	})
 	if err != nil {
@@ -174,7 +173,7 @@ func (r *remoteRuntimeManager) GetImageLabel() (string, error) {
 
 // GetContainerStatus implements cri.RuntimeService
 func (r *remoteRuntimeManager) GetContainerStatus(containerId string) (*ContainerStatus, error) {
-	response, err := r.runtimeService.ContainerStatus(containerId, false)
+	response, err := r.criService.ContainerStatus(containerId, false)
 	if err != nil {
 		return nil, err
 	}
@@ -221,7 +220,7 @@ func (r *remoteRuntimeManager) GetPods(includeContainers bool) ([]*Pod, error) {
 	podsMap := map[string]*Pod{}
 
 	req := &criv1.PodSandboxFilter{}
-	response, err := r.runtimeService.ListPodSandbox(req)
+	response, err := r.criService.ListPodSandbox(req)
 	if err != nil {
 		return nil, err
 	}
@@ -278,7 +277,7 @@ func (r *remoteRuntimeManager) StopContainer(containerID string, timeout time.Du
 	defer r.podConcurrency.Release(1)
 	klog.InfoS("Stop container", "ContainerID", containerID)
 
-	err := r.runtimeService.StopContainer(containerID, int64(timeout.Seconds()))
+	err := r.criService.StopContainer(containerID, int64(timeout.Seconds()))
 	if err != nil && !grpc_util.NotFoundError(err) {
 		return err
 	}
@@ -292,7 +291,7 @@ func (r *remoteRuntimeManager) StartContainer(containerID string) error {
 	defer r.podConcurrency.Release(1)
 	klog.InfoS("Start container", "ContainerID", containerID)
 
-	err := r.runtimeService.StartContainer(containerID)
+	err := r.criService.StartContainer(containerID)
 	if err != nil {
 		return err
 	}
@@ -314,13 +313,13 @@ func (r *remoteRuntimeManager) TerminateContainer(containerID string) error {
 	}
 
 	if status.RuntimeStatus.State == criv1.ContainerState_CONTAINER_RUNNING {
-		err = r.runtimeService.StopContainer(containerID, 0)
+		err = r.criService.StopContainer(containerID, 0)
 		if err != nil {
 			return err
 		}
 	}
 
-	err = r.runtimeService.RemoveContainer(containerID)
+	err = r.criService.RemoveContainer(containerID)
 	if err != nil {
 		return err
 	}
@@ -341,20 +340,20 @@ func (r *remoteRuntimeManager) TerminatePod(podSandboxID string, containerIDs []
 		for _, v := range containers {
 			if v.State != criv1.ContainerState_CONTAINER_EXITED {
 				klog.InfoS("Terminate container in pod", "PodSandboxID", podSandboxID, "ContainerID", v)
-				err = r.runtimeService.StopContainer(v.GetId(), 0)
+				err = r.criService.StopContainer(v.GetId(), 0)
 				if err != nil {
 					return err
 				}
 				containerIDs = append(containerIDs, v.GetId())
 			}
-			err = r.runtimeService.RemoveContainer(v.GetId())
+			err = r.criService.RemoveContainer(v.GetId())
 			if err != nil {
 				return err
 			}
 		}
 	}
 
-	err = r.runtimeService.StopPodSandbox(podSandboxID)
+	err = r.criService.StopPodSandbox(podSandboxID)
 	if err != nil {
 		if grpc_util.NotFoundError(err) {
 			return nil
@@ -362,7 +361,7 @@ func (r *remoteRuntimeManager) TerminatePod(podSandboxID string, containerIDs []
 		return err
 	}
 
-	err = r.runtimeService.RemovePodSandbox(podSandboxID)
+	err = r.criService.RemovePodSandbox(podSandboxID)
 	if err != nil {
 		if grpc_util.NotFoundError(err) {
 			return nil
@@ -410,7 +409,7 @@ func (r *remoteRuntimeManager) WakeupContainer(containerID string) error {
 }
 
 func (r *remoteRuntimeManager) getPodSandboxStatus(podSandboxID string) (*criv1.PodSandboxStatus, error) {
-	response, err := r.runtimeService.PodSandboxStatus(podSandboxID, false)
+	response, err := r.criService.PodSandboxStatus(podSandboxID, false)
 	if err != nil {
 		return nil, err
 	}
@@ -422,7 +421,7 @@ func (r *remoteRuntimeManager) getAllContainers() ([]*criv1.Container, error) {
 	klog.Infof("Get all containers in runtime")
 	filter := &criv1.ContainerFilter{}
 
-	containers, err := r.runtimeService.ListContainers(filter)
+	containers, err := r.criService.ListContainers(filter)
 	if err != nil {
 		return nil, err
 	}
@@ -436,7 +435,7 @@ func (r *remoteRuntimeManager) getPodContainers(podSandboxID string) ([]*criv1.C
 		PodSandboxId: podSandboxID,
 	}
 
-	containers, err := r.runtimeService.ListContainers(filter)
+	containers, err := r.criService.ListContainers(filter)
 	if err != nil {
 		return nil, err
 	}
@@ -458,7 +457,7 @@ func NewRemoteRuntimeService(endpoint string, connectionTimeout time.Duration, c
 		return nil, err
 	}
 	service := &remoteRuntimeManager{
-		runtimeService:    remoteService,
+		criService:        remoteService,
 		containerdService: containerdClient,
 		podConcurrency:    semaphore.NewWeighted(int64(concurrency)),
 	}
@@ -467,5 +466,5 @@ func NewRemoteRuntimeService(endpoint string, connectionTimeout time.Duration, c
 }
 
 func (r *remoteRuntimeManager) ExecCommand(containerID string, cmd []string, timeout time.Duration) ([]byte, []byte, error) {
-	return r.runtimeService.ExecSync(containerID, cmd, timeout)
+	return r.criService.ExecSync(containerID, cmd, timeout)
 }

@@ -25,6 +25,7 @@ import (
 	"centaurusinfra.io/fornax-serverless/pkg/nodeagent/qos"
 	resourcemanager "centaurusinfra.io/fornax-serverless/pkg/nodeagent/resource"
 	"centaurusinfra.io/fornax-serverless/pkg/nodeagent/runtime"
+	"centaurusinfra.io/fornax-serverless/pkg/nodeagent/sandbox"
 	"centaurusinfra.io/fornax-serverless/pkg/nodeagent/sessionservice"
 	sessionserver "centaurusinfra.io/fornax-serverless/pkg/nodeagent/sessionservice/grpc"
 	"centaurusinfra.io/fornax-serverless/pkg/nodeagent/store"
@@ -46,6 +47,7 @@ type Dependencies struct {
 	MemoryManager   resourcemanager.MemoryManager
 	CPUManager      resourcemanager.CPUManager
 	VolumeManager   resourcemanager.VolumeManager
+	SandboxManger   *sandbox.SandboxManager
 	NodeStore       *store.NodeStore
 	PodStore        *store.PodStore
 	SessionService  sessionservice.SessionService
@@ -86,21 +88,6 @@ func InitBasicDependencies(ctx context.Context, nodeConfig config.NodeConfigurat
 		return nil, err
 	}
 
-	// CAdvisor
-	dependencies.CAdvisor, err = InitCAdvisor(cadvisor.DefaultCAdvisorConfig(nodeConfig), dependencies.RuntimeService)
-	if err != nil {
-		klog.ErrorS(err, "failed to init cadvisor")
-		return nil, err
-	}
-
-	// SessionService
-	sessionService := sessionserver.NewSessionService()
-	err = sessionService.Run(ctx, nodeConfig.SessionServicePort)
-	if err != nil {
-		return nil, err
-	}
-	dependencies.SessionService = sessionService
-
 	return &dependencies, nil
 }
 
@@ -139,6 +126,10 @@ func InitNodeStore(databaseURL string) (*store.NodeStore, error) {
 
 func InitCAdvisor(cAdvisorConfig cadvisor.CAdvisorConfig, CRIRuntime runtime.RuntimeService) (cadvisor.CAdvisorInfoProvider, error) {
 	return cadvisor.NewCAdvisorInfoProvider(cAdvisorConfig, CRIRuntime)
+}
+
+func InitSandboxManager(nodeConfig config.NodeConfiguration, CRIRuntime runtime.RuntimeService, qosManager qos.QoSManager) (*sandbox.SandboxManager, error) {
+	return sandbox.NewSandboxManager(CRIRuntime, qosManager, &nodeConfig), nil
 }
 
 func (n *Dependencies) Complete(node *v1.Node, nodeConfig config.NodeConfiguration, activePods kubeletcm.ActivePodsFunc) error {
@@ -204,6 +195,24 @@ func (n *Dependencies) Complete(node *v1.Node, nodeConfig config.NodeConfigurati
 		}
 	}
 
+	// SessionService
+	if n.SessionService == nil {
+		sessionService := sessionserver.NewSessionService()
+		err = sessionService.Run(context.Background(), nodeConfig.SessionServicePort)
+		if err != nil {
+			return err
+		}
+		n.SessionService = sessionService
+	}
+
+	// SandboxManager
+	if n.SandboxManger == nil {
+		n.SandboxManger, err = InitSandboxManager(nodeConfig, n.RuntimeService, n.QosManager)
+		if err != nil {
+			klog.ErrorS(err, "failed to init cadvisor")
+			return err
+		}
+	}
 	// TODO
 	// MemoryManager   resourcemanager.MemoryManager
 	// CPUManager      resourcemanager.CPUManager

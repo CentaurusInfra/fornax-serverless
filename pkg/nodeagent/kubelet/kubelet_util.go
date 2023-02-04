@@ -15,7 +15,7 @@ limitations under the License.
 */
 
 // this file is mostly a copy from kubelet, and a few modification to use node configuration
-package pod
+package kubelet
 
 import (
 	"fmt"
@@ -180,21 +180,21 @@ func ToRuntimeProtocol(protocol v1.Protocol) criv1.Protocol {
 	return criv1.Protocol_TCP
 }
 
-func ipcNamespaceForPod(pod *v1.Pod) criv1.NamespaceMode {
+func IpcNamespaceForPod(pod *v1.Pod) criv1.NamespaceMode {
 	if pod != nil && pod.Spec.HostIPC {
 		return criv1.NamespaceMode_NODE
 	}
 	return criv1.NamespaceMode_POD
 }
 
-func networkNamespaceForPod(pod *v1.Pod) criv1.NamespaceMode {
+func NetworkNamespaceForPod(pod *v1.Pod) criv1.NamespaceMode {
 	if pod != nil && pod.Spec.HostNetwork {
 		return criv1.NamespaceMode_NODE
 	}
 	return criv1.NamespaceMode_POD
 }
 
-func pidNamespaceForPod(pod *v1.Pod) criv1.NamespaceMode {
+func PidNamespaceForPod(pod *v1.Pod) criv1.NamespaceMode {
 	if pod != nil {
 		if pod.Spec.HostPID {
 			return criv1.NamespaceMode_NODE
@@ -209,11 +209,11 @@ func pidNamespaceForPod(pod *v1.Pod) criv1.NamespaceMode {
 
 // namespacesForPod returns the criv1.NamespaceOption for a given pod.
 // An empty or nil pod can be used to get the namespace defaults for v1.Pod.
-func namespacesForPod(pod *v1.Pod) *criv1.NamespaceOption {
+func NamespacesForPod(pod *v1.Pod) *criv1.NamespaceOption {
 	return &criv1.NamespaceOption{
-		Ipc:     ipcNamespaceForPod(pod),
-		Network: networkNamespaceForPod(pod),
-		Pid:     pidNamespaceForPod(pod),
+		Ipc:     IpcNamespaceForPod(pod),
+		Network: NetworkNamespaceForPod(pod),
+		Pid:     PidNamespaceForPod(pod),
 	}
 }
 
@@ -225,23 +225,22 @@ func convertOverheadToLinuxResources(nodeConfig *config.NodeConfiguration, pod *
 
 		// For overhead, we do not differentiate between requests and limits. Treat this overhead
 		// as "guaranteed", with requests == limits
-		resources = calculateLinuxResources(nodeConfig, cpu, cpu, memory)
+		resources = CalculateLinuxResources(nodeConfig, cpu, cpu, memory)
 	}
 
 	return resources
 }
 
-func calculateSandboxResources(nodeConfig *config.NodeConfiguration, pod *v1.Pod) *criv1.LinuxContainerResources {
+func CalculateSandboxResources(nodeConfig *config.NodeConfiguration, pod *v1.Pod) *criv1.LinuxContainerResources {
 	req, lim := resourcehelper.PodRequestsAndLimitsWithoutOverhead(pod)
-	return calculateLinuxResources(nodeConfig, req.Cpu(), lim.Cpu(), lim.Memory())
+	return CalculateLinuxResources(nodeConfig, req.Cpu(), lim.Cpu(), lim.Memory())
 }
 
-func applySandboxResources(nodeConfig *config.NodeConfiguration, pod *v1.Pod, psc *criv1.PodSandboxConfig) error {
-
+func ApplySandboxResources(nodeConfig *config.NodeConfiguration, pod *v1.Pod, psc *criv1.PodSandboxConfig) error {
 	if psc.Linux == nil {
 		return nil
 	}
-	psc.Linux.Resources = calculateSandboxResources(nodeConfig, pod)
+	psc.Linux.Resources = CalculateSandboxResources(nodeConfig, pod)
 	psc.Linux.Overhead = convertOverheadToLinuxResources(nodeConfig, pod)
 
 	return nil
@@ -256,7 +255,7 @@ const (
 )
 
 // milliCPUToQuota converts milliCPU to CFS quota and period values
-func milliCPUToQuota(milliCPU int64, period int64) (quota int64) {
+func MilliCPUToQuota(milliCPU int64, period int64) (quota int64) {
 	// CFS quota is measured in two values:
 	//  - cfs_period_us=100ms (the amount of time to measure usage across)
 	//  - cfs_quota=20ms (the amount of cpu time allowed to be used across a period)
@@ -279,7 +278,7 @@ func milliCPUToQuota(milliCPU int64, period int64) (quota int64) {
 }
 
 // generateLinuxContainerConfig generates linux container config for kubelet runtime v1.
-func generateLinuxContainerConfig(nodeConfig *config.NodeConfiguration, container *v1.Container, pod *v1.Pod, uid *int64, username string, enforceMemoryQoS bool) *criv1.LinuxContainerConfig {
+func GenerateLinuxContainerConfig(nodeConfig *config.NodeConfiguration, container *v1.Container, pod *v1.Pod, uid *int64, username string, enforceMemoryQoS bool) *criv1.LinuxContainerConfig {
 	lc := &criv1.LinuxContainerConfig{
 		Resources: &criv1.LinuxContainerResources{},
 		// SecurityContext: determineEffectiveSecurityContext(pod, container, uid, username, nodeConfig.SeccompDefault, nodeConfig.SeccompProfileRoot),
@@ -291,7 +290,7 @@ func generateLinuxContainerConfig(nodeConfig *config.NodeConfiguration, containe
 	// }
 
 	// set linux container resources
-	lc.Resources = calculateLinuxResources(nodeConfig, container.Resources.Requests.Cpu(), container.Resources.Limits.Cpu(), container.Resources.Limits.Memory())
+	lc.Resources = CalculateLinuxResources(nodeConfig, container.Resources.Requests.Cpu(), container.Resources.Limits.Cpu(), container.Resources.Limits.Memory())
 
 	lc.Resources.OomScoreAdj = int64(nodeConfig.OOMScoreAdj)
 	lc.Resources.HugepageLimits = GetHugepageLimitsFromResources(container.Resources)
@@ -338,7 +337,7 @@ func generateLinuxContainerConfig(nodeConfig *config.NodeConfiguration, containe
 	return lc
 }
 
-func makeDevices(opts *runtime.RunContainerOptions) []*criv1.Device {
+func MakeDevices(opts *runtime.RunContainerOptions) []*criv1.Device {
 	devices := make([]*criv1.Device, len(opts.Devices))
 
 	for idx := range opts.Devices {
@@ -354,7 +353,7 @@ func makeDevices(opts *runtime.RunContainerOptions) []*criv1.Device {
 }
 
 // makeMounts generates container volume mounts for kubelet runtime v1.
-func makeMounts(opts *runtime.RunContainerOptions, container *v1.Container) []*criv1.Mount {
+func MakeMounts(opts *runtime.RunContainerOptions, container *v1.Container) []*criv1.Mount {
 	volumeMounts := []*criv1.Mount{}
 
 	for idx := range opts.Mounts {
@@ -378,7 +377,7 @@ func makeMounts(opts *runtime.RunContainerOptions, container *v1.Container) []*c
 		// Because the PodContainerDir contains pod uid and container name which is unique enough,
 		// here we just add a random id to make the path unique for different instances
 		// of the same container.
-		cid := makeUID()
+		cid := MakeUID()
 		containerLogPath := filepath.Join(opts.PodContainerDir, cid)
 		fs, err := os.Create(containerLogPath)
 		if err != nil {
@@ -428,7 +427,7 @@ func MakeAbsolutePath(goos, path string) string {
 }
 
 // makeUID returns a randomly generated string.
-func makeUID() string {
+func MakeUID() string {
 	return fmt.Sprintf("%08x", rand.Uint32())
 }
 
@@ -474,7 +473,7 @@ func GetHugepageLimitsFromResources(resources v1.ResourceRequirements) []*criv1.
 }
 
 // calculateLinuxResources will create the linuxContainerResources type based on the provided CPU and memory resource requests, limits
-func calculateLinuxResources(nodeConfig *config.NodeConfiguration, cpuRequest, cpuLimit, memoryLimit *resource.Quantity) *criv1.LinuxContainerResources {
+func CalculateLinuxResources(nodeConfig *config.NodeConfiguration, cpuRequest, cpuLimit, memoryLimit *resource.Quantity) *criv1.LinuxContainerResources {
 	resources := criv1.LinuxContainerResources{}
 	var cpuShares int64
 
@@ -502,7 +501,7 @@ func calculateLinuxResources(nodeConfig *config.NodeConfiguration, cpuRequest, c
 		if utilfeature.DefaultFeatureGate.Enabled(kubefeatures.CPUCFSQuotaPeriod) {
 			cpuPeriod = int64(nodeConfig.CPUCFSQuotaPeriod / time.Microsecond)
 		}
-		cpuQuota := milliCPUToQuota(cpuLimit.MilliValue(), cpuPeriod)
+		cpuQuota := MilliCPUToQuota(cpuLimit.MilliValue(), cpuPeriod)
 		resources.CpuQuota = cpuQuota
 		resources.CpuPeriod = cpuPeriod
 	}

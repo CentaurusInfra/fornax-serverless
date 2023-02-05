@@ -22,11 +22,10 @@ import (
 	"runtime/debug"
 	"time"
 
+	"github.com/spf13/pflag"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apiserver/pkg/server"
 	"k8s.io/klog/v2"
-	"k8s.io/kube-openapi/pkg/common"
-	k8sopenapi "k8s.io/kubernetes/pkg/generated/openapi"
 	"sigs.k8s.io/apiserver-runtime/pkg/builder"
 
 	// +kubebuilder:scaffold:resource-imports
@@ -57,54 +56,21 @@ func init() {
 func main() {
 	// defer profile.Start().Stop()
 	debug.SetGCPercent(300)
-	// initialize fornax resource memory store
+	klog.Info("Initialize fornax resource memory store")
 	ctx := context.Background()
 	nodeStore := factory.NewFornaxNodeStorage(ctx)
 	podStore := factory.NewFornaxPodStorage(ctx)
 	appStatusStore := factory.NewFornaxApplicationStatusStorage(ctx)
 	appSessionStore := factory.NewFornaxApplicationSessionStorage(ctx)
 
-	// new fornaxcore grpc server which talk with node agent
-	nodeAgentServer := grpc_server.NewGrpcServer()
-
-	// start internal managers and pod scheduler
-	podManager := pod.NewPodManager(ctx, podStore, nodeAgentServer)
-	sessionManager := session.NewSessionManager(ctx, appSessionStore, nodeAgentServer)
-	nodeManager := node.NewNodeManager(ctx, nodeStore, nodeAgentServer, podManager, sessionManager)
-	podScheduler := podscheduler.NewPodScheduler(ctx, nodeAgentServer, nodeManager, podManager,
-		&podscheduler.SchedulePolicy{
-			NumOfEvaluatedNodes: 100,
-			BackoffDuration:     10 * time.Second,
-			NodeSortingMethod:   podscheduler.NodeSortingMethodMoreMemory,
-		})
-	podScheduler.Run()
-	podManager.Run(podScheduler)
-	nodeManager.Run()
-
-	// start application manager at last as it require api server
-	klog.Info("starting application manager")
-	appManager := application.NewApplicationManager(ctx, podManager, sessionManager, appStatusStore)
-	appManager.Run(ctx)
-
-	// start fornaxcore grpc nodeagnet server to listen node agents
-	klog.Info("starting fornaxcore grpc node agent server")
-	port := 18001
-	// we are using k8s api server, command line flags are only parsed when apiserver started
-	// TODO, parse flags before start api server and get certificates from command line flags,
-	certFile := ""
-	keyFile := ""
-	err := nodeAgentServer.RunGrpcServer(ctx, nodemonitor.NewNodeMonitor(nodeManager), port, certFile, keyFile)
-	if err != nil {
-		klog.Fatal(err)
-	}
-	klog.Info("Fornaxcore grpc server started")
-
-	// start api server to listen to clients
-	klog.Info("starting fornaxcore rest api server")
+	// build api server, it parse command line flags
+	klog.Info("Build fornaxcore rest api server")
 	// +kubebuilder:scaffold:resource-register
 	apiserver := builder.APIServer.
 		WithLocalDebugExtension().
-		WithOpenAPIDefinitions("FornaxCore", "centaurusinfra.io/fornax-serverless/pkg/apis/core/v1", getOpenAPIDefinitions).
+		DisableAdmissionControllers().
+		DisableAuthorization().
+		WithOpenAPIDefinitions("FornaxCore", "centaurusinfra.io/fornax-serverless/pkg/apis/core/v1", openapi.GetFornaxOpenAPIDefinitions).
 		WithConfigFns(func(config *server.RecommendedConfig) *server.RecommendedConfig {
 			optionsGetter := config.RESTOptionsGetter
 			config.RESTOptionsGetter = &factory.FornaxRestOptionsFactory{
@@ -118,22 +84,64 @@ func main() {
 		WithServerFns(func(server *builder.GenericAPIServer) *builder.GenericAPIServer {
 			return server
 		}).
+		WithFlagFns(func(flagSet *pflag.FlagSet) *pflag.FlagSet {
+			// klog.InitFlags(flagSet)
+			return flagSet
+		}).
 		WithResource(&fornaxv1.Application{}).
 		WithResource(&fornaxv1.ApplicationSession{}).
 		WithResourceAndHandler(&fornaxk8sv1.FornaxPod{}, store.FornaxReadonlyResourceHandler(&fornaxk8sv1.FornaxPod{})).
 		WithResourceAndHandler(&fornaxk8sv1.FornaxNode{}, store.FornaxReadonlyResourceHandler(&fornaxk8sv1.FornaxNode{}))
-	err = apiserver.Execute()
+	apiServerCmd, err := apiserver.Build()
 	if err != nil {
 		klog.Fatal(err)
 		os.Exit(-1)
 	}
 
-}
+	// new fornaxcore grpc server which talk with node agent
+	klog.Info("Build Fornaxcore grpc server")
+	nodeAgentServer := grpc_server.NewGrpcServer()
 
-func getOpenAPIDefinitions(ref common.ReferenceCallback) map[string]common.OpenAPIDefinition {
-	definitions := k8sopenapi.GetOpenAPIDefinitions(ref)
-	for k, v := range openapi.GetOpenAPIDefinitions(ref) {
-		definitions[k] = v
+	// start internal managers and pod scheduler
+	podManager := pod.NewPodManager(ctx, podStore, nodeAgentServer)
+	sessionManager := session.NewSessionManager(ctx, appSessionStore, nodeAgentServer)
+	nodeManager := node.NewNodeManager(ctx, nodeStore, nodeAgentServer, podManager, sessionManager)
+	podScheduler := podscheduler.NewPodScheduler(ctx, nodeAgentServer, nodeManager, podManager,
+		&podscheduler.SchedulePolicy{
+			NumOfEvaluatedNodes: 100,
+			BackoffDuration:     10 * time.Second,
+			NodeSortingMethod:   podscheduler.NodeSortingMethodMoreMemory,
+		})
+	klog.Info("Starting pod scheduler")
+	podScheduler.Run()
+	klog.Info("Starting pod manager")
+	podManager.Run(podScheduler)
+	klog.Info("Starting node manager")
+	nodeManager.Run()
+
+	// start application manager at last as it require api server
+	klog.Info("starting application manager")
+	appManager := application.NewApplicationManager(ctx, podManager, sessionManager, appStatusStore)
+	appManager.Run(ctx)
+
+	// start fornaxcore grpc nodeagnet server to listen node agents
+	klog.Info("Starting Fornaxcore grpc server")
+	// TODO get certn and keyFile from commandline flags, --tls-cert-file --tls-private-key-file
+	certFile := ""
+	keyFile := ""
+	port := 18001
+	err = nodeAgentServer.RunGrpcServer(ctx, nodemonitor.NewNodeMonitor(nodeManager), port, certFile, keyFile)
+	if err != nil {
+		klog.Fatal(err)
+		os.Exit(-1)
 	}
-	return definitions
+	klog.Info("Fornaxcore grpc server started")
+
+	// start api server to listen to clients
+	err = apiServerCmd.Execute()
+	if err != nil {
+		klog.Fatal(err)
+		os.Exit(-1)
+	}
+
 }

@@ -19,6 +19,7 @@ import (
 	"fmt"
 	"time"
 
+	"centaurusinfra.io/fornax-serverless/pkg/nodeagent/kubelet"
 	internal "centaurusinfra.io/fornax-serverless/pkg/nodeagent/message"
 	podcontainer "centaurusinfra.io/fornax-serverless/pkg/nodeagent/pod/container"
 	"centaurusinfra.io/fornax-serverless/pkg/nodeagent/runtime"
@@ -95,14 +96,14 @@ func (a *PodActor) CreatePod() (err error) {
 
 	// Make data directories for the pod
 	klog.InfoS("Make Pod data dirs", "pod", types.UniquePodName(a.pod))
-	if err := MakePodDataDirs(a.nodeConfig.RootPath, pod); err != nil {
+	if err := kubelet.MakePodDataDirs(a.nodeConfig.RootPath, pod); err != nil {
 		klog.ErrorS(err, "Unable to make pod data directories for pod", "pod", types.UniquePodName(a.pod))
 		return err
 	}
 
 	// Make log directories for the pod
 	klog.InfoS("Make Pod log dirs", "pod", types.UniquePodName(a.pod))
-	if err := MakePodLogDir(a.nodeConfig.PodLogRootPath, pod); err != nil {
+	if err := kubelet.MakePodLogDir(a.nodeConfig.PodLogRootPath, pod); err != nil {
 		klog.ErrorS(err, "Unable to make pod data directories for pod", "pod", types.UniquePodName(a.pod))
 		return err
 	}
@@ -121,7 +122,7 @@ func (a *PodActor) CreatePod() (err error) {
 
 	klog.InfoS("Create pod sandbox", "pod", types.UniquePodName(a.pod))
 	var runtimePod *runtime.Pod
-	runtimePod, err = a.createPodSandbox()
+	runtimePod, err = a.dependencies.SandboxManger.CreatePodSandbox(a.pod.Pod)
 	if err != nil {
 		klog.ErrorS(err, "Failed to create pod sandbox", "pod", types.UniquePodName(a.pod))
 		return err
@@ -227,7 +228,7 @@ func (a *PodActor) CleanupPod() (err error) {
 	klog.InfoS("Remove Pod sandbox", "pod", types.UniquePodName(a.pod))
 	pod := a.pod.Pod
 	if a.pod.RuntimePod != nil && a.pod.RuntimePod.Sandbox != nil {
-		err = a.removePodSandbox(a.pod.RuntimePod.Sandbox.Id, a.pod.RuntimePod.SandboxConfig)
+		err = a.dependencies.SandboxManger.RemovePodSandbox(a.pod.RuntimePod.Sandbox.Id, a.pod.RuntimePod.SandboxConfig)
 		if err != nil {
 			klog.ErrorS(err, "Failed to remove pod sandbox")
 			return err
@@ -243,13 +244,13 @@ func (a *PodActor) CleanupPod() (err error) {
 
 	// Remove data directories for the pod
 	klog.InfoS("Remove Pod Data dirs", "pod", types.UniquePodName(a.pod))
-	if err := CleanupPodDataDirs(a.nodeConfig.RootPath, pod); err != nil {
+	if err := kubelet.CleanupPodDataDirs(a.nodeConfig.RootPath, pod); err != nil {
 		klog.ErrorS(err, "Unable to remove pod data directories for pod", "pod", types.UniquePodName(a.pod))
 		return err
 	}
 
 	klog.InfoS("Remove Pod log dirs", "pod", types.UniquePodName(a.pod))
-	if err := CleanupPodLogDir(a.nodeConfig.PodLogRootPath, pod); err != nil {
+	if err := kubelet.CleanupPodLogDir(a.nodeConfig.PodLogRootPath, pod); err != nil {
 		klog.ErrorS(err, "Unable to remove pod log directories for pod", "pod", types.UniquePodName(a.pod))
 		return err
 	}

@@ -447,7 +447,6 @@ func (ps *podScheduler) handleNodeAndPodUpdates() {
 }
 
 func (ps *podScheduler) Run() {
-	klog.Info("starting pod scheduler")
 	// get initial nodes
 	nodes := ps.nodeInfoLW.List()
 	for _, n := range nodes {

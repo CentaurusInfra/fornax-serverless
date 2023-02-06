@@ -296,7 +296,6 @@ func (nm *nodeManager) DisconnectNode(nodeId string) error {
 }
 
 func (nm *nodeManager) Run() error {
-	klog.Info("starting node manager")
 	go func() {
 		for {
 			select {

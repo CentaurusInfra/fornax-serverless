@@ -23,6 +23,7 @@ import (
 	criv1 "k8s.io/cri-api/pkg/apis/runtime/v1"
 	"k8s.io/klog/v2"
 
+	kubelet "centaurusinfra.io/fornax-serverless/pkg/nodeagent/kubelet"
 	cruntime "centaurusinfra.io/fornax-serverless/pkg/nodeagent/runtime"
 	"centaurusinfra.io/fornax-serverless/pkg/nodeagent/types"
 )
@@ -46,7 +47,7 @@ func (a *PodActor) createContainer(podSandboxConfig *criv1.PodSandboxConfig, con
 
 	// create the container log dir
 	klog.InfoS("Create container log dir", "pod", types.UniquePodName(a.pod), "container", containerSpec.Name)
-	logDir, err := BuildContainerLogsDirectory(pod, containerSpec.Name)
+	logDir, err := kubelet.BuildContainerLogsDirectory(pod, containerSpec.Name)
 	if err != nil {
 		klog.ErrorS(err, "Failed to create container log", "pod", types.UniquePodName(a.pod), "container", containerSpec.Name, "logDir", logDir)
 		return nil, ErrCreateContainerConfig
@@ -84,11 +85,11 @@ func (m *PodActor) generateContainerConfig(container *v1.Container, imageRef *cr
 	//  return nil, nil, err
 	// }
 
-	_, err := BuildContainerLogsDirectory(pod, container.Name)
+	_, err := kubelet.BuildContainerLogsDirectory(pod, container.Name)
 	if err != nil {
 		return nil, fmt.Errorf("create log directory for container %s failed: %v", container.Name, err)
 	}
-	containerLogsPath := ContainerLogFileName(container.Name, 0)
+	containerLogsPath := kubelet.ContainerLogFileName(container.Name, 0)
 	podIP := ""
 	if len(m.pod.RuntimePod.IPs) > 0 {
 		podIP = m.pod.RuntimePod.IPs[0]
@@ -128,8 +129,8 @@ func (m *PodActor) generateContainerConfig(container *v1.Container, imageRef *cr
 		Command:     commands,
 		Args:        args,
 		WorkingDir:  container.WorkingDir,
-		Labels:      newContainerLabels(container, pod),
-		Annotations: newContainerAnnotations(container, pod, 0, map[string]string{}),
+		Labels:      kubelet.NewContainerLabels(container, pod),
+		Annotations: kubelet.NewContainerAnnotations(container, pod, 0, map[string]string{}),
 		// Devices:     makeDevices(opts),
 		// Mounts:      makeMounts(opts, container),
 		LogPath:   containerLogsPath,
@@ -145,7 +146,7 @@ func (m *PodActor) generateContainerConfig(container *v1.Container, imageRef *cr
 		uid = &value
 	}
 	username := imageRef.GetUsername()
-	generateLinuxContainerConfig(m.nodeConfig, container, pod, uid, username, true)
+	kubelet.GenerateLinuxContainerConfig(m.nodeConfig, container, pod, uid, username, true)
 
 	// set environment variables
 	criEnvs := make([]*criv1.KeyValue, len(envs))

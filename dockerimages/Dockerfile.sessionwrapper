@@ -8,6 +8,7 @@ WORKDIR /sessionwrapper
 COPY go.mod .
 COPY go.sum .
 COPY ./kubernetes ./kubernetes/
+COPY ./apiserver-runtime ./apiserver-runtime/
 COPY ./pkg ./pkg/
 COPY ./cmd ./cmd/
 

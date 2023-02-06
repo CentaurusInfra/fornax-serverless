@@ -17,9 +17,7 @@ limitations under the License.
 package helper
 
 import (
-	"encoding/json"
 	"fmt"
-	"strconv"
 	"strings"
 
 	"k8s.io/apimachinery/pkg/api/resource"
@@ -76,18 +74,6 @@ func HugePageSizeFromResourceName(name core.ResourceName) (resource.Quantity, er
 	}
 	pageSize := strings.TrimPrefix(string(name), core.ResourceHugePagesPrefix)
 	return resource.ParseQuantity(pageSize)
-}
-
-// NonConvertibleFields iterates over the provided map and filters out all but
-// any keys with the "non-convertible.kubernetes.io" prefix.
-func NonConvertibleFields(annotations map[string]string) map[string]string {
-	nonConvertibleKeys := map[string]string{}
-	for key, value := range annotations {
-		if strings.HasPrefix(key, core.NonConvertibleAnnotationPrefix) {
-			nonConvertibleKeys[key] = value
-		}
-	}
-	return nonConvertibleKeys
 }
 
 // Semantic can do semantic deep equality checks for core objects.
@@ -427,60 +413,6 @@ func NodeSelectorRequirementsAsFieldSelector(nsm []core.NodeSelectorRequirement)
 	return fields.AndSelectors(selectors...), nil
 }
 
-// GetTolerationsFromPodAnnotations gets the json serialized tolerations data from Pod.Annotations
-// and converts it to the []Toleration type in core.
-func GetTolerationsFromPodAnnotations(annotations map[string]string) ([]core.Toleration, error) {
-	var tolerations []core.Toleration
-	if len(annotations) > 0 && annotations[core.TolerationsAnnotationKey] != "" {
-		err := json.Unmarshal([]byte(annotations[core.TolerationsAnnotationKey]), &tolerations)
-		if err != nil {
-			return tolerations, err
-		}
-	}
-	return tolerations, nil
-}
-
-// AddOrUpdateTolerationInPod tries to add a toleration to the pod's toleration list.
-// Returns true if something was updated, false otherwise.
-func AddOrUpdateTolerationInPod(pod *core.Pod, toleration *core.Toleration) bool {
-	podTolerations := pod.Spec.Tolerations
-
-	var newTolerations []core.Toleration
-	updated := false
-	for i := range podTolerations {
-		if toleration.MatchToleration(&podTolerations[i]) {
-			if Semantic.DeepEqual(toleration, podTolerations[i]) {
-				return false
-			}
-			newTolerations = append(newTolerations, *toleration)
-			updated = true
-			continue
-		}
-
-		newTolerations = append(newTolerations, podTolerations[i])
-	}
-
-	if !updated {
-		newTolerations = append(newTolerations, *toleration)
-	}
-
-	pod.Spec.Tolerations = newTolerations
-	return true
-}
-
-// GetTaintsFromNodeAnnotations gets the json serialized taints data from Pod.Annotations
-// and converts it to the []Taint type in core.
-func GetTaintsFromNodeAnnotations(annotations map[string]string) ([]core.Taint, error) {
-	var taints []core.Taint
-	if len(annotations) > 0 && annotations[core.TaintsAnnotationKey] != "" {
-		err := json.Unmarshal([]byte(annotations[core.TaintsAnnotationKey]), &taints)
-		if err != nil {
-			return []core.Taint{}, err
-		}
-	}
-	return taints, nil
-}
-
 // GetPersistentVolumeClass returns StorageClassName.
 func GetPersistentVolumeClass(volume *core.PersistentVolume) string {
 	// Use beta annotation first
@@ -553,25 +485,6 @@ func ToPodResourcesSet(podSpec *core.PodSpec) sets.String {
 		result = result.Union(toContainerResourcesSet(&podSpec.Containers[i]))
 	}
 	return result
-}
-
-// GetDeletionCostFromPodAnnotations returns the integer value of pod-deletion-cost. Returns 0
-// if not set or the value is invalid.
-func GetDeletionCostFromPodAnnotations(annotations map[string]string) (int32, error) {
-	if value, exist := annotations[core.PodDeletionCost]; exist {
-		// values that start with plus sign (e.g, "+10") or leading zeros (e.g., "008") are not valid.
-		if !validFirstDigit(value) {
-			return 0, fmt.Errorf("invalid value %q", value)
-		}
-
-		i, err := strconv.ParseInt(value, 10, 32)
-		if err != nil {
-			// make sure we default to 0 on error.
-			return 0, err
-		}
-		return int32(i), nil
-	}
-	return 0, nil
 }
 
 func validFirstDigit(str string) bool {

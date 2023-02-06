@@ -30,7 +30,7 @@ import (
 	"centaurusinfra.io/fornax-serverless/pkg/nodeagent/config"
 	"centaurusinfra.io/fornax-serverless/pkg/nodeagent/resource"
 	"centaurusinfra.io/fornax-serverless/pkg/util"
-	kubeletconfig "k8s.io/kubernetes/pkg/kubelet/apis/config"
+	// kubeletconfig "k8s.io/kubernetes/pkg/kubelet/apis/config"
 )
 
 const (
@@ -156,16 +156,16 @@ func buildKubeletCMNodeConfig(nodeConfig config.NodeConfiguration) kubeletcm.Nod
 			EvictionReservation:      v1.ResourceList{},
 			ReservedSystemCPUs:       cpuset.CPUSet{},
 			EnforceNodeAllocatable:   nodeConfig.EnforceNodeAllocatable},
-		QOSReserved:                             nodeConfig.QOSReserved,
-		ExperimentalCPUManagerPolicy:            "none",
-		ExperimentalCPUManagerPolicyOptions:     map[string]string{},
-		ExperimentalTopologyManagerScope:        "container",
-		ExperimentalCPUManagerReconcilePeriod:   0,
-		ExperimentalMemoryManagerPolicy:         "none",
-		ExperimentalMemoryManagerReservedMemory: []kubeletconfig.MemoryReservation{},
-		ExperimentalPodPidsLimit:                int64(nodeConfig.PodPidLimits),
-		EnforceCPULimits:                        true,
-		CPUCFSQuotaPeriod:                       nodeConfig.CPUCFSQuotaPeriod,
-		ExperimentalTopologyManagerPolicy:       "none",
+		QOSReserved:                           nodeConfig.QOSReserved,
+		ExperimentalCPUManagerPolicy:          "none",
+		ExperimentalCPUManagerPolicyOptions:   map[string]string{},
+		ExperimentalTopologyManagerScope:      "container",
+		ExperimentalCPUManagerReconcilePeriod: 0,
+		ExperimentalMemoryManagerPolicy:       "none",
+		// ExperimentalMemoryManagerReservedMemory: []kubeletconfig.MemoryReservation{},
+		ExperimentalPodPidsLimit:          int64(nodeConfig.PodPidLimits),
+		EnforceCPULimits:                  true,
+		CPUCFSQuotaPeriod:                 nodeConfig.CPUCFSQuotaPeriod,
+		ExperimentalTopologyManagerPolicy: "none",
 	}
 }

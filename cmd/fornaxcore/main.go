@@ -67,9 +67,6 @@ func main() {
 	klog.Info("Build fornaxcore rest api server")
 	// +kubebuilder:scaffold:resource-register
 	apiserver := builder.APIServer.
-		WithLocalDebugExtension().
-		DisableAdmissionControllers().
-		DisableAuthorization().
 		WithOpenAPIDefinitions("FornaxCore", "centaurusinfra.io/fornax-serverless/pkg/apis/core/v1", openapi.GetFornaxOpenAPIDefinitions).
 		WithConfigFns(func(config *server.RecommendedConfig) *server.RecommendedConfig {
 			optionsGetter := config.RESTOptionsGetter
@@ -79,6 +76,10 @@ func main() {
 			return config
 		}).
 		WithOptionsFns(func(options *builder.ServerOptions) *builder.ServerOptions {
+			options.RecommendedOptions.Authorization = nil
+			options.RecommendedOptions.CoreAPI = nil
+			options.RecommendedOptions.Admission = nil
+			options.RecommendedOptions.Authentication.RemoteKubeConfigFileOptional = true
 			return options
 		}).
 		WithServerFns(func(server *builder.GenericAPIServer) *builder.GenericAPIServer {

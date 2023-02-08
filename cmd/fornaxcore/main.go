@@ -18,6 +18,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"runtime/debug"
 	"time"
@@ -27,8 +28,6 @@ import (
 	"k8s.io/apiserver/pkg/server"
 	"k8s.io/klog/v2"
 	"sigs.k8s.io/apiserver-runtime/pkg/builder"
-
-	// +kubebuilder:scaffold:resource-imports
 
 	fornaxv1 "centaurusinfra.io/fornax-serverless/pkg/apis/core/v1"
 	fornaxk8sv1 "centaurusinfra.io/fornax-serverless/pkg/apis/k8s/core/v1"
@@ -40,6 +39,7 @@ import (
 	"centaurusinfra.io/fornax-serverless/pkg/fornaxcore/pod"
 	"centaurusinfra.io/fornax-serverless/pkg/fornaxcore/podscheduler"
 	"centaurusinfra.io/fornax-serverless/pkg/fornaxcore/session"
+	"centaurusinfra.io/fornax-serverless/pkg/log"
 	"centaurusinfra.io/fornax-serverless/pkg/store"
 	"centaurusinfra.io/fornax-serverless/pkg/store/factory"
 	// "github.com/pkg/profile"
@@ -54,6 +54,11 @@ func init() {
 }
 
 func main() {
+	err := log.InitLogging()
+	if err != nil {
+		fmt.Printf("Cannot init log, err %v\n", err)
+		os.Exit(-1)
+	}
 	// defer profile.Start().Stop()
 	debug.SetGCPercent(300)
 	klog.Info("Initialize fornax resource memory store")
@@ -86,7 +91,6 @@ func main() {
 			return server
 		}).
 		WithFlagFns(func(flagSet *pflag.FlagSet) *pflag.FlagSet {
-			// klog.InitFlags(flagSet)
 			return flagSet
 		}).
 		WithResource(&fornaxv1.Application{}).

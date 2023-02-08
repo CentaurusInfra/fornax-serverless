@@ -25,12 +25,19 @@ import (
 	"github.com/spf13/cobra"
 
 	"centaurusinfra.io/fornax-serverless/cmd/simulation/node/app"
+	"centaurusinfra.io/fornax-serverless/pkg/log"
 	cliflag "k8s.io/component-base/cli/flag"
 	"k8s.io/component-base/logs"
 	_ "k8s.io/component-base/logs/json/register" // for JSON log format registration
 )
 
 func main() {
+	err := log.InitLogging()
+	if err != nil {
+		fmt.Printf("Cannot init log, err %v\n", err)
+		os.Exit(-1)
+	}
+
 	command := app.NewCommand()
 
 	code := run(command)

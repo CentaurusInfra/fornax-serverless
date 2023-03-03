@@ -34,7 +34,7 @@ func BuildFornaxcoreGrpcPodStateForFailedPod(nodeRevision int64, pod *v1.Pod) *g
 	s := grpc.PodState{
 		NodeRevision: nodeRevision,
 		State:        state,
-		Pod:          pod.DeepCopy(),
+		Pod:          fornaxtypes.PodToString(pod), //pod.DeepCopy(),
 		Resource:     &grpc.PodResource{},
 	}
 	messageType := grpc.MessageType_POD_STATE
@@ -71,7 +71,7 @@ func BuildFornaxcoreGrpcPodState(nodeRevision int64, pod *fornaxtypes.FornaxPod)
 	s := grpc.PodState{
 		NodeRevision:  nodeRevision,
 		State:         PodStateToFornaxState(pod),
-		Pod:           podWithSession,
+		Pod:           fornaxtypes.PodToString(podWithSession),
 		SessionStates: sessionStates,
 		// TODO
 		Resource: &grpc.PodResource{},

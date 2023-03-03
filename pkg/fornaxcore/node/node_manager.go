@@ -29,6 +29,7 @@ import (
 	"centaurusinfra.io/fornax-serverless/pkg/fornaxcore/grpc/nodeagent"
 	ie "centaurusinfra.io/fornax-serverless/pkg/fornaxcore/internal"
 	fornaxpod "centaurusinfra.io/fornax-serverless/pkg/fornaxcore/pod"
+	"centaurusinfra.io/fornax-serverless/pkg/nodeagent/types"
 	fornaxstore "centaurusinfra.io/fornax-serverless/pkg/store"
 	"centaurusinfra.io/fornax-serverless/pkg/store/factory"
 	"centaurusinfra.io/fornax-serverless/pkg/util"
@@ -134,7 +135,8 @@ func (nm *nodeManager) SyncPodStates(nodeId string, podStates []*fornaxgrpc.PodS
 	for _, podState := range podStates {
 		podName := util.Name(podState.GetPod())
 		reportedPods[podName] = true
-		err = nm.UpdatePodState(nodeId, podState.GetPod(), podState.GetSessionStates())
+		msgPod := types.PodFromString(podState.GetPod())
+		err = nm.UpdatePodState(nodeId, &msgPod, podState.GetSessionStates())
 		if err != nil {
 			klog.ErrorS(err, "Failed to update a pod state, wait for next sync", "pod", podName)
 		}

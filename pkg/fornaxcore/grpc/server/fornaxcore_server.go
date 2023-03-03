@@ -26,6 +26,7 @@ import (
 	fornaxv1 "centaurusinfra.io/fornax-serverless/pkg/apis/core/v1"
 	fornaxcore_grpc "centaurusinfra.io/fornax-serverless/pkg/fornaxcore/grpc"
 	ie "centaurusinfra.io/fornax-serverless/pkg/fornaxcore/internal"
+	"centaurusinfra.io/fornax-serverless/pkg/nodeagent/types"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
 
@@ -232,8 +233,8 @@ func (g *grpcServer) CreatePod(nodeIdentifier string, pod *v1.Pod) error {
 	podCreate := fornaxcore_grpc.FornaxCoreMessage_PodCreate{
 		PodCreate: &fornaxcore_grpc.PodCreate{
 			PodIdentifier: podIdentifier,
-			Pod:           pod.DeepCopy(),
-			ConfigMap:     &v1.ConfigMap{},
+			Pod:           types.PodToString(pod),
+			ConfigMap:     types.ConfigMapToString(&v1.ConfigMap{}),
 		},
 	}
 	m := &fornaxcore_grpc.FornaxCoreMessage{

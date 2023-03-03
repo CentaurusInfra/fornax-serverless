@@ -81,7 +81,7 @@ func (n *SimulationNodeActor) Start() error {
 				MessageBody: &fornaxgrpc.FornaxCoreMessage_NodeRegistry{
 					NodeRegistry: &fornaxgrpc.NodeRegistry{
 						NodeRevision: n.node.Revision,
-						Node:         n.node.V1Node,
+						Node:         types.NodeToString(n.node.V1Node),
 					},
 				},
 			},
@@ -174,13 +174,14 @@ func (n *SimulationNodeActor) onNodeConfigurationCommand(msg *fornaxgrpc.NodeCon
 	}
 
 	apiNode := msg.GetNode()
-	n.node.V1Node.Spec = *apiNode.Spec.DeepCopy()
+	msgNode := types.NodeFromString(apiNode)
+	n.node.V1Node.Spec = *msgNode.Spec.DeepCopy()
 
-	err := n.initializeNodeDaemons(msg.DaemonPods)
+	/*err := n.initializeNodeDaemons(msg.DaemonPods)
 	if err != nil {
 		klog.ErrorS(err, "Failed to initiaize daemons", "node", n.node.V1Node.Name)
 		return err
-	}
+	}*/
 
 	n.state = node.NodeStateRegistered
 	// start go routine to check node status until it is ready
@@ -294,11 +295,13 @@ func (n *SimulationNodeActor) onPodCreateCommand(msg *fornaxgrpc.PodCreate) erro
 		return fmt.Errorf("Node is not in ready state to create a new pod")
 	}
 	v := n.node.Pods.Get(msg.GetPodIdentifier())
+	createPod := types.PodFromString(msg.GetPod())
+	cm := types.ConfigMapFromString(msg.GetConfigMap())
 	if v == nil {
 		fpod, err := n.createPodAndActor(
 			nodetypes.PodStateCreating,
-			msg.GetPod().DeepCopy(),
-			msg.GetConfigMap().DeepCopy(),
+			&createPod,
+			&cm,
 			false,
 		)
 		if err != nil {

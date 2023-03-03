@@ -19,6 +19,7 @@ package node
 import (
 	"centaurusinfra.io/fornax-serverless/pkg/fornaxcore/grpc"
 	"centaurusinfra.io/fornax-serverless/pkg/nodeagent/pod"
+	"centaurusinfra.io/fornax-serverless/pkg/nodeagent/types"
 )
 
 func BuildFornaxGrpcNodeState(node *FornaxNode, revision int64) *grpc.FornaxCoreMessage {
@@ -30,7 +31,7 @@ func BuildFornaxGrpcNodeState(node *FornaxNode, revision int64) *grpc.FornaxCore
 
 	ns := grpc.NodeState{
 		NodeRevision: revision,
-		Node:         node.V1Node,
+		Node:         types.NodeToString(node.V1Node),
 		PodStates:    podStates,
 	}
 
@@ -51,7 +52,7 @@ func BuildFornaxGrpcNodeReady(node *FornaxNode, revision int64) *grpc.FornaxCore
 	}
 	ns := grpc.NodeReady{
 		NodeRevision:  revision,
-		Node:          node.V1Node,
+		Node:          types.NodeToString(node.V1Node),
 		PodStates:     podStates,
 		SessionStates: []*grpc.SessionState{},
 	}

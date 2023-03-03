@@ -17,6 +17,7 @@ limitations under the License.
 package types
 
 import (
+	"encoding/json"
 	"fmt"
 	"time"
 
@@ -74,6 +75,60 @@ type FornaxNodeWithRevision struct {
 	Identifier string   `json:"identifier,omitempty"`
 	Node       *v1.Node `json:"node,omitempty"`
 	Revision   int64    `json:"revision,omitempty"`
+}
+
+func PodToString(pod *v1.Pod) string {
+	arr, err := json.Marshal(pod)
+	if err != nil {
+		panic(err)
+	}
+
+	return string(arr)
+}
+
+func PodFromString(b string) v1.Pod {
+	var data v1.Pod
+	if err := json.Unmarshal([]byte(b), &data); err != nil {
+		panic(err)
+	}
+
+	return data
+}
+
+func ConfigMapToString(cm *v1.ConfigMap) string {
+	arr, err := json.Marshal(cm)
+	if err != nil {
+		panic(err)
+	}
+
+	return string(arr)
+}
+
+func ConfigMapFromString(b string) v1.ConfigMap {
+	var data v1.ConfigMap
+	if err := json.Unmarshal([]byte(b), &data); err != nil {
+		panic(err)
+	}
+
+	return data
+}
+
+func NodeToString(o *v1.Node) string {
+	arr, err := json.Marshal(o)
+	if err != nil {
+		panic(err)
+	}
+
+	return string(arr)
+}
+
+func NodeFromString(b string) v1.Node {
+	var data v1.Node
+	if err := json.Unmarshal([]byte(b), &data); err != nil {
+		panic(err)
+	}
+
+	return data
 }
 
 type FornaxPod struct {

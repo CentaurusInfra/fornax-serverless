@@ -24,6 +24,7 @@ import (
 	default_config "centaurusinfra.io/fornax-serverless/pkg/config"
 	"centaurusinfra.io/fornax-serverless/pkg/fornaxcore/grpc"
 	ie "centaurusinfra.io/fornax-serverless/pkg/fornaxcore/internal"
+	ftypes "centaurusinfra.io/fornax-serverless/pkg/nodeagent/types"
 	"centaurusinfra.io/fornax-serverless/pkg/util"
 	podutil "centaurusinfra.io/fornax-serverless/pkg/util"
 	"github.com/google/uuid"
@@ -99,17 +100,17 @@ func (*integtestNodeMonitor) OnNodeReady(message *grpc.FornaxCoreMessage) (*grpc
 func (*integtestNodeMonitor) OnNodeRegistry(message *grpc.FornaxCoreMessage) (*grpc.FornaxCoreMessage, error) {
 	registry := message.GetNodeRegistry()
 
-	daemonPod := BuildATestDaemonPod()
+	//daemonPod := BuildATestDaemonPod()
 
 	// update node, send node configuration
 	domain := default_config.DefaultDomainName
-	node := registry.Node.DeepCopy()
+	node := ftypes.NodeFromString(registry.Node)
 	node.Spec.PodCIDR = "192.168.68.1/24"
 	nodeConig := grpc.FornaxCoreMessage_NodeConfiguration{
 		NodeConfiguration: &grpc.NodeConfiguration{
 			ClusterDomain: domain,
-			Node:          node,
-			DaemonPods:    []*v1.Pod{daemonPod.DeepCopy()},
+			Node:          registry.Node,
+			//DaemonPods:    []*v1.Pod{daemonPod.DeepCopy()},
 		},
 	}
 	messageType := grpc.MessageType_NODE_CONFIGURATION
@@ -273,8 +274,8 @@ func BuildATestPodCreate(appId string) *grpc.FornaxCoreMessage {
 	body := grpc.FornaxCoreMessage_PodCreate{
 		PodCreate: &grpc.PodCreate{
 			PodIdentifier: podId,
-			Pod:           testPod,
-			ConfigMap:     &v1.ConfigMap{},
+			Pod:           ftypes.PodToString(testPod),
+			ConfigMap:     ftypes.ConfigMapToString(&v1.ConfigMap{}),
 		},
 	}
 	messageType := grpc.MessageType_POD_CREATE

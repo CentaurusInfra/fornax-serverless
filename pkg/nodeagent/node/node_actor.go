@@ -105,7 +105,7 @@ func (n *FornaxNodeActor) Start() error {
 				MessageBody: &fornaxgrpc.FornaxCoreMessage_NodeRegistry{
 					NodeRegistry: &fornaxgrpc.NodeRegistry{
 						NodeRevision: n.node.Revision,
-						Node:         n.node.V1Node,
+						Node:         types.NodeToString(n.node.V1Node),
 					},
 				},
 			},
@@ -258,9 +258,9 @@ func (n *FornaxNodeActor) onNodeConfigurationCommand(msg *fornaxgrpc.NodeConfigu
 		return fmt.Errorf("node is not in registering state, it does not expect configuration change after registering")
 	}
 
-	apiNode := msg.GetNode()
+	apiNode := types.NodeFromString(msg.GetNode())
 	klog.Infof("received node spec from fornaxcore: %v", apiNode)
-	errs := ValidateNodeSpec(apiNode)
+	errs := ValidateNodeSpec(&apiNode)
 	if len(errs) > 0 {
 		klog.Errorf("api node spec is invalid, %v", errs)
 		return fmt.Errorf("api node spec is invalid, %v", errs)
@@ -268,18 +268,18 @@ func (n *FornaxNodeActor) onNodeConfigurationCommand(msg *fornaxgrpc.NodeConfigu
 
 	n.node.V1Node.Spec = *apiNode.Spec.DeepCopy()
 
-	if NodeSpecPodCidrChanged(n.node.V1Node, apiNode) {
+	if NodeSpecPodCidrChanged(n.node.V1Node, &apiNode) {
 		if len(n.node.Pods.List()) > 0 {
 			return fmt.Errorf("change pod cidr when node has pods is not allowed, should not happen")
 		}
 		// TODO, set up pod cidr
 	}
 
-	err := n.initializeNodeDaemons(msg.DaemonPods)
+	/*err := n.initializeNodeDaemons(msg.DaemonPods)
 	if err != nil {
 		klog.ErrorS(err, "Failed to initiaize daemons")
 		return err
-	}
+	}*/
 
 	n.state = NodeStateRegistered
 	// start go routine to check node status until it is ready
@@ -427,13 +427,14 @@ func (n *FornaxNodeActor) cleanupPodStoreAndActor(fppod *types.FornaxPod) error 
 
 // find pod actor and send a message to it, if pod actor does not exist, create one
 func (n *FornaxNodeActor) onPodCreateCommand(msg *fornaxgrpc.PodCreate) error {
+	pod := types.PodFromString(msg.GetPod())
 	if n.state != NodeStateReady {
 		n.saveAndNotifyPodState(
 			&types.FornaxPod{
 				Identifier:              util.Name(msg.Pod),
 				FornaxPodState:          types.PodStateCleanup,
 				Daemon:                  false,
-				Pod:                     msg.Pod.DeepCopy(),
+				Pod:                     &pod,
 				RuntimePod:              nil,
 				Containers:              map[string]*types.FornaxContainer{},
 				Sessions:                map[string]*types.FornaxSession{},
@@ -443,15 +444,16 @@ func (n *FornaxNodeActor) onPodCreateCommand(msg *fornaxgrpc.PodCreate) error {
 		return fmt.Errorf("Node is not in ready state to create a new pod")
 	}
 	v := n.node.Pods.Get(msg.GetPodIdentifier())
+	configMap := types.ConfigMapFromString(msg.GetConfigMap())
 	if v == nil {
-		fpod, actor, err := n.createPodAndActor(types.PodStateCreating, msg.GetPod().DeepCopy(), msg.GetConfigMap().DeepCopy(), false)
+		fpod, actor, err := n.createPodAndActor(types.PodStateCreating, &pod, &configMap, false)
 		if err != nil {
 			n.saveAndNotifyPodState(
 				&types.FornaxPod{
 					Identifier:              util.Name(msg.Pod),
 					FornaxPodState:          types.PodStateCleanup,
 					Daemon:                  false,
-					Pod:                     msg.Pod.DeepCopy(),
+					Pod:                     &pod, //msg.Pod.DeepCopy(),
 					RuntimePod:              nil,
 					Containers:              map[string]*types.FornaxContainer{},
 					Sessions:                map[string]*types.FornaxSession{},

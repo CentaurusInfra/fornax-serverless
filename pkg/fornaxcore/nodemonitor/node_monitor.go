@@ -25,7 +25,9 @@ import (
 	"centaurusinfra.io/fornax-serverless/pkg/fornaxcore/grpc"
 	"centaurusinfra.io/fornax-serverless/pkg/fornaxcore/grpc/nodeagent"
 	ie "centaurusinfra.io/fornax-serverless/pkg/fornaxcore/internal"
+	"centaurusinfra.io/fornax-serverless/pkg/nodeagent/types"
 	"centaurusinfra.io/fornax-serverless/pkg/util"
+
 	// k8spodutil "k8s.io/kubernetes/pkg/api/v1/pod"
 
 	v1 "k8s.io/api/core/v1"
@@ -104,7 +106,7 @@ func (nm *nodeMonitor) OnSessionUpdate(message *grpc.FornaxCoreMessage) (*grpc.F
 // OnRegistry setup a new node, send a a node configruation back to node for initialization,
 // node will send back node ready message after node configruation finished
 func (nm *nodeMonitor) OnNodeRegistry(message *grpc.FornaxCoreMessage) (*grpc.FornaxCoreMessage, error) {
-	v1node := message.GetNodeRegistry().GetNode().DeepCopy()
+	v1node := types.NodeFromString(message.GetNodeRegistry().GetNode())
 	nodeId := message.GetNodeIdentifier().GetIdentifier()
 	revision := message.GetNodeRegistry().GetNodeRevision()
 	klog.InfoS("A node is registering", "node", nodeId, "revision", revision)
@@ -123,7 +125,7 @@ func (nm *nodeMonitor) OnNodeRegistry(message *grpc.FornaxCoreMessage) (*grpc.Fo
 		nodeWRev.Revision = revision
 	}
 
-	fornaxNode, err := nm.nodeManager.UpdateNodeState(nodeId, v1node)
+	fornaxNode, err := nm.nodeManager.UpdateNodeState(nodeId, &v1node)
 	if err != nil {
 		klog.ErrorS(err, "Failed to setup node", "node", v1node)
 		return nil, err
@@ -138,8 +140,8 @@ func (nm *nodeMonitor) OnNodeRegistry(message *grpc.FornaxCoreMessage) (*grpc.Fo
 	nodeConig := grpc.FornaxCoreMessage_NodeConfiguration{
 		NodeConfiguration: &grpc.NodeConfiguration{
 			ClusterDomain: domain,
-			Node:          fornaxNode.Node.DeepCopy(),
-			DaemonPods:    daemons,
+			Node:          types.NodeToString(fornaxNode.Node),
+			//DaemonPods:    daemons,
 		},
 	}
 	messageType := grpc.MessageType_NODE_CONFIGURATION
@@ -184,7 +186,8 @@ func (nm *nodeMonitor) OnNodeReady(message *grpc.FornaxCoreMessage) (*grpc.Forna
 	nodeId := message.GetNodeIdentifier().GetIdentifier()
 	klog.InfoS("A node is ready", "node", nodeId, "revision", nodeReady.GetNodeRevision(), "pods", len(nodeReady.PodStates))
 
-	err := nm.updateOrCreateNode(nodeId, nodeReady.GetNode(), nodeReady.GetNodeRevision(), nodeReady.GetPodStates())
+	msgNode := types.NodeFromString(nodeReady.GetNode())
+	err := nm.updateOrCreateNode(nodeId, &msgNode, nodeReady.GetNodeRevision(), nodeReady.GetPodStates())
 	if err != nil {
 		klog.ErrorS(err, "Failed to sync a node", "node", nodeId)
 		return nil, err
@@ -196,8 +199,9 @@ func (nm *nodeMonitor) OnNodeReady(message *grpc.FornaxCoreMessage) (*grpc.Forna
 func (nm *nodeMonitor) OnNodeStateUpdate(message *grpc.FornaxCoreMessage) (*grpc.FornaxCoreMessage, error) {
 	nodeState := message.GetNodeState()
 	nodeId := message.GetNodeIdentifier().GetIdentifier()
+	stateNode := types.NodeFromString(nodeState.GetNode())
 	// klog.V(5).InfoS("Received a node state", "node", nodeId, "revision", nodeState.GetNodeRevision(), "pods", len(nodeState.GetPodStates()))
-	err := nm.updateOrCreateNode(nodeId, nodeState.GetNode(), nodeState.GetNodeRevision(), nodeState.GetPodStates())
+	err := nm.updateOrCreateNode(nodeId, &stateNode, nodeState.GetNodeRevision(), nodeState.GetPodStates())
 	if err != nil {
 		klog.ErrorS(err, "Failed to sync a node", "node", nodeId)
 		return nil, err
@@ -224,18 +228,20 @@ func (nm *nodeMonitor) OnPodStateUpdate(message *grpc.FornaxCoreMessage) (*grpc.
 	if err := nm.validateNodeRevision(nodeWRev, revision); err != nil {
 		return nil, err
 	}
+	msgPod := types.PodFromString(podState.GetPod())
 	if revision == nodeWRev.Revision {
-		klog.InfoS("Received a pod state with same node revision as current node revision", "pod", podState.Pod.Name)
+		klog.InfoS("Received a pod state with same node revision as current node revision", "pod", msgPod.Name)
 	}
 
 	nodeWRev.Revision = revision
-	nodeLabel := util.GetPodFornaxNodeIdAnnotation(podState.GetPod())
+	nodeLabel := util.GetPodFornaxNodeIdAnnotation(&msgPod)
 	if nodeId.GetIdentifier() != nodeLabel || len(nodeLabel) == 0 {
 		err := fmt.Errorf("Pod %s from does not have %s label, or value != received nodeId %s", util.Name(podState.Pod), fornaxv1.AnnotationFornaxCoreNode, nodeId.GetIdentifier())
 		klog.ErrorS(err, "pod", podState)
 		return nil, err
 	}
-	err := nm.nodeManager.UpdatePodState(nodeId.GetIdentifier(), podState.GetPod(), podState.GetSessionStates())
+
+	err := nm.nodeManager.UpdatePodState(nodeId.GetIdentifier(), &msgPod, podState.GetSessionStates())
 	if err != nil {
 		klog.ErrorS(err, "Failed to update pod state", "pod", podState)
 		return nil, err

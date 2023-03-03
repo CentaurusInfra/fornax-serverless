@@ -86,11 +86,9 @@ LDFLAGS=-w -s
 .PHONY: build
 build: fmt vet ## Build binary.
 	go build ./...
-	go build -ldflags "$(LDFLAGS)" -o bin/integtestgrpcserver cmd/integtestgrpcserver/main.go
-	go build -ldflags "$(LDFLAGS)" -o bin/fornaxcore cmd/fornaxcore/main.go
 	go build -ldflags "$(LDFLAGS)" -o bin/nodeagent cmd/nodeagent/main.go
-	go build -ldflags "$(LDFLAGS)" -o bin/simulatenode cmd/simulation/node/main.go
-	go build -ldflags "$(LDFLAGS)" -o bin/fornaxtest cmd/fornaxtest/main.go
+	#go build -ldflags "$(LDFLAGS)" -o bin/simulatenode cmd/simulation/node/main.go
+	#go build -ldflags "$(LDFLAGS)" -o bin/fornaxtest cmd/fornaxtest/main.go
 
 APISERVER-BOOT = $(shell pwd)/bin/apiserver-boot
 .PHONY: debug-fornaxcore-local
@@ -227,10 +225,6 @@ protoc-gen: ## Download protc-gen locally if necessary.
 		--go_opt=Mk8s.io/apimachinery/pkg/util/intstr/generated.proto=k8s.io/apimachinery/pkg/util/intstr \
 		--go_opt=Mpkg/apis/core/v1/generated.proto=centaurusinfra.io/fornax-serverless/pkg/apis/core/v1 \
 		pkg/fornaxcore/grpc/fornaxcore.proto
-	$(PROTOC) -I=./ -I=./vendor \
-		--go_out=../.. \
-		--go-grpc_out=../../ \
-		pkg/nodeagent/sessionservice/grpc/session_service.proto
 
 ENVTEST = $(shell pwd)/bin/setup-envtest
 .PHONY: envtest

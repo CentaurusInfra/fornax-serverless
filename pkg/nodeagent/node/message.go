@@ -51,10 +51,9 @@ func BuildFornaxGrpcNodeReady(node *FornaxNode, revision int64) *grpc.FornaxCore
 		podStates = append(podStates, s.GetPodState())
 	}
 	ns := grpc.NodeReady{
-		NodeRevision:  revision,
-		Node:          types.NodeToString(node.V1Node),
-		PodStates:     podStates,
-		SessionStates: []*grpc.SessionState{},
+		NodeRevision: revision,
+		Node:         types.NodeToString(node.V1Node),
+		PodStates:    podStates,
 	}
 
 	messageType := grpc.MessageType_NODE_READY

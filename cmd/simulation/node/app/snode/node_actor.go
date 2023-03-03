@@ -32,7 +32,6 @@ import (
 	"centaurusinfra.io/fornax-serverless/pkg/nodeagent/fornaxcore"
 	"centaurusinfra.io/fornax-serverless/pkg/nodeagent/node"
 	"centaurusinfra.io/fornax-serverless/pkg/nodeagent/pod"
-	"centaurusinfra.io/fornax-serverless/pkg/nodeagent/session"
 	"centaurusinfra.io/fornax-serverless/pkg/nodeagent/types"
 	nodetypes "centaurusinfra.io/fornax-serverless/pkg/nodeagent/types"
 	"centaurusinfra.io/fornax-serverless/pkg/util"
@@ -141,15 +140,7 @@ func (n *SimulationNodeActor) processFornaxCoreMessage(msg *fornaxgrpc.FornaxCor
 		}()
 	case fornaxgrpc.MessageType_POD_HIBERNATE:
 		err = n.onPodHibernateCommand(msg.GetPodHibernate())
-	case fornaxgrpc.MessageType_SESSION_OPEN:
-		go func() {
-			n.onSessionOpenCommand(msg.GetSessionOpen())
-		}()
-	case fornaxgrpc.MessageType_SESSION_CLOSE:
-		go func() {
-			n.onSessionCloseCommand(msg.GetSessionClose())
-		}()
-	case fornaxgrpc.MessageType_SESSION_STATE, fornaxgrpc.MessageType_POD_STATE, fornaxgrpc.MessageType_NODE_STATE:
+	case fornaxgrpc.MessageType_POD_STATE, fornaxgrpc.MessageType_NODE_STATE:
 		// messages are sent to fornaxcore, should just forward
 		n.notify(n.fornoxCoreRef, msg)
 	default:
@@ -383,74 +374,6 @@ func (n *SimulationNodeActor) onPodTerminateCommand(msg *fornaxgrpc.PodTerminate
 // find pod actor and send a message to it, if pod actor does not exist, return error
 func (n *SimulationNodeActor) onPodHibernateCommand(msg *fornaxgrpc.PodHibernate) error {
 	panic("not implemented")
-}
-
-// find pod actor to let it open a session, if pod actor does not exist, return failure
-func (n *SimulationNodeActor) onSessionOpenCommand(msg *fornaxgrpc.SessionOpen) error {
-	klog.InfoS("Opening session", "session", msg.SessionIdentifier, "pod", msg.PodIdentifier, "node", n.node.V1Node.Name)
-	if n.state != node.NodeStateReady {
-		return fmt.Errorf("node is not in ready state to open a session")
-	}
-
-	sess := msg.GetSession()
-	fpod := n.node.Pods.Get(msg.GetPodIdentifier())
-	if fpod == nil {
-		return fmt.Errorf("Pod: %s does not exist, can not open session", msg.GetPodIdentifier())
-	} else {
-		sessId := util.Name(sess)
-		fsess := &types.FornaxSession{
-			Identifier:     sessId,
-			PodIdentifier:  fpod.Identifier,
-			Session:        sess,
-			ClientSessions: map[string]*nodetypes.ClientSession{},
-		}
-		time.Sleep(3 * time.Millisecond)
-		func() {
-			n.nodeMutex.Lock()
-			defer n.nodeMutex.Unlock()
-			revision := n.incrementNodeRevision()
-			sess.ResourceVersion = fmt.Sprint(revision)
-			if sess.Annotations == nil {
-				sess.Annotations = map[string]string{fornaxv1.AnnotationFornaxCoreNodeRevision: fmt.Sprint(revision)}
-			} else {
-				sess.Annotations[fornaxv1.AnnotationFornaxCoreNodeRevision] = fmt.Sprint(revision)
-			}
-			fpod.Sessions[sessId] = fsess
-			fsess.Session.Status.SessionStatus = fornaxv1.SessionStatusAvailable
-			n.notify(n.fornoxCoreRef, session.BuildFornaxcoreGrpcSessionState(revision, fsess))
-			klog.InfoS("Opened session", "session", msg.SessionIdentifier, "pod", msg.PodIdentifier, "node", n.node.V1Node.Name)
-		}()
-	}
-	return nil
-}
-
-// find pod actor to let it terminate a session, if pod actor does not exist, return failure
-func (n *SimulationNodeActor) onSessionCloseCommand(msg *fornaxgrpc.SessionClose) error {
-	klog.InfoS("Closing session", "session", msg.SessionIdentifier, "pod", msg.PodIdentifier, "node", n.node.V1Node.Name)
-	sessId := msg.GetSessionIdentifier()
-	podId := msg.GetPodIdentifier()
-	fpod := n.node.Pods.Get(podId)
-	if fpod == nil {
-		return fmt.Errorf("Pod: %s does not exist, can not terminate session", podId)
-	} else {
-		if fsess, found := fpod.Sessions[sessId]; found {
-			time.Sleep(3 * time.Millisecond)
-			func() {
-				n.nodeMutex.Lock()
-				defer n.nodeMutex.Unlock()
-				revision := n.incrementNodeRevision()
-				fsess.Session.ResourceVersion = fmt.Sprint(revision)
-				fsess.Session.Annotations[fornaxv1.AnnotationFornaxCoreNodeRevision] = fmt.Sprint(revision)
-				fsess.Session.Status.SessionStatus = fornaxv1.SessionStatusClosed
-				n.notify(n.fornoxCoreRef, session.BuildFornaxcoreGrpcSessionState(revision, fsess))
-				klog.InfoS("Closed session", "session", msg.SessionIdentifier, "pod", msg.PodIdentifier, "node", n.node.V1Node.Name)
-			}()
-		} else {
-			return fmt.Errorf("Session: %s does not exist, can not terminate session", sessId)
-		}
-	}
-	return nil
-
 }
 
 func (n *SimulationNodeActor) notify(receiver message.ActorRef, msg interface{}) {

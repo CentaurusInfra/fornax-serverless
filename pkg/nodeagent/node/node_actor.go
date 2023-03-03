@@ -29,7 +29,6 @@ import (
 	"centaurusinfra.io/fornax-serverless/pkg/nodeagent/fornaxcore"
 	internal "centaurusinfra.io/fornax-serverless/pkg/nodeagent/message"
 	podutil "centaurusinfra.io/fornax-serverless/pkg/nodeagent/pod"
-	"centaurusinfra.io/fornax-serverless/pkg/nodeagent/session"
 	"centaurusinfra.io/fornax-serverless/pkg/nodeagent/types"
 	"centaurusinfra.io/fornax-serverless/pkg/util"
 
@@ -192,21 +191,6 @@ func (n *FornaxNodeActor) nodeHandler(msg message.ActorMessage) (interface{}, er
 			}
 		}
 		n.saveAndNotifyPodState(fppod)
-	case internal.SessionStatusChange:
-		revision := n.incrementNodeRevision()
-		fpsession := msg.Body.(internal.SessionStatusChange).Session
-		fpsession.Session.ResourceVersion = fmt.Sprint(revision)
-		if fpsession.Session.Annotations == nil {
-			fpsession.Session.Annotations = map[string]string{fornaxv1.AnnotationFornaxCoreNodeRevision: fmt.Sprint(revision)}
-		} else {
-			fpsession.Session.Annotations[fornaxv1.AnnotationFornaxCoreNodeRevision] = fmt.Sprint(revision)
-		}
-		n.notify(n.fornoxCoreRef, session.BuildFornaxcoreGrpcSessionState(revision, fpsession))
-		fppod := msg.Body.(internal.SessionStatusChange).Pod
-		if fppod != nil {
-			fppod.Sessions[util.Name(fpsession.Session)] = fpsession
-			go n.dependencies.PodStore.PutPod(fppod, revision)
-		}
 	case internal.NodeUpdate:
 		SetNodeStatus(n.node, n.dependencies)
 		n.notify(n.fornoxCoreRef, BuildFornaxGrpcNodeState(n.node, n.node.Revision))
@@ -231,11 +215,7 @@ func (n *FornaxNodeActor) processFornaxCoreMessage(msg *fornaxgrpc.FornaxCoreMes
 		err = n.onPodTerminateCommand(msg.GetPodTerminate())
 	case fornaxgrpc.MessageType_POD_HIBERNATE:
 		err = n.onPodHibernateCommand(msg.GetPodHibernate())
-	case fornaxgrpc.MessageType_SESSION_OPEN:
-		err = n.onSessionOpenCommand(msg.GetSessionOpen())
-	case fornaxgrpc.MessageType_SESSION_CLOSE:
-		err = n.onSessionCloseCommand(msg.GetSessionClose())
-	case fornaxgrpc.MessageType_SESSION_STATE, fornaxgrpc.MessageType_POD_STATE, fornaxgrpc.MessageType_NODE_STATE:
+	case fornaxgrpc.MessageType_POD_STATE, fornaxgrpc.MessageType_NODE_STATE:
 		// messages are sent to fornaxcore, should just forward
 		n.notify(n.fornoxCoreRef, msg)
 		// messages are not supposed to be received by node
@@ -502,29 +482,6 @@ func (n *FornaxNodeActor) onPodHibernateCommand(msg *fornaxgrpc.PodHibernate) er
 		return fmt.Errorf("Pod: %s does not exist, Fornax core is not in sync", msg.GetPodIdentifier())
 	} else {
 		n.notify(podActor.Reference(), internal.PodHibernate{})
-	}
-	return nil
-}
-
-// build a session actor to start session and monitor session state
-func (n *FornaxNodeActor) onSessionOpenCommand(msg *fornaxgrpc.SessionOpen) error {
-	s := msg.GetSession().DeepCopy()
-	podActor := n.podActors.Get(msg.GetPodIdentifier())
-	if podActor == nil || n.state != NodeStateReady {
-		return fmt.Errorf("Pod: %s does not exist, can not open session, or node not ready", msg.GetPodIdentifier())
-	} else {
-		n.notify(podActor.Reference(), internal.SessionOpen{SessionId: msg.GetSessionIdentifier(), Session: s})
-	}
-	return nil
-}
-
-// find session actor to let it terminate a session, if pod actor does not exist, return failure
-func (n *FornaxNodeActor) onSessionCloseCommand(msg *fornaxgrpc.SessionClose) error {
-	podActor := n.podActors.Get(msg.GetPodIdentifier())
-	if podActor == nil {
-		return fmt.Errorf("Pod: %s does not exist, Fornax core is not in sync, can not close session", msg.GetPodIdentifier())
-	} else {
-		n.notify(podActor.Reference(), internal.SessionClose{SessionId: msg.GetSessionIdentifier()})
 	}
 	return nil
 }

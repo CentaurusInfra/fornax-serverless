@@ -23,7 +23,6 @@ import (
 	"net"
 	"sync"
 
-	fornaxv1 "centaurusinfra.io/fornax-serverless/pkg/apis/core/v1"
 	fornaxcore_grpc "centaurusinfra.io/fornax-serverless/pkg/fornaxcore/grpc"
 	ie "centaurusinfra.io/fornax-serverless/pkg/fornaxcore/internal"
 	"centaurusinfra.io/fornax-serverless/pkg/nodeagent/types"
@@ -191,8 +190,6 @@ func (g *grpcServer) handleMessages(message *fornaxcore_grpc.FornaxCoreMessage) 
 		reply, err = g.nodeMonitor.OnNodeStateUpdate(message)
 	case fornaxcore_grpc.MessageType_POD_STATE:
 		reply, err = g.nodeMonitor.OnPodStateUpdate(message)
-	case fornaxcore_grpc.MessageType_SESSION_STATE:
-		reply, err = g.nodeMonitor.OnSessionUpdate(message)
 	default:
 		klog.Errorf(fmt.Sprintf("not supported message type %s, message %v", message.GetMessageType(), message))
 	}
@@ -292,58 +289,6 @@ func (g *grpcServer) HibernatePod(nodeIdentifier string, pod *v1.Pod) error {
 		return err
 	}
 	return nil
-}
-
-// CloseSession dispatch a SessionClose event to node agent
-func (g *grpcServer) CloseSession(nodeIdentifier string, pod *v1.Pod, session *fornaxv1.ApplicationSession) error {
-	sessionIdentifier := util.Name(session)
-	podIdentifier := util.Name(pod)
-	messageType := fornaxcore_grpc.MessageType_SESSION_CLOSE
-	body := fornaxcore_grpc.FornaxCoreMessage_SessionClose{
-		SessionClose: &fornaxcore_grpc.SessionClose{
-			SessionIdentifier: sessionIdentifier,
-			PodIdentifier:     podIdentifier,
-		},
-	}
-	m := &fornaxcore_grpc.FornaxCoreMessage{
-		MessageType: messageType,
-		MessageBody: &body,
-	}
-
-	err := g.DispatchNodeMessage(nodeIdentifier, m)
-	if err != nil {
-		klog.ErrorS(err, "Failed to dispatch message to node", "node", nodeIdentifier, "session", sessionIdentifier)
-		return err
-	}
-	return nil
-
-}
-
-// OpenSession implements FornaxCoreServer
-func (g *grpcServer) OpenSession(nodeIdentifier string, pod *v1.Pod, session *fornaxv1.ApplicationSession) error {
-	// OpenSession dispatch a SessionOpen event to node agent
-	sessionIdentifier := util.Name(session)
-	podIdentifier := util.Name(pod)
-	messageType := fornaxcore_grpc.MessageType_SESSION_OPEN
-	body := fornaxcore_grpc.FornaxCoreMessage_SessionOpen{
-		SessionOpen: &fornaxcore_grpc.SessionOpen{
-			SessionIdentifier: sessionIdentifier,
-			PodIdentifier:     podIdentifier,
-			Session:           session.DeepCopy(),
-		},
-	}
-	m := &fornaxcore_grpc.FornaxCoreMessage{
-		MessageType: messageType,
-		MessageBody: &body,
-	}
-
-	err := g.DispatchNodeMessage(nodeIdentifier, m)
-	if err != nil {
-		klog.ErrorS(err, "Failed to dispatch message to node", "node", nodeIdentifier, "session", sessionIdentifier)
-		return err
-	}
-	return nil
-
 }
 
 // FullSyncNode dispatch a NodeFullSync request grpc message to node agent

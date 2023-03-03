@@ -21,7 +21,7 @@ option go_package = "centaurusinfra.io/fornax-serverless/pkg/fornaxcore/grpc";
 
 import "google/protobuf/empty.proto";
 //import "k8s.io/api/core/v1/generated.proto";
-import "pkg/apis/core/v1/generated.proto";
+//import "pkg/apis/core/v1/generated.proto";
 
 service FornaxCoreService {
   rpc getMessage(NodeIdentifier) returns (stream FornaxCoreMessage);
@@ -40,9 +40,6 @@ enum MessageType {
     POD_TERMINATE = 301;
     POD_HIBERNATE = 302;
     POD_STATE = 303;
-    SESSION_OPEN = 400;
-    SESSION_CLOSE = 401;
-    SESSION_STATE = 402;
 }
  
 message FornaxCoreMessage {
@@ -59,9 +56,6 @@ message FornaxCoreMessage {
     PodTerminate podTerminate = 301;
     PodHibernate podHibernate = 302;
     PodState podState = 303;
-    SessionOpen sessionOpen = 400;
-    SessionClose sessionClose = 401;
-    SessionState sessionState = 402;
   }
 }
 
@@ -102,7 +96,6 @@ message NodeReady {
   //k8s.io.api.core.v1.Node node = 2;
   string node = 2;
   repeated PodState podStates = 3;
-  repeated SessionState sessionStates = 4;
 }
 
 /* node report back full state to fornax core*/
@@ -131,7 +124,6 @@ message PodState {
   //k8s.io.api.core.v1.Pod pod = 3;
   string pod = 3;
   PodResource resource = 4;
-  repeated SessionState sessionStates = 5;
 }
 
 message PodResource {
@@ -155,20 +147,4 @@ message  PodTerminate {
 
 message  PodHibernate {
   string podIdentifier = 1;
-}
-
-message SessionState {
-  int64 nodeRevision = 1;
-  centaurusinfra.io.fornax_serverless.pkg.apis.core.v1.ApplicationSession session = 2;
-}
-
-message SessionOpen {
-  string sessionIdentifier = 1;
-  string podIdentifier = 2;
-  centaurusinfra.io.fornax_serverless.pkg.apis.core.v1.ApplicationSession session = 3;
-}
-
-message SessionClose {
-  string sessionIdentifier = 1;
-  string podIdentifier = 2;
 }

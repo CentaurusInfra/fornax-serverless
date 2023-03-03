@@ -76,33 +76,6 @@ type nodeMonitor struct {
 	staleNodes  NodeRevisionMap
 }
 
-// OnSessionUpdate implements server.NodeMonitor
-func (nm *nodeMonitor) OnSessionUpdate(message *grpc.FornaxCoreMessage) (*grpc.FornaxCoreMessage, error) {
-	sessionState := message.GetSessionState()
-	revision := sessionState.GetNodeRevision()
-	nodeId := message.GetNodeIdentifier().GetIdentifier()
-	session := sessionState.GetSession()
-	nodeWRev := nm.nodes.get(nodeId)
-	if nodeWRev == nil {
-		return nil, nodeagent.NodeRevisionOutOfOrderError
-	}
-	if err := nm.validateNodeRevision(nodeWRev, revision); err != nil {
-		return nil, err
-	}
-	if revision == nodeWRev.Revision {
-		klog.InfoS("Received a session with same revision of current node revision, continue to handle single session state", "session", util.Name(session))
-	}
-
-	nodeWRev.Revision = revision
-	err := nm.nodeManager.UpdateSessionState(nodeId, session)
-	if err != nil {
-		klog.ErrorS(err, "Failed to update pod state", "pod", sessionState)
-		return nil, err
-	}
-
-	return nil, nil
-}
-
 // OnRegistry setup a new node, send a a node configruation back to node for initialization,
 // node will send back node ready message after node configruation finished
 func (nm *nodeMonitor) OnNodeRegistry(message *grpc.FornaxCoreMessage) (*grpc.FornaxCoreMessage, error) {
@@ -241,7 +214,7 @@ func (nm *nodeMonitor) OnPodStateUpdate(message *grpc.FornaxCoreMessage) (*grpc.
 		return nil, err
 	}
 
-	err := nm.nodeManager.UpdatePodState(nodeId.GetIdentifier(), &msgPod, podState.GetSessionStates())
+	err := nm.nodeManager.UpdatePodState(nodeId.GetIdentifier(), &msgPod)
 	if err != nil {
 		klog.ErrorS(err, "Failed to update pod state", "pod", podState)
 		return nil, err

@@ -22,10 +22,8 @@ import (
 	fornaxv1 "centaurusinfra.io/fornax-serverless/pkg/apis/core/v1"
 	"centaurusinfra.io/fornax-serverless/pkg/fornaxcore/grpc"
 	"centaurusinfra.io/fornax-serverless/pkg/nodeagent/runtime"
-	"centaurusinfra.io/fornax-serverless/pkg/nodeagent/session"
 	"centaurusinfra.io/fornax-serverless/pkg/nodeagent/types"
 	fornaxtypes "centaurusinfra.io/fornax-serverless/pkg/nodeagent/types"
-	"centaurusinfra.io/fornax-serverless/pkg/util"
 	v1 "k8s.io/api/core/v1"
 )
 
@@ -48,16 +46,6 @@ func BuildFornaxcoreGrpcPodStateForFailedPod(nodeRevision int64, pod *v1.Pod) *g
 
 func BuildFornaxcoreGrpcPodState(nodeRevision int64, pod *fornaxtypes.FornaxPod) *grpc.FornaxCoreMessage {
 	sessionNames := []string{}
-	sessionStates := []*grpc.SessionState{}
-	// pod only report sessions currently bundle on it, session termninated state is supposed by reported already
-	// fornax core use session states in pod state to delete sessions which is not found
-	for _, sess := range pod.Sessions {
-		if !util.SessionInTerminalState(sess.Session) {
-			s := session.BuildFornaxcoreGrpcSessionState(nodeRevision, sess)
-			sessionStates = append(sessionStates, s.GetSessionState())
-			sessionNames = append(sessionNames, util.Name(sess.Session))
-		}
-	}
 
 	podWithSession := pod.Pod.DeepCopy()
 	annotations := podWithSession.GetAnnotations()
@@ -69,10 +57,9 @@ func BuildFornaxcoreGrpcPodState(nodeRevision int64, pod *fornaxtypes.FornaxPod)
 	podWithSession.Annotations = annotations
 
 	s := grpc.PodState{
-		NodeRevision:  nodeRevision,
-		State:         PodStateToFornaxState(pod),
-		Pod:           fornaxtypes.PodToString(podWithSession),
-		SessionStates: sessionStates,
+		NodeRevision: nodeRevision,
+		State:        PodStateToFornaxState(pod),
+		Pod:          fornaxtypes.PodToString(podWithSession),
 		// TODO
 		Resource: &grpc.PodResource{},
 	}

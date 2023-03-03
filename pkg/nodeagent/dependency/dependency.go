@@ -25,8 +25,6 @@ import (
 	"centaurusinfra.io/fornax-serverless/pkg/nodeagent/qos"
 	resourcemanager "centaurusinfra.io/fornax-serverless/pkg/nodeagent/resource"
 	"centaurusinfra.io/fornax-serverless/pkg/nodeagent/runtime"
-	"centaurusinfra.io/fornax-serverless/pkg/nodeagent/sessionservice"
-	sessionserver "centaurusinfra.io/fornax-serverless/pkg/nodeagent/sessionservice/grpc"
 	"centaurusinfra.io/fornax-serverless/pkg/nodeagent/store"
 	"centaurusinfra.io/fornax-serverless/pkg/store/storage/sqlite"
 	v1 "k8s.io/api/core/v1"
@@ -48,7 +46,6 @@ type Dependencies struct {
 	VolumeManager   resourcemanager.VolumeManager
 	NodeStore       *store.NodeStore
 	PodStore        *store.PodStore
-	SessionService  sessionservice.SessionService
 }
 
 func InitBasicDependencies(ctx context.Context, nodeConfig config.NodeConfiguration) (*Dependencies, error) {
@@ -92,14 +89,6 @@ func InitBasicDependencies(ctx context.Context, nodeConfig config.NodeConfigurat
 		klog.ErrorS(err, "failed to init cadvisor")
 		return nil, err
 	}
-
-	// SessionService
-	sessionService := sessionserver.NewSessionService()
-	err = sessionService.Run(ctx, nodeConfig.SessionServicePort)
-	if err != nil {
-		return nil, err
-	}
-	dependencies.SessionService = sessionService
 
 	return &dependencies, nil
 }

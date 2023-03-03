@@ -23,7 +23,6 @@ import (
 	// "sync"
 	"time"
 
-	fornaxv1 "centaurusinfra.io/fornax-serverless/pkg/apis/core/v1"
 	"centaurusinfra.io/fornax-serverless/pkg/collection"
 	fornaxgrpc "centaurusinfra.io/fornax-serverless/pkg/fornaxcore/grpc"
 	"centaurusinfra.io/fornax-serverless/pkg/fornaxcore/grpc/nodeagent"
@@ -53,7 +52,6 @@ type nodeManager struct {
 	nodes              NodePool
 	nodeAgent          nodeagent.NodeAgentClient
 	podManager         ie.PodManagerInterface
-	sessionManager     ie.SessionManagerInterface
 	nodePodCidrManager NodeCidrManager
 	nodeDaemonManager  NodeDaemonManager
 	houseKeepingTicker *time.Ticker
@@ -77,22 +75,10 @@ func (nm *nodeManager) List() []*ie.NodeEvent {
 	return nodeEvents
 }
 
-// UpdateSessionState implements NodeManagerInterface
-func (nm *nodeManager) UpdateSessionState(nodeId string, session *fornaxv1.ApplicationSession) error {
-	podName := session.Annotations[fornaxv1.AnnotationFornaxCorePod]
-	pod := nm.podManager.FindPod(podName)
-	if pod != nil {
-		nm.sessionManager.OnSessionStatusFromNode(pod, session)
-	} else {
-		klog.Warningf("Pod %s does not exist in pod manager, can not update session %s", podName, util.Name(session))
-	}
-	return nil
-}
-
 // UpdatePodState check pod revision status and update single pod state
 // even a pod is terminated status, we still keep it in podmanager,
 // it got deleted until next time pod does not report it again in node state event
-func (nm *nodeManager) UpdatePodState(nodeId string, pod *v1.Pod, sessionStates []*fornaxgrpc.SessionState) error {
+func (nm *nodeManager) UpdatePodState(nodeId string, pod *v1.Pod) error {
 	podName := util.Name(pod)
 	if nodeWS := nm.nodes.get(nodeId); nodeWS != nil {
 		nodeWS.LastSeen = time.Now()
@@ -101,19 +87,7 @@ func (nm *nodeManager) UpdatePodState(nodeId string, pod *v1.Pod, sessionStates 
 				return nil
 			}
 		}
-		updatedPod, err := nm.podManager.AddOrUpdatePod(pod)
-		if err != nil {
-			return err
-		}
 		nodeWS.Pods.Add(podName)
-		sessions := []*fornaxv1.ApplicationSession{}
-		for _, v := range sessionStates {
-			session := v.GetSession()
-			sessions = append(sessions, session)
-		}
-		for _, session := range sessions {
-			nm.sessionManager.OnSessionStatusFromNode(updatedPod, session)
-		}
 	} else {
 		// not supposed to happend node state is send when node register
 		klog.Warningf("Node %s does not exist, ask node to do full sync", nodeId)
@@ -136,7 +110,7 @@ func (nm *nodeManager) SyncPodStates(nodeId string, podStates []*fornaxgrpc.PodS
 		podName := util.Name(podState.GetPod())
 		reportedPods[podName] = true
 		msgPod := types.PodFromString(podState.GetPod())
-		err = nm.UpdatePodState(nodeId, &msgPod, podState.GetSessionStates())
+		err = nm.UpdatePodState(nodeId, &msgPod)
 		if err != nil {
 			klog.ErrorS(err, "Failed to update a pod state, wait for next sync", "pod", podName)
 		}
@@ -322,7 +296,7 @@ func (nm *nodeManager) PrintNodeSummary() {
 	}
 }
 
-func NewNodeManager(ctx context.Context, nodeStore fornaxstore.ApiStorageInterface, nodeAgent nodeagent.NodeAgentClient, podManager ie.PodManagerInterface, sessionManager ie.SessionManagerInterface) *nodeManager {
+func NewNodeManager(ctx context.Context, nodeStore fornaxstore.ApiStorageInterface, nodeAgent nodeagent.NodeAgentClient, podManager ie.PodManagerInterface) *nodeManager {
 	return &nodeManager{
 		ctx:                ctx,
 		nodeUpdates:        make(chan *ie.NodeEvent, 100),
@@ -333,7 +307,6 @@ func NewNodeManager(ctx context.Context, nodeStore fornaxstore.ApiStorageInterfa
 		nodeDaemonManager:  NewNodeDaemonManager(),
 		houseKeepingTicker: time.NewTicker(DefaultStaleNodeTimeout),
 		podManager:         podManager,
-		sessionManager:     sessionManager,
 		nodes: NodePool{
 			mu:    sync.RWMutex{},
 			nodes: map[string]*ie.FornaxNodeWithState{},

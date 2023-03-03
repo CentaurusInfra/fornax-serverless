@@ -19,7 +19,6 @@ package nodeagent
 import (
 	"errors"
 
-	fornaxv1 "centaurusinfra.io/fornax-serverless/pkg/apis/core/v1"
 	"centaurusinfra.io/fornax-serverless/pkg/fornaxcore/grpc"
 
 	v1 "k8s.io/api/core/v1"
@@ -43,6 +42,4 @@ type NodeAgentClient interface {
 	CreatePod(nodeId string, pod *v1.Pod) error
 	TerminatePod(nodeId string, pod *v1.Pod) error
 	HibernatePod(nodeId string, pod *v1.Pod) error
-	OpenSession(nodeId string, pod *v1.Pod, session *fornaxv1.ApplicationSession) error
-	CloseSession(nodeId string, pod *v1.Pod, session *fornaxv1.ApplicationSession) error
 }

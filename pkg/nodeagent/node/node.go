@@ -29,7 +29,6 @@ import (
 	"centaurusinfra.io/fornax-serverless/pkg/nodeagent/dependency"
 	"centaurusinfra.io/fornax-serverless/pkg/nodeagent/pod"
 	"centaurusinfra.io/fornax-serverless/pkg/nodeagent/runtime"
-	"centaurusinfra.io/fornax-serverless/pkg/nodeagent/session"
 	"centaurusinfra.io/fornax-serverless/pkg/nodeagent/store"
 	fornaxtypes "centaurusinfra.io/fornax-serverless/pkg/nodeagent/types"
 	"centaurusinfra.io/fornax-serverless/pkg/store/storage"
@@ -341,46 +340,6 @@ func NewFornaxNode(nodeConfig config.NodeConfiguration, dependencies *dependency
 	}
 
 	return &fornaxNode, nil
-}
-
-type SessionActorPool struct {
-	mu     sync.RWMutex
-	actors map[string]*session.SessionActor
-}
-
-func NewSessionActorPool() *SessionActorPool {
-	return &SessionActorPool{
-		mu:     sync.RWMutex{},
-		actors: map[string]*session.SessionActor{},
-	}
-}
-
-func (pool *SessionActorPool) Get(id string) *session.SessionActor {
-	pool.mu.RLock()
-	defer pool.mu.RUnlock()
-	return pool.actors[id]
-}
-
-func (pool *SessionActorPool) Add(id string, actor *session.SessionActor) {
-	pool.mu.Lock()
-	defer pool.mu.Unlock()
-	pool.actors[id] = actor
-}
-
-func (pool *SessionActorPool) Del(id string) {
-	pool.mu.Lock()
-	defer pool.mu.Unlock()
-	delete(pool.actors, id)
-}
-
-func (pool *SessionActorPool) List() []*session.SessionActor {
-	pool.mu.RLock()
-	defer pool.mu.RUnlock()
-	actors := []*session.SessionActor{}
-	for _, v := range pool.actors {
-		actors = append(actors, v)
-	}
-	return actors
 }
 
 type PodActorPool struct {

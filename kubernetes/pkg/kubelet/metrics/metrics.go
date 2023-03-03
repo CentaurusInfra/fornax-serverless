@@ -20,9 +20,9 @@ import (
 	"sync"
 	"time"
 
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/component-base/metrics"
 	"k8s.io/component-base/metrics/legacyregistry"
-	"k8s.io/apimachinery/pkg/types"
 )
 
 // This const block defines the metric names for the kubelet metrics.

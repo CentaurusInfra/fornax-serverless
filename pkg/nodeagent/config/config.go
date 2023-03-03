@@ -157,7 +157,7 @@ func DefaultNodeConfiguration() (*NodeConfiguration, error) {
 		SeccompDefault:           false,
 		ProtectKernelDefaults:    false,
 		SystemCgroupName:         DefaultSystemCgroupName,
-		MemoryQoS:                true,
+		MemoryQoS:                false,
 		DisableSwap:              true,
 		EnforceCPULimits:         true,
 		CPUCFSQuota:              true,

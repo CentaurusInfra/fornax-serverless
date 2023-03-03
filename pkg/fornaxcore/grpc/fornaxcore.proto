@@ -20,7 +20,7 @@ package centaurusinfra.io.fornaxcore.service;
 option go_package = "centaurusinfra.io/fornax-serverless/pkg/fornaxcore/grpc";
 
 import "google/protobuf/empty.proto";
-import "k8s.io/api/core/v1/generated.proto";
+//import "k8s.io/api/core/v1/generated.proto";
 import "pkg/apis/core/v1/generated.proto";
 
 service FornaxCoreService {
@@ -83,20 +83,24 @@ message NodeIdentifier {
 /* node register with fornax core, wait for a configuration message to initialize it*/
 message NodeRegistry {
   int64 nodeRevision = 1;
-  k8s.io.api.core.v1.Node node = 2;
+  //k8s.io.api.core.v1.Node node = 2;
+  string node = 2;
 }
 
 /* fornax core send node configuration to node to initialize using this configuration before tell fornax it's ready*/
 message NodeConfiguration {
   string clusterDomain = 1;
-  k8s.io.api.core.v1.Node node = 2;
-  repeated k8s.io.api.core.v1.Pod daemonPods = 3;
+  //k8s.io.api.core.v1.Node node = 2;
+  string node = 2;
+  //repeated k8s.io.api.core.v1.Pod daemonPods = 3;
+  //repeated string daemonPods = 3;
 }
 
 /* node report back to fornax core, it's ready for take pod*/
 message NodeReady {
   int64 nodeRevision = 1;
-  k8s.io.api.core.v1.Node node = 2;
+  //k8s.io.api.core.v1.Node node = 2;
+  string node = 2;
   repeated PodState podStates = 3;
   repeated SessionState sessionStates = 4;
 }
@@ -104,7 +108,8 @@ message NodeReady {
 /* node report back full state to fornax core*/
 message NodeState {
   int64 nodeRevision = 1;
-  k8s.io.api.core.v1.Node node = 2;
+  //k8s.io.api.core.v1.Node node = 2;
+  string node = 2;
   repeated PodState podStates = 3;
 }
 
@@ -123,20 +128,25 @@ message PodState {
     Terminated = 60;
   }
   State state = 2;
-  k8s.io.api.core.v1.Pod pod = 3;
+  //k8s.io.api.core.v1.Pod pod = 3;
+  string pod = 3;
   PodResource resource = 4;
   repeated SessionState sessionStates = 5;
 }
 
 message PodResource {
-  k8s.io.api.core.v1.ResourceQuotaStatus resourceQuotaStatus = 1;
-  repeated k8s.io.api.core.v1.AttachedVolume volumes = 2;
+  //k8s.io.api.core.v1.ResourceQuotaStatus resourceQuotaStatus = 1;
+  string resourceQuotaStatus = 1;
+  //repeated k8s.io.api.core.v1.AttachedVolume volumes = 2;
+  //repeated k8s.io.api.core.v1.AttachedVolume volumes = 2;
 }
 
 message PodCreate {
   string podIdentifier = 1;
-  k8s.io.api.core.v1.Pod pod = 2;
-  k8s.io.api.core.v1.ConfigMap configMap = 3;
+  //k8s.io.api.core.v1.Pod pod = 2;
+  string pod = 2;
+  //k8s.io.api.core.v1.ConfigMap configMap = 3;
+  string configMap = 3;
 }
 
 message  PodTerminate {
